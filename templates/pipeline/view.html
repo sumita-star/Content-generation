@@ -33,6 +33,32 @@
         </div>
     </div>
 
+    <!-- Getting Started Guide -->
+    {% set total_items = pipeline.values() | map('length') | sum %}
+    {% set backlog_count = pipeline['backlog'] | length %}
+    {% if total_items == 0 or (total_items == backlog_count and total_items > 0) %}
+    <div class="border rounded-xl p-6 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="max-w-md mx-auto">
+            <div class="w-14 h-14 mx-auto mb-3 rounded-full flex items-center justify-center" style="background: {{ theme_colors['accent-primary'] }}15">
+                <i class="fas fa-rocket text-xl" style="color: {{ theme_colors['accent-primary'] }}"></i>
+            </div>
+            {% if total_items == 0 %}
+            <h3 class="text-base font-semibold mb-2" style="color: {{ theme_colors['text-primary'] }}">Your Pipeline is Empty</h3>
+            <p class="text-sm mb-4" style="color: {{ theme_colors['text-muted'] }}">Start building your content workflow:</p>
+            {% else %}
+            <h3 class="text-base font-semibold mb-2" style="color: {{ theme_colors['text-primary'] }}">All Items in Backlog</h3>
+            <p class="text-sm mb-4" style="color: {{ theme_colors['text-muted'] }}">Generate drafts to move your content forward:</p>
+            {% endif %}
+            <div class="text-left space-y-2 text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                <div class="flex items-start gap-2"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-dm-primary/20 text-dm-accent flex items-center justify-center text-[10px] font-bold mt-0.5">1</span><span>{% if total_items == 0 %}Click <strong>"Add Content"</strong> or go to <strong>Planning</strong> to create items{% else %}Click <strong>"Generate Draft"</strong> on a card to create AI content{% endif %}</span></div>
+                <div class="flex items-start gap-2"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-dm-primary/20 text-dm-accent flex items-center justify-center text-[10px] font-bold mt-0.5">2</span><span>{% if total_items == 0 %}Use <strong>"Generate All Drafts"</strong> to batch-create AI content{% else %}Or use <strong>"Generate All Drafts"</strong> to process all at once{% endif %}</span></div>
+                <div class="flex items-start gap-2"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-dm-primary/20 text-dm-accent flex items-center justify-center text-[10px] font-bold mt-0.5">3</span><span>Items auto-advance: research &rarr; visuals &rarr; review &rarr; ready (based on workflow steps)</span></div>
+                <div class="flex items-start gap-2"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-dm-primary/20 text-dm-accent flex items-center justify-center text-[10px] font-bold mt-0.5">4</span><span>Use <strong>"Next Step"</strong> to advance items or drag cards between columns</span></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Kanban Board -->
     <div class="flex gap-3 overflow-x-auto pb-4 -mx-3 px-3 md:mx-0 md:px-0" style="min-height: 500px;">
         {% for col in columns %}
@@ -57,6 +83,17 @@
                 </div>
                 <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ pipeline[col] | length }}</span>
             </div>
+            <p class="px-3 py-1.5 text-[10px] leading-tight border-b" style="color: {{ theme_colors['text-disabled'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                {% if col == 'backlog' %}New content ideas. Add items or generate from plan.
+                {% elif col == 'research' %}Gather data, references, and talking points.
+                {% elif col == 'drafting' %}Transient — items auto-advance to visuals after draft.
+                {% elif col == 'visuals' %}Add images, video, or design assets.
+                {% elif col == 'review' %}Check tone, accuracy, and brand alignment.
+                {% elif col == 'ready' %}Approved and scheduled for publishing.
+                {% elif col == 'published' %}Live content. Track performance.
+                {% elif col == 'analyzed' %}Performance reviewed. Insights captured.
+                {% endif %}
+            </p>
             <div class="p-2 space-y-2 kanban-col overflow-y-auto" style="max-height: 600px;">
                 {% for item in pipeline[col] %}
                 <div class="border rounded-lg p-3 cursor-move transition-colors group"
@@ -112,14 +149,29 @@
                         {% endfor %}
                     </div>
                     {% endif %}
-                    <!-- Actions -->
-                    <div class="mt-2 flex gap-1 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
-                        {% if item.status in ['backlog', 'research'] %}
-                        <button onclick="withLoading(this, () => generateDraft({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-amber-300 hover:bg-amber-900" style="background: rgba(245,158,11,0.2)" title="Use AI to write the content draft"><i class="fas fa-robot mr-0.5"></i>Generate Draft</button>
+                    <!-- What's Next tip -->
+                    <p class="text-[9px] mt-1.5 italic" style="color: {{ theme_colors['text-disabled'] }}">
+                        {% if item.status == 'backlog' %}<i class="fas fa-lightbulb mr-0.5 text-amber-500/60"></i>Generate a draft to start
+                        {% elif item.status == 'research' %}<i class="fas fa-lightbulb mr-0.5 text-amber-500/60"></i>Add notes, then generate a draft
+                        {% elif item.status == 'drafting' %}<i class="fas fa-lightbulb mr-0.5 text-amber-500/60"></i>Click "Next Step" to advance to visuals
+                        {% elif item.status == 'visuals' %}<i class="fas fa-lightbulb mr-0.5 text-amber-500/60"></i>Add images or generate AI visuals
+                        {% elif item.status == 'review' %}<i class="fas fa-lightbulb mr-0.5 text-amber-500/60"></i>Approve or request revision
+                        {% elif item.status == 'ready' %}<i class="fas fa-check-circle mr-0.5 text-green-500/60"></i>Scheduled — publish when ready
+                        {% elif item.status == 'published' %}<i class="fas fa-chart-line mr-0.5 text-green-500/60"></i>Track performance metrics
+                        {% elif item.status == 'analyzed' %}<i class="fas fa-check-double mr-0.5 text-emerald-500/60"></i>Complete — insights captured
+                        {% endif %}
+                    </p>
+                    <!-- Primary Actions (always visible) -->
+                    <div class="mt-2 flex gap-1 flex-wrap">
+                        {% if item.status in ['backlog', 'research', 'drafting'] %}
+                        <button onclick="withLoading(this, () => generateDraft({{ item.id }}))" class="text-[10px] px-2 py-1 rounded font-medium text-amber-200 hover:bg-amber-800" style="background: rgba(245,158,11,0.3)" title="Use AI to write the content draft"><i class="fas fa-robot mr-0.5"></i>Generate Draft</button>
                         {% endif %}
                         {% if item.status not in ['published', 'analyzed', 'ready'] %}
-                        <button onclick="withLoading(this, () => completeStep({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-green-300 hover:bg-green-900" style="background: rgba(34,197,94,0.2)" title="Complete current step and advance to next"><i class="fas fa-forward mr-0.5"></i>Next Step</button>
+                        <button onclick="withLoading(this, () => completeStep({{ item.id }}))" class="text-[10px] px-2 py-1 rounded font-medium text-green-200 hover:bg-green-800" style="background: rgba(34,197,94,0.3)" title="Complete current step and advance to next"><i class="fas fa-forward mr-0.5"></i>Next Step</button>
                         {% endif %}
+                    </div>
+                    <!-- Secondary Actions (hover) -->
+                    <div class="mt-1 flex gap-1 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onclick="editContent({{ item.id }})" class="text-[10px] px-2 py-0.5 rounded text-gray-300 hover:bg-gray-600" style="background: {{ theme_colors['border-hover'] }}80">Edit</button>
                         <button onclick="giveFeedback({{ item.id }}, '{{ item.title | replace("'", "\\'") }}')" class="text-[10px] px-2 py-0.5 rounded text-gray-300 hover:bg-gray-600" style="background: {{ theme_colors['border-hover'] }}80">Feedback</button>
                         {% if item.status not in ['published', 'analyzed', 'ready'] %}
@@ -334,8 +386,8 @@ async function generateDraft(itemId) {
     });
     const data = await res.json();
     if (data.ok) {
-        toast('Draft generated! Opening in Content Studio...', 'success');
-        setTimeout(() => window.location.href = `/brands/{{ brand.id }}/preview?item=${itemId}`, 1000);
+        toast(`Draft generated! Status: ${data.new_status || 'visuals'}`, 'success');
+        location.reload();
     } else {
         toast(data.error || 'Failed to generate draft', 'error', 8000);
     }

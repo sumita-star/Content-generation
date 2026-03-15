@@ -31,6 +31,25 @@
         </div>
     </div>
 
+    <!-- Auto-populate Banner (shows when voice is empty) -->
+    {% set total_refs = grouped_refs.get('tone_keyword', [])|length + grouped_refs.get('do', [])|length + grouped_refs.get('dont', [])|length + grouped_refs.get('text_sample', [])|length %}
+    {% if total_refs == 0 %}
+    <div class="rounded-xl border p-5 flex items-center justify-between" style="background: linear-gradient(135deg, {{ theme_colors['bg-secondary'] }}, {{ theme_colors['bg-tertiary'] }}); border-color: {{ theme_colors['border-hover'] }}">
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-purple-600/20 flex items-center justify-center">
+                <i class="fas fa-magic text-purple-400 text-lg"></i>
+            </div>
+            <div>
+                <h3 class="font-semibold text-sm" style="color: {{ theme_colors['text-primary'] }}">Brand voice is empty</h3>
+                <p class="text-xs mt-0.5" style="color: {{ theme_colors['text-secondary'] }}">Auto-populate tone keywords, do's, don'ts, and text samples using AI analysis of your brand docs</p>
+            </div>
+        </div>
+        <button @click="populateVoice($event.currentTarget)" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
+            <i class="fas fa-robot mr-2"></i>Populate with AI
+        </button>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-2 gap-4">
         <!-- Voice References -->
         <div class="space-y-4">
@@ -297,6 +316,22 @@ function voiceApp() {
             });
             toast('Reference added', 'success');
             location.reload();
+        },
+
+        async populateVoice(btn) {
+            withLoading(btn, async () => {
+                const res = await fetch('/api/brands/{{ brand.id }}/populate-voice', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    toast(`Added ${data.added} voice references`, 'success');
+                    location.reload();
+                } else {
+                    toast('Failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            });
         },
 
         async runScoring(btn) {

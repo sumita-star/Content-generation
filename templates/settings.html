@@ -81,6 +81,35 @@
         </div>
     </div>
 
+    <!-- AI Text Model -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-robot mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>AI Text Model</h2>
+            <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Choose which AI model generates text content (drafts, audits, plans, conversations).</p>
+        </div>
+        <div class="p-4">
+            <div class="flex items-center gap-4">
+                <button @click="setTextModel('claude-sonnet-4-20250514')"
+                    class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
+                    :style="defaultTextModel === 'claude-sonnet-4-20250514' ? 'border-color: var(--dm-accent-primary)' : 'border-color: {{ theme_colors['border-primary'] }}'"
+                    style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <i class="fas fa-brain text-2xl mb-2 text-purple-400"></i>
+                    <div class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">Claude Sonnet 4</div>
+                    <div class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Anthropic</div>
+                </button>
+                <button @click="setTextModel('gemini-2.5-flash')"
+                    class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
+                    :style="defaultTextModel === 'gemini-2.5-flash' ? 'border-color: var(--dm-accent-primary)' : 'border-color: {{ theme_colors['border-primary'] }}'"
+                    style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <i class="fas fa-bolt text-2xl mb-2 text-cyan-400"></i>
+                    <div class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">Gemini 2.5 Flash</div>
+                    <div class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Google</div>
+                </button>
+            </div>
+            <p x-show="modelStatus" x-text="modelStatus" x-transition class="text-xs text-green-400 mt-2"></p>
+        </div>
+    </div>
+
     <!-- Password Protection -->
     <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
         <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
@@ -529,6 +558,8 @@ function settingsApp() {
         dynamicKeys: {{ dynamic_keys | default([], true) | tojson | safe }},
         dynamicSaveStatus: '',
         showDriveForm: false,
+        defaultTextModel: '{{ default_text_model | default("claude-sonnet-4-20250514") }}',
+        modelStatus: '',
         driveForm: { brand_id: '', folder_id: '', folder_name: '', local_path: '', sync_direction: 'both' },
 
         setTheme(mode) {
@@ -537,6 +568,20 @@ function settingsApp() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({mode})
             }).then(() => location.reload());
+        },
+
+        async setTextModel(model) {
+            this.defaultTextModel = model;
+            const res = await fetch('/api/settings/text-model', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({model})
+            });
+            const data = await res.json();
+            if (data.ok) {
+                this.modelStatus = model.startsWith('gemini') ? 'Switched to Gemini 2.5 Flash' : 'Switched to Claude Sonnet 4';
+                setTimeout(() => this.modelStatus = '', 3000);
+            }
         },
 
         async saveKeys() {

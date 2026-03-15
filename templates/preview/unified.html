@@ -312,6 +312,9 @@
                             <button @click="showAdaptModal = true" class="px-3 py-1.5 text-xs rounded-lg transition-colors bg-teal-600 hover:bg-teal-700 text-white">
                                 <i class="fas fa-globe mr-1"></i>Adapt to Market
                             </button>
+                            <button @click="withLoading($event.target.closest('button'), () => generateInfographic())" class="px-3 py-1.5 text-xs rounded-lg transition-colors bg-cyan-600 hover:bg-cyan-700 text-white" title="Generate infographic using Nano Banana Pro">
+                                <i class="fas fa-chart-pie mr-1"></i>Infographic
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1373,6 +1376,27 @@ Please provide the revised content that addresses this feedback, maintaining the
             this.currentItem.status = status;
             itemsById[this.selectedItem].status = status;
             toast(`Status changed to "${status}"`, 'info');
+        },
+
+        async generateInfographic() {
+            if (!this.selectedItem || !this.currentItem) return toast('Select a content item first', 'warning');
+            const prompt = `Create a professional infographic with clear text headings, icons, and data visualization. Use a clean, modern style with DIQIT brand colors (black background, orange #EF4324 accents, white text). Topic: ${this.currentItem.title}. Key points: ${(this.currentItem.body_text || '').substring(0, 1500)}`;
+            const res = await fetch('/api/generate-image/nano-banana', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    brand_id: {{ brand.id }},
+                    prompt: prompt,
+                    content_item_id: this.selectedItem
+                })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast(`Infographic generated! ${data.count} image(s) created.`, 'success');
+                await this.loadItemMedia(this.selectedItem);
+            } else {
+                toast(data.error || 'Failed to generate infographic', 'error', 8000);
+            }
         },
 
         async createBrief() {

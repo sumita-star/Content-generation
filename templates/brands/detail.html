@@ -58,6 +58,10 @@
        {% if 'analytics' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
         <i class="fas fa-chart-line w-5 text-center"></i><span>Analytics</span>
     </a>
+    <a href="/brands/{{ brand.id }}/scraping" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'scraping' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'scraping' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-spider w-5 text-center"></i><span>Scraping</span>
+    </a>
     <a href="/brands/{{ brand.id }}/client-review" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'client-review' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
        {% if 'client-review' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
         <i class="fas fa-file-pdf w-5 text-center"></i><span>Client Review</span>

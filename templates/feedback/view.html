@@ -70,14 +70,6 @@
                             placeholder="Image generation prompt..."></textarea>
                     </div>
 
-                    <!-- Napkin JSON -->
-                    <div>
-                        <label class="text-xs uppercase tracking-wider text-gray-500 mb-2 block">Napkin AI JSON</label>
-                        <textarea x-model="currentItem.napkin_json" rows="4"
-                            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-sm outline-none focus:border-dm-primary resize-none font-mono"
-                            placeholder='{"title": "...", "type": "comparison", ...}'></textarea>
-                    </div>
-
                     <!-- Notes -->
                     <div>
                         <label class="text-xs uppercase tracking-wider text-gray-500 mb-2 block">Notes</label>
@@ -217,7 +209,6 @@ function feedbackApp() {
                 body: JSON.stringify({
                     body_text: this.currentItem.body_text,
                     visual_prompt: this.currentItem.visual_prompt,
-                    napkin_json: this.currentItem.napkin_json,
                     notes: this.currentItem.notes,
                 })
             });

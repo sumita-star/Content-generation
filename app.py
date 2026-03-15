@@ -409,6 +409,22 @@ CREATE TABLE IF NOT EXISTS competitor_profiles (
     FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS scrape_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    target_name TEXT NOT NULL,
+    target_type TEXT DEFAULT 'linkedin_company',
+    actor_id TEXT DEFAULT 'apify/web-scraper',
+    input_config TEXT DEFAULT '{}',
+    schedule TEXT DEFAULT 'weekly',
+    enabled INTEGER DEFAULT 1,
+    last_run_id TEXT,
+    last_run_at TEXT,
+    last_result_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS asset_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     brand_id INTEGER NOT NULL,
@@ -647,22 +663,22 @@ def seed_diqit(db):
         {
             'name': 'Content Drafting',
             'description': 'Claude drafts all posts using brand voice, incorporating research insights',
-            'instructions': '1. Claude reads content calendar from Drive\n2. Incorporates Deep Research + Apify insights\n3. Drafts posts using brand voice skill (specify market per post)\n4. Generates Napkin AI JSON for diagrams/infographics\n5. Saves drafts + JSON specs to Weekly Drafts folder',
+            'instructions': '1. Claude reads content calendar from Drive\n2. Incorporates Deep Research + Apify insights\n3. Drafts posts using brand voice skill (specify market per post)\n4. Saves drafts to Weekly Drafts folder',
             'tools': json.dumps(['Claude', 'Brand Voice Skill', 'Buyer-Led Content Writer', 'Google Drive']),
             'day_of_week': 'Monday', 'duration_minutes': 15, 'sort_order': 2,
             'linked_folder': '04_Content',
-            'checklist': json.dumps(['Read content calendar', 'Draft all weekly posts', 'Generate Napkin AI JSON specs', 'Save to Weekly Drafts folder']),
+            'checklist': json.dumps(['Read content calendar', 'Draft all weekly posts', 'Save to Weekly Drafts folder']),
             'step_type': 'automated', 'upload_folder': '04_Content/LinkedIn', 'trigger_type': 'claude',
             'brief_template': 'TOPIC: [topic]\nMARKET: [Japan/Singapore/APAC]\nCONTENT_TYPE: [linkedin_post/carousel/video]\nPILLAR: [content pillar]\nKEY_POINTS: [main points to cover]\nTONE: Professional yet approachable, operator-empathetic',
         },
         {
             'name': 'Visual Generation — Images',
             'description': 'Generate branded images using AI tools',
-            'instructions': '1. Data visuals: Paste JSON into Napkin AI → pick best variant → export\n2. Images: ImageFX for generation → Canva for brand assembly\n3. Carousels: Claude → Canva MCP with DIQIT templates\n4. Add DIQIT logo, brand typography, footer bar in Canva',
-            'tools': json.dumps(['Napkin AI', 'Google ImageFX', 'Canva', 'Gemini Image Generation']),
+            'instructions': '1. Infographics: Nano Banana Pro generates text-rich visuals from content\n2. Photos: Imagen 3 or ImageFX for hero images\n3. Carousels: Claude → Canva MCP with DIQIT templates\n4. Add DIQIT logo, brand typography, footer bar in Canva',
+            'tools': json.dumps(['Nano Banana Pro', 'Imagen 3', 'Google ImageFX', 'Canva']),
             'day_of_week': 'Tuesday', 'duration_minutes': 10, 'sort_order': 3,
             'linked_folder': '10_Pipeline/Briefs',
-            'checklist': json.dumps(['Generate Napkin AI diagrams from JSON', 'Generate ImageFX hero images', 'Create carousel slides in Canva', 'Apply DIQIT branding (logo, colors, footer)']),
+            'checklist': json.dumps(['Generate Nano Banana Pro infographics', 'Generate Imagen 3 / ImageFX hero images', 'Create carousel slides in Canva', 'Apply DIQIT branding (logo, colors, footer)']),
             'step_type': 'automated', 'upload_folder': '10_Pipeline/Generated_Images', 'trigger_type': 'gemini',
             'brief_template': 'TOPIC: [topic]\nMARKET: [market]\nIMAGE_STYLE: single\nVIDEO: no\nPOST_TEXT:\n[post text]',
         },
@@ -1264,12 +1280,8 @@ def update_content_status(item_id):
 
 @app.route('/api/content-items/<int:item_id>/generate-draft', methods=['POST'])
 def generate_content_draft(item_id):
-    """Use Claude to generate the actual content draft for a content item."""
+    """Use AI to generate the actual content draft for a content item."""
     db = get_db()
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured. Go to Settings to add it.'}), 400
-
     item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
     if not item:
         return jsonify({'ok': False, 'error': 'Content item not found'}), 404
@@ -1309,44 +1321,44 @@ Content brief:
 
 Write the content now. Output ONLY the final content — no preamble, no "here's the content", just the content itself ready for publishing."""
 
-    try:
-        import urllib.request
-        req = urllib.request.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=json.dumps({
-                'model': 'claude-sonnet-4-20250514',
-                'max_tokens': 4096,
-                'messages': [{'role': 'user', 'content': prompt}]
-            }).encode(),
-            headers={
-                'Content-Type': 'application/json',
-                'x-api-key': api_key,
-                'anthropic-version': '2023-06-01'
-            }
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            draft_text = result['content'][0]['text'].strip()
+    result = generate_text(prompt, max_tokens=4096)
+    if not result['ok']:
+        return jsonify(result), 500
 
-        # Save the draft and advance status to 'drafting'
-        new_status = 'drafting' if item['status'] in ('backlog', 'research') else item['status']
-        db.execute("""
-            UPDATE content_items SET body_text=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
-        """, (draft_text, new_status, item_id))
-        db.commit()
+    draft_text = result['text']
 
-        return jsonify({'ok': True, 'draft': draft_text, 'status': new_status})
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        try:
-            msg = json.loads(body).get('error', {}).get('message', body)
-        except Exception:
-            msg = body
-        if 'credit balance' in msg.lower() or 'billing' in msg.lower():
-            return jsonify({'ok': False, 'error': 'Anthropic API credit balance is too low. Go to console.anthropic.com → Plans & Billing to add credits.'}), 402
-        return jsonify({'ok': False, 'error': f'Claude API error: {msg}'}), 500
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    # Save the draft and advance status to 'visuals' (drafting is complete, move to visuals)
+    new_status = 'visuals' if item['status'] in ('backlog', 'research', 'drafting') else item['status']
+    db.execute("""
+        UPDATE content_items SET body_text=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+    """, (draft_text, new_status, item_id))
+    db.commit()
+
+    return jsonify({'ok': True, 'draft': draft_text, 'status': new_status})
+
+
+def _step_to_status(step_name):
+    """Map a workflow step name to a pipeline column status.
+
+    Uses keyword matching so it works regardless of how many steps the template has.
+    The pipeline columns are: backlog, research, drafting, visuals, review, ready, published, analyzed.
+    """
+    name_lower = step_name.lower()
+    if 'research' in name_lower or 'deep dive' in name_lower:
+        return 'research'
+    if 'draft' in name_lower or 'writing' in name_lower or 'content creation' in name_lower:
+        return 'visuals'  # drafting is auto-skipped — once draft is done, move to visuals
+    if 'visual' in name_lower or 'image' in name_lower or 'video' in name_lower or 'design' in name_lower:
+        return 'visuals'
+    if 'polish' in name_lower or 'assembly' in name_lower or 'brand' in name_lower:
+        return 'review'
+    if 'review' in name_lower or 'approve' in name_lower or 'client' in name_lower:
+        return 'review'
+    if 'publish' in name_lower or 'schedule' in name_lower:
+        return 'ready'
+    if 'feedback' in name_lower or 'analyz' in name_lower or 'performance' in name_lower:
+        return 'analyzed'
+    return 'visuals'  # safe default for unknown steps
 
 
 @app.route('/api/content-items/<int:item_id>/complete-step', methods=['POST'])
@@ -1422,11 +1434,11 @@ def complete_step_and_chain(item_id):
             VALUES (?, ?, 'in_progress', CURRENT_TIMESTAMP)
         """, (item_id, next_step['id']))
 
-    # Advance the content item status through the pipeline
-    status_flow = ['backlog', 'research', 'drafting', 'visuals', 'review', 'ready']
-    new_status = status_flow[min(current_idx + 1, len(status_flow) - 1)]
-    if current_idx + 1 >= len(steps):
-        new_status = 'ready'
+    # Determine new status from the NEXT step's name (what we're moving into)
+    if next_step:
+        new_status = _step_to_status(next_step['name'])
+    else:
+        new_status = 'ready'  # all steps done
     db.execute("UPDATE content_items SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
                (new_status, item_id))
 
@@ -1656,6 +1668,12 @@ def serve_media(filepath):
     if os.path.exists(full_path):
         directory = os.path.dirname(full_path)
         filename = os.path.basename(full_path)
+        # Explicit MIME types for reliable browser rendering
+        mime_overrides = {'.pdf': 'application/pdf', '.svg': 'image/svg+xml', '.webp': 'image/webp'}
+        ext = os.path.splitext(filename)[1].lower()
+        mimetype = mime_overrides.get(ext)
+        if mimetype:
+            return send_from_directory(directory, filename, mimetype=mimetype)
         return send_from_directory(directory, filename)
     return 'File not found', 404
 
@@ -1810,6 +1828,55 @@ def delete_competitor(comp_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/brands/<int:brand_id>/fix-media-names', methods=['POST'])
+def fix_media_names(brand_id):
+    """Rename existing media files to follow item-{id}_##.{ext} convention and update DB."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    items = db.execute("SELECT id, file_paths, title FROM content_items WHERE brand_id=? AND file_paths IS NOT NULL AND file_paths != '[]'", (brand_id,)).fetchall()
+    renamed = []
+
+    for item in items:
+        paths = json.loads(item['file_paths'] or '[]')
+        updated_paths = []
+        for seq, fp in enumerate(paths):
+            full_path = os.path.join(brand['folder_path'] or BRANDS_BASE, fp)
+            if not os.path.exists(full_path):
+                updated_paths.append(fp)
+                continue
+
+            filename = os.path.basename(fp)
+            # Check if already follows convention
+            import re
+            if re.match(rf'^item-{item["id"]}_\d{{2}}\.\w+$', filename):
+                updated_paths.append(fp)
+                continue
+
+            # Rename to convention
+            ext = os.path.splitext(filename)[1]
+            new_filename = f"item-{item['id']}_{seq+1:02d}{ext}"
+            new_full_path = os.path.join(os.path.dirname(full_path), new_filename)
+
+            # Avoid overwriting
+            if os.path.exists(new_full_path) and new_full_path != full_path:
+                updated_paths.append(fp)
+                continue
+
+            os.rename(full_path, new_full_path)
+            new_rel_path = os.path.join(os.path.dirname(fp), new_filename)
+            updated_paths.append(new_rel_path)
+            renamed.append({'old': fp, 'new': new_rel_path, 'item_id': item['id']})
+
+        if updated_paths != paths:
+            db.execute("UPDATE content_items SET file_paths=? WHERE id=?", (json.dumps(updated_paths), item['id']))
+
+    db.commit()
+    return jsonify({'ok': True, 'renamed': renamed, 'count': len(renamed)})
+
+
 # ─── Analytics Insights Loop ──────────────────────────────────────
 
 @app.route('/api/brands/<int:brand_id>/analyze-performance', methods=['POST'])
@@ -1882,27 +1949,10 @@ Provide analysis in this JSON format:
     ]
 }}"""
 
-    # Call Claude for analysis
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Anthropic API key not configured'}), 400
-
-    try:
-        import urllib.request
-        req = urllib.request.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=json.dumps({
-                'model': 'claude-sonnet-4-20250514',
-                'max_tokens': 2000,
-                'messages': [{'role': 'user', 'content': prompt}]
-            }).encode(),
-            headers={'x-api-key': api_key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
-        )
-        with urllib.request.urlopen(req) as resp:
-            result = json.loads(resp.read())
-            ai_text = result['content'][0]['text']
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    result = generate_text(prompt, max_tokens=2000)
+    if not result['ok']:
+        return jsonify(result), 500
+    ai_text = result['text']
 
     # Extract JSON from response
     try:
@@ -1994,26 +2044,10 @@ Suggest adjustments in this JSON format:
     "balance_note": "how balanced the pillar mix is (1-10)"
 }}"""
 
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Anthropic API key not configured'}), 400
-
-    try:
-        import urllib.request
-        req = urllib.request.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=json.dumps({
-                'model': 'claude-sonnet-4-20250514',
-                'max_tokens': 1500,
-                'messages': [{'role': 'user', 'content': prompt}]
-            }).encode(),
-            headers={'x-api-key': api_key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
-        )
-        with urllib.request.urlopen(req) as resp:
-            result = json.loads(resp.read())
-            ai_text = result['content'][0]['text']
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    result = generate_text(prompt, max_tokens=1500)
+    if not result['ok']:
+        return jsonify(result), 500
+    ai_text = result['text']
 
     try:
         json_match = ai_text
@@ -2331,10 +2365,11 @@ Available media tools you can recommend per item:
 - short_url: Shorten URL — for any published content
 - diagram: Mermaid diagram (manual) — for technical/process/architecture content
 - chart: Data chart (manual) — for data-driven/analytics/benchmark content
+- nano_banana: AI-generated infographic (Nano Banana Pro) — for infographic content type, text-heavy visuals with data visualization
 
 Generate a content plan for {plan['plan_month']}. For each item provide:
 - title: A specific, engaging title
-- content_type: One of linkedin_post, carousel, video, blog, email, reel
+- content_type: One of linkedin_post, carousel, video, blog, email, reel, infographic
 - market: One of APAC, Japan, Singapore, Australia
 - rationale: Why this content matters now (1 sentence)
 - media_tags: Array of tool tags this content needs (choose from list above based on content_type and market)
@@ -2343,39 +2378,22 @@ Return ONLY a JSON array of objects. No markdown, no explanation. Example:
 [{{"title":"...", "content_type":"linkedin_post", "market":"Singapore", "rationale":"...", "media_tags":["stock_image","short_url"]}}]
 Generate 8-12 items spread across the month, covering all pillars."""
 
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
+    result = generate_text(prompt, max_tokens=2000)
+    if not result['ok']:
+        return jsonify(result), 500
 
-    import urllib.request
-    req = urllib.request.Request(
-        'https://api.anthropic.com/v1/messages',
-        data=json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 2000,
-            'messages': [{'role': 'user', 'content': prompt}]
-        }).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        }
-    )
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'].strip()
-            # Parse the JSON array from Claude's response
-            if response_text.startswith('['):
-                items = json.loads(response_text)
+        response_text = result['text']
+        # Parse the JSON array from AI response
+        if response_text.startswith('['):
+            items = json.loads(response_text)
+        else:
+            import re
+            match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if match:
+                items = json.loads(match.group())
             else:
-                # Try to extract JSON from the response
-                import re
-                match = re.search(r'\[.*\]', response_text, re.DOTALL)
-                if match:
-                    items = json.loads(match.group())
-                else:
-                    return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
+                return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
 
             # Distribute dates across the month
             year, month_num = plan['plan_month'].split('-')
@@ -2538,49 +2556,33 @@ Evaluate on these dimensions (each 0-100):
 Return ONLY a JSON object like:
 {{"overall_score": 82, "tone_alignment": 85, "dos_compliance": 90, "donts_compliance": 75, "consistency": 78, "strengths": ["clear messaging", "professional tone"], "improvements": ["could be more direct", "avoid jargon in intro"], "rewrite_suggestion": "Optional: a brief rewritten version of the first paragraph that better matches brand voice"}}"""
 
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
+    result = generate_text(prompt, max_tokens=1500)
+    if not result['ok']:
+        return jsonify(result), 500
 
-    import urllib.request
-    req = urllib.request.Request(
-        'https://api.anthropic.com/v1/messages',
-        data=json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 1500,
-            'messages': [{'role': 'user', 'content': prompt}]
-        }).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        }
-    )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'].strip()
-            if response_text.startswith('{'):
-                score_data = json.loads(response_text)
+        response_text = result['text']
+        if response_text.startswith('{'):
+            score_data = json.loads(response_text)
+        else:
+            import re
+            match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if match:
+                score_data = json.loads(match.group())
             else:
-                import re
-                match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if match:
-                    score_data = json.loads(match.group())
-                else:
-                    return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
+                return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
 
-            # Save audit record
-            db.execute("""
-                INSERT INTO brand_audits (brand_id, content_item_id, audit_type, score, findings, recommendations)
-                VALUES (?, ?, 'voice', ?, ?, ?)
-            """, (brand_id, content_item_id,
-                  score_data.get('overall_score', 0),
-                  json.dumps(score_data),
-                  json.dumps(score_data.get('improvements', []))))
-            db.commit()
+        # Save audit record
+        db.execute("""
+            INSERT INTO brand_audits (brand_id, content_item_id, audit_type, score, findings, recommendations)
+            VALUES (?, ?, 'voice', ?, ?, ?)
+        """, (brand_id, content_item_id,
+              score_data.get('overall_score', 0),
+              json.dumps(score_data),
+              json.dumps(score_data.get('improvements', []))))
+        db.commit()
 
-            return jsonify({'ok': True, 'score': score_data})
+        return jsonify({'ok': True, 'score': score_data})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -2662,50 +2664,29 @@ User request: {prompt}
 
 Return a detailed, ready-to-use output. Format as structured text with clear sections."""
 
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        db.execute("UPDATE asset_jobs SET status='failed', error_message='API key not configured' WHERE id=?", (job_id,))
+    result = generate_text(full_prompt, max_tokens=3000)
+    if not result['ok']:
+        db.execute("UPDATE asset_jobs SET status='failed', error_message=? WHERE id=?", (result['error'], job_id))
         db.commit()
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
+        return jsonify(result), 500
 
-    import urllib.request
-    req = urllib.request.Request(
-        'https://api.anthropic.com/v1/messages',
-        data=json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 3000,
-            'messages': [{'role': 'user', 'content': full_prompt}]
-        }).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        }
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'].strip()
+    response_text = result['text']
 
-            # Save the generated content as a file
-            assets_dir = os.path.join(os.path.dirname(__file__), 'generated_assets')
-            os.makedirs(assets_dir, exist_ok=True)
-            filename = f"{asset_type}_{job_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            filepath = os.path.join(assets_dir, filename)
-            with open(filepath, 'w') as f:
-                f.write(response_text)
+    # Save the generated content as a file
+    assets_dir = os.path.join(os.path.dirname(__file__), 'generated_assets')
+    os.makedirs(assets_dir, exist_ok=True)
+    filename = f"{asset_type}_{job_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    filepath = os.path.join(assets_dir, filename)
+    with open(filepath, 'w') as f:
+        f.write(response_text)
 
-            db.execute("""
-                UPDATE asset_jobs SET status='completed', result_path=?,
-                result_metadata=?, completed_at=CURRENT_TIMESTAMP WHERE id=?
-            """, (filepath, json.dumps({'length': len(response_text), 'provider': provider}), job_id))
-            db.commit()
+    db.execute("""
+        UPDATE asset_jobs SET status='completed', result_path=?,
+        result_metadata=?, completed_at=CURRENT_TIMESTAMP WHERE id=?
+    """, (filepath, json.dumps({'length': len(response_text), 'provider': provider}), job_id))
+    db.commit()
 
-            return jsonify({'ok': True, 'job_id': job_id, 'result': response_text[:500]})
-    except Exception as e:
-        db.execute("UPDATE asset_jobs SET status='failed', error_message=? WHERE id=?", (str(e), job_id))
-        db.commit()
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True, 'job_id': job_id, 'result': response_text[:500]})
 
 
 @app.route('/api/assets/<int:job_id>/content')
@@ -2771,44 +2752,22 @@ def create_conversation():
 
     messages = [{'role': 'user', 'content': full_first_message, 'timestamp': datetime.now().isoformat()}]
 
-    # Call Claude
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
-
-    import urllib.request
     api_messages = [{'role': 'user', 'content': full_first_message}]
-    req = urllib.request.Request(
-        'https://api.anthropic.com/v1/messages',
-        data=json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 2000,
-            'system': system_context,
-            'messages': api_messages
-        }).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        }
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            assistant_text = result['content'][0]['text'].strip()
+    result = generate_text(None, max_tokens=2000, system=system_context, messages=api_messages)
+    if not result['ok']:
+        return jsonify(result), 500
 
-        messages.append({'role': 'assistant', 'content': assistant_text, 'timestamp': datetime.now().isoformat()})
+    assistant_text = result['text']
+    messages.append({'role': 'assistant', 'content': assistant_text, 'timestamp': datetime.now().isoformat()})
 
-        db.execute("""
-            INSERT INTO claude_conversations (brand_id, content_item_id, title, messages, status)
-            VALUES (?, ?, ?, ?, 'active')
-        """, (brand_id, content_item_id, title, json.dumps(messages)))
-        conv_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-        db.commit()
+    db.execute("""
+        INSERT INTO claude_conversations (brand_id, content_item_id, title, messages, status)
+        VALUES (?, ?, ?, ?, 'active')
+    """, (brand_id, content_item_id, title, json.dumps(messages)))
+    conv_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.commit()
 
-        return jsonify({'ok': True, 'conversation_id': conv_id, 'messages': messages})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True, 'conversation_id': conv_id, 'messages': messages})
 
 
 @app.route('/api/conversations/<int:conv_id>/reply', methods=['POST'])
@@ -2836,40 +2795,19 @@ def conversation_reply(conv_id):
     # Build API messages (strip timestamps)
     api_messages = [{'role': m['role'], 'content': m['content']} for m in messages]
 
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
+    result = generate_text(None, max_tokens=2000, system=system_context, messages=api_messages)
+    if not result['ok']:
+        return jsonify(result), 500
 
-    import urllib.request
-    req = urllib.request.Request(
-        'https://api.anthropic.com/v1/messages',
-        data=json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 2000,
-            'system': system_context,
-            'messages': api_messages
-        }).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        }
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            assistant_text = result['content'][0]['text'].strip()
+    assistant_text = result['text']
+    messages.append({'role': 'assistant', 'content': assistant_text, 'timestamp': datetime.now().isoformat()})
 
-        messages.append({'role': 'assistant', 'content': assistant_text, 'timestamp': datetime.now().isoformat()})
+    db.execute("""
+        UPDATE claude_conversations SET messages=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+    """, (json.dumps(messages), conv_id))
+    db.commit()
 
-        db.execute("""
-            UPDATE claude_conversations SET messages=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
-        """, (json.dumps(messages), conv_id))
-        db.commit()
-
-        return jsonify({'ok': True, 'messages': messages})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True, 'messages': messages})
 
 
 @app.route('/api/conversations/<int:conv_id>/apply', methods=['POST'])
@@ -2961,8 +2899,7 @@ def run_pipeline():
 
     # Process each step — create step progress records and advance status
     log_entries = []
-    status_flow = ['backlog', 'research', 'drafting', 'visuals', 'review', 'ready']
-    content = db.execute("SELECT * FROM content_items WHERE id=?", (content_item_id,)).fetchone()
+    final_status = 'ready'
 
     for i, step in enumerate(steps):
         step_result = {
@@ -2988,11 +2925,14 @@ def run_pipeline():
                 VALUES (?, ?, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """, (content_item_id, step['id']))
 
-        # Advance content status if applicable
-        if i < len(status_flow):
-            new_status = status_flow[min(i + 1, len(status_flow) - 1)]
-            db.execute("UPDATE content_items SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                       (new_status, content_item_id))
+        # Advance content status based on next step name
+        if i + 1 < len(steps):
+            new_status = _step_to_status(steps[i + 1]['name'])
+        else:
+            new_status = 'ready'
+        db.execute("UPDATE content_items SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                   (new_status, content_item_id))
+        final_status = new_status
 
         log_entries.append(step_result)
 
@@ -3012,7 +2952,7 @@ def run_pipeline():
         'ok': True,
         'run_id': run_id,
         'steps_completed': len(log_entries),
-        'final_status': status_flow[min(len(steps), len(status_flow) - 1)]
+        'final_status': final_status
     })
 
 
@@ -3143,47 +3083,31 @@ Provide:
 Return ONLY a JSON object:
 {{"adapted_title": "...", "adapted_body": "...", "cultural_notes": "..."}}"""
 
-    api_key = get_setting(db, 'anthropic_api_key')
-    if not api_key:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
+    result = generate_text(prompt, max_tokens=2000)
+    if not result['ok']:
+        return jsonify(result), 500
 
-    import urllib.request
-    req = urllib.request.Request(
-        'https://api.anthropic.com/v1/messages',
-        data=json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 2000,
-            'messages': [{'role': 'user', 'content': prompt}]
-        }).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'x-api-key': api_key,
-            'anthropic-version': '2023-06-01'
-        }
-    )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'].strip()
-            if response_text.startswith('{'):
-                adapted = json.loads(response_text)
+        response_text = result['text']
+        if response_text.startswith('{'):
+            adapted = json.loads(response_text)
+        else:
+            import re
+            match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if match:
+                adapted = json.loads(match.group())
             else:
-                import re
-                match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if match:
-                    adapted = json.loads(match.group())
-                else:
-                    return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
+                return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
 
-            db.execute("""
-                INSERT INTO market_adaptations (source_item_id, target_market, adapted_title, adapted_body, adapted_visual_prompt)
-                VALUES (?, ?, ?, ?, ?)
-            """, (source_item_id, target_market, adapted.get('adapted_title', source['title']),
-                  adapted.get('adapted_body', ''), source.get('visual_prompt', '')))
-            adaptation_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-            db.commit()
+        db.execute("""
+            INSERT INTO market_adaptations (source_item_id, target_market, adapted_title, adapted_body, adapted_visual_prompt)
+            VALUES (?, ?, ?, ?, ?)
+        """, (source_item_id, target_market, adapted.get('adapted_title', source['title']),
+              adapted.get('adapted_body', ''), source.get('visual_prompt', '')))
+        adaptation_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.commit()
 
-            return jsonify({'ok': True, 'adaptation_id': adaptation_id, 'adapted': adapted})
+        return jsonify({'ok': True, 'adaptation_id': adaptation_id, 'adapted': adapted})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -3729,34 +3653,15 @@ Based on performance data, suggest updates to the content pillars. Return a JSON
 
 Keep it practical — suggest 2-4 changes max. Only suggest changes that would measurably improve engagement."""
 
-    try:
-        import urllib.request
-        req_body = json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 2048,
-            'messages': [{'role': 'user', 'content': prompt}]
-        })
-        req = urllib.request.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=req_body.encode(),
-            headers={
-                'Content-Type': 'application/json',
-                'x-api-key': api_key,
-                'anthropic-version': '2023-06-01',
-            }
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'] if result.get('content') else '[]'
+    result = generate_text(prompt, max_tokens=2048)
+    if not result['ok']:
+        return jsonify(result), 500
 
-        # Extract JSON from response
-        import re
-        json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        suggestions = json.loads(json_match.group()) if json_match else []
+    import re
+    json_match = re.search(r'\[.*\]', result['text'], re.DOTALL)
+    suggestions = json.loads(json_match.group()) if json_match else []
 
-        return jsonify({'ok': True, 'suggestions': suggestions})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True, 'suggestions': suggestions})
 
 
 # ─── Routes: Cadence ───────────────────────────────────────────────
@@ -3838,33 +3743,15 @@ Suggest cadence adjustments. Return a JSON array:
 
 Focus on timing optimization and channel mix. 2-3 suggestions max."""
 
-    try:
-        import urllib.request
-        req_body = json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 2048,
-            'messages': [{'role': 'user', 'content': prompt}]
-        })
-        req = urllib.request.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=req_body.encode(),
-            headers={
-                'Content-Type': 'application/json',
-                'x-api-key': api_key,
-                'anthropic-version': '2023-06-01',
-            }
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'] if result.get('content') else '[]'
+    result = generate_text(prompt, max_tokens=2048)
+    if not result['ok']:
+        return jsonify(result), 500
 
-        import re
-        json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        suggestions = json.loads(json_match.group()) if json_match else []
+    import re
+    json_match = re.search(r'\[.*\]', result['text'], re.DOTALL)
+    suggestions = json.loads(json_match.group()) if json_match else []
 
-        return jsonify({'ok': True, 'suggestions': suggestions})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True, 'suggestions': suggestions})
 
 
 @app.route('/api/brands/<int:brand_id>/cadence-check', methods=['GET'])
@@ -3990,6 +3877,63 @@ def set_setting(db, key, value):
     db.commit()
 
 
+def generate_text(prompt, max_tokens=2000, system=None, model=None, messages=None):
+    """Unified text generation helper — works with Claude and Gemini APIs.
+    Use `prompt` for single-turn, or `messages` for multi-turn conversations."""
+    import urllib.request, urllib.error
+    db = get_db()
+    if not model:
+        model = get_setting(db, 'default_text_model', 'claude-sonnet-4-20250514')
+
+    try:
+        if model.startswith('gemini-'):
+            api_key = get_setting(db, 'gemini_api_key')
+            if not api_key:
+                return {'ok': False, 'error': 'Gemini API key not configured'}
+            if messages:
+                contents = [{'role': 'model' if m['role'] == 'assistant' else 'user',
+                             'parts': [{'text': m['content']}]} for m in messages]
+            else:
+                contents = [{'parts': [{'text': prompt}]}]
+            body = {'contents': contents,
+                    'generationConfig': {'maxOutputTokens': max_tokens}}
+            if system:
+                body['systemInstruction'] = {'parts': [{'text': system}]}
+            req = urllib.request.Request(
+                f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}',
+                data=json.dumps(body).encode(),
+                headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode())
+                text = result['candidates'][0]['content']['parts'][0]['text'].strip()
+        else:
+            api_key = get_setting(db, 'anthropic_api_key')
+            if not api_key:
+                return {'ok': False, 'error': 'Claude API key not configured'}
+            api_msgs = messages if messages else [{'role': 'user', 'content': prompt}]
+            body = {'model': model, 'max_tokens': max_tokens, 'messages': api_msgs}
+            if system:
+                body['system'] = system
+            req = urllib.request.Request(
+                'https://api.anthropic.com/v1/messages',
+                data=json.dumps(body).encode(),
+                headers={'Content-Type': 'application/json', 'x-api-key': api_key,
+                         'anthropic-version': '2023-06-01'})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode())
+                text = result['content'][0]['text'].strip()
+        return {'ok': True, 'text': text}
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ''
+        if e.code == 403:
+            return {'ok': False, 'error': f'API access denied (403). Check your API key and billing. {err_body[:200]}'}
+        if e.code == 429:
+            return {'ok': False, 'error': 'Rate limit exceeded. Please try again shortly.'}
+        return {'ok': False, 'error': f'API error {e.code}: {err_body[:300]}'}
+    except Exception as e:
+        return {'ok': False, 'error': f'AI generation failed: {str(e)}'}
+
+
 @app.route('/settings')
 def settings_view():
     db = get_db()
@@ -4029,11 +3973,13 @@ def settings_view():
     drive_syncs_list = [dict(s) for s in drive_syncs]
     brands = [dict(row) for row in db.execute("SELECT id, name FROM brands ORDER BY name").fetchall()]
 
+    default_text_model = get_setting(db, 'default_text_model', 'claude-sonnet-4-20250514')
+
     return render_template('settings.html',
         unread_notifications=unread_notifications, api_keys=api_keys,
         theme_mode=theme_mode, locked=False, password_set=password_set,
         dynamic_keys=dynamic_keys, drive_syncs=drive_syncs_list, last_brand=last_brand,
-        brands=brands)
+        brands=brands, default_text_model=default_text_model)
 
 
 @app.route('/api/settings/password', methods=['POST'])
@@ -4143,6 +4089,19 @@ def toggle_theme():
     return jsonify({'ok': True, 'mode': mode})
 
 
+@app.route('/api/settings/text-model', methods=['POST'])
+def save_text_model():
+    """Save the default text generation model preference."""
+    db = get_db()
+    data = request.json
+    model = data.get('model', 'claude-sonnet-4-20250514')
+    allowed = ('claude-sonnet-4-20250514', 'gemini-2.5-flash')
+    if model not in allowed:
+        model = 'claude-sonnet-4-20250514'
+    set_setting(db, 'default_text_model', model)
+    return jsonify({'ok': True, 'model': model})
+
+
 # ─── Folder Access API ──────────────────────────────────────────────
 
 @app.route('/api/open-folder', methods=['POST'])
@@ -4230,6 +4189,339 @@ def apify_results(run_id):
         return jsonify({'ok': True, 'items': items, 'count': len(items)})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/brands/<int:brand_id>/scraping')
+def scraping_view(brand_id):
+    """Scraping dashboard for a brand."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return "Brand not found", 404
+    unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
+    configs = [dict(r) for r in db.execute("SELECT * FROM scrape_configs WHERE brand_id=? ORDER BY created_at DESC", (brand_id,)).fetchall()]
+    competitors = [dict(r) for r in db.execute("SELECT * FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+    return render_template('scraping/view.html', brand=brand, configs=configs, competitors=competitors,
+                           unread_notifications=unread_notifications)
+
+
+@app.route('/api/scrape-configs', methods=['POST'])
+def create_scrape_config():
+    """Create or update a scrape configuration."""
+    db = get_db()
+    data = request.json
+    db.execute("""
+        INSERT INTO scrape_configs (brand_id, target_name, target_type, actor_id, input_config, schedule, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (data['brand_id'], data['target_name'], data.get('target_type', 'linkedin_company'),
+          data.get('actor_id', 'apify/web-scraper'), json.dumps(data.get('input_config', {})),
+          data.get('schedule', 'weekly'), data.get('enabled', 1)))
+    db.commit()
+    return jsonify({'ok': True, 'id': db.execute("SELECT last_insert_rowid()").fetchone()[0]})
+
+
+@app.route('/api/scrape-configs/<int:config_id>/toggle', methods=['PUT'])
+def toggle_scrape_config(config_id):
+    """Enable/disable a scrape configuration."""
+    db = get_db()
+    db.execute("UPDATE scrape_configs SET enabled = CASE WHEN enabled=1 THEN 0 ELSE 1 END WHERE id=?", (config_id,))
+    db.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/scrape-configs/<int:config_id>', methods=['DELETE'])
+def delete_scrape_config(config_id):
+    """Delete a scrape configuration."""
+    db = get_db()
+    db.execute("DELETE FROM scrape_configs WHERE id=?", (config_id,))
+    db.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/scrape-configs/<int:config_id>/run', methods=['POST'])
+def run_scrape_config(config_id):
+    """Manually run a scrape configuration via Apify."""
+    db = get_db()
+    config = db.execute("SELECT * FROM scrape_configs WHERE id=?", (config_id,)).fetchone()
+    if not config:
+        return jsonify({'ok': False, 'error': 'Config not found'}), 404
+
+    api_key = get_setting(db, 'apify_api_key')
+    if not api_key:
+        return jsonify({'ok': False, 'error': 'Apify API key not configured. Go to Settings.'}), 400
+
+    try:
+        import urllib.request
+        input_config = json.loads(config['input_config'] or '{}')
+        url = f"https://api.apify.com/v2/acts/{config['actor_id']}/runs?token={api_key}"
+        req = urllib.request.Request(url, data=json.dumps(input_config).encode(),
+            headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read().decode())
+            run_id = result.get('data', {}).get('id', '')
+
+        db.execute("""
+            UPDATE scrape_configs SET last_run_id=?, last_run_at=CURRENT_TIMESTAMP WHERE id=?
+        """, (run_id, config_id))
+        db.commit()
+        return jsonify({'ok': True, 'run_id': run_id})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/brands/<int:brand_id>/sync-competitors', methods=['POST'])
+def sync_competitors_from_registry(brand_id):
+    """Import competitors from 08_Research/competitor_registry.md into competitor_profiles."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand or not brand['folder_path']:
+        return jsonify({'ok': False, 'error': 'Brand folder not configured'}), 400
+
+    registry_path = os.path.join(brand['folder_path'], '08_Research', 'competitor_registry.md')
+    if not os.path.isfile(registry_path):
+        return jsonify({'ok': False, 'error': 'competitor_registry.md not found in 08_Research/'}), 404
+
+    import re
+    with open(registry_path, 'r', errors='ignore') as f:
+        text = f.read()
+
+    # Parse markdown table rows: | # | Company | Region | LinkedIn URL | Category | Active |
+    rows = re.findall(r'\|\s*\d+\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|', text)
+    added, skipped = 0, 0
+    for company, region, linkedin_url, category, active in rows:
+        company = company.strip()
+        linkedin_url = linkedin_url.strip()
+        active = active.strip().lower()
+        if active != 'yes':
+            continue
+        # Check if already exists
+        existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
+                              (brand_id, company)).fetchone()
+        if existing:
+            skipped += 1
+            continue
+        db.execute("""
+            INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, notes)
+            VALUES (?, ?, ?, ?)
+        """, (brand_id, company, linkedin_url, f"{region.strip()} — {category.strip()}"))
+        added += 1
+
+    db.commit()
+    return jsonify({'ok': True, 'added': added, 'skipped': skipped})
+
+
+@app.route('/api/brands/<int:brand_id>/populate-voice', methods=['POST'])
+def populate_brand_voice(brand_id):
+    """Auto-populate brand voice references from brand guidelines and CLAUDE.md data."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    existing_count = db.execute("SELECT COUNT(*) FROM brand_voice_references WHERE brand_id=?", (brand_id,)).fetchone()[0]
+
+    # Use Claude to analyze the brand and generate voice references
+    brand_context = f"""Brand: {brand['name']}
+Voice summary: {brand['voice_summary'] or 'Not set'}
+Tagline: {brand['tagline'] or 'Not set'}"""
+
+    # Read CLAUDE.md if available for richer context
+    claude_md_path = os.path.join(brand['folder_path'] or '', 'CLAUDE.md')
+    brand_docs = ''
+    if os.path.isfile(claude_md_path):
+        with open(claude_md_path, 'r', errors='ignore') as f:
+            brand_docs = f.read()[:3000]
+
+    # Read brand guidelines PDFs or docs from 01_Brand
+    brand_folder = os.path.join(brand['folder_path'] or '', '01_Brand')
+    brand_files_info = ''
+    if os.path.isdir(brand_folder):
+        files = os.listdir(brand_folder)
+        brand_files_info = f"Files in brand folder: {', '.join(files)}"
+
+    prompt = f"""Analyze this brand and generate comprehensive brand voice references.
+
+{brand_context}
+
+Brand documentation:
+{brand_docs[:2500] if brand_docs else 'No documentation available — infer from brand name and voice summary.'}
+
+{brand_files_info}
+
+Generate EXACTLY this JSON structure with realistic, specific brand voice guidelines:
+{{
+  "voice_summary": "2-3 sentence brand voice summary (max 500 chars)",
+  "tone_keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
+  "dos": [
+    "Specific writing guideline the brand should follow",
+    "Another specific do guideline",
+    "Third do guideline"
+  ],
+  "donts": [
+    "Specific thing the brand should avoid in writing",
+    "Another specific don't guideline",
+    "Third don't guideline"
+  ],
+  "text_samples": [
+    "A sample paragraph or sentence in the brand's ideal voice (50-150 words)",
+    "Another sample in the brand voice"
+  ]
+}}
+
+Return ONLY valid JSON, no markdown."""
+
+    result = generate_text(prompt, max_tokens=1500)
+    if not result['ok']:
+        return jsonify(result), 500
+
+    try:
+        import re
+        response_text = result['text']
+        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if match:
+            voice_data = json.loads(match.group())
+        else:
+            return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
+
+        added = 0
+        source = 'AI brand analysis'
+
+        if voice_data.get('voice_summary') and not brand['voice_summary']:
+            db.execute("UPDATE brands SET voice_summary=? WHERE id=?", (voice_data['voice_summary'][:500], brand_id))
+
+        for kw in voice_data.get('tone_keywords', []):
+            db.execute("INSERT INTO brand_voice_references (brand_id, ref_type, content, source) VALUES (?,?,?,?)",
+                       (brand_id, 'tone_keyword', kw, source))
+            added += 1
+
+        for do in voice_data.get('dos', []):
+            db.execute("INSERT INTO brand_voice_references (brand_id, ref_type, content, source) VALUES (?,?,?,?)",
+                       (brand_id, 'do', do, source))
+            added += 1
+
+        for dont in voice_data.get('donts', []):
+            db.execute("INSERT INTO brand_voice_references (brand_id, ref_type, content, source) VALUES (?,?,?,?)",
+                       (brand_id, 'dont', dont, source))
+            added += 1
+
+        for sample in voice_data.get('text_samples', []):
+            db.execute("INSERT INTO brand_voice_references (brand_id, ref_type, content, source) VALUES (?,?,?,?)",
+                       (brand_id, 'text_sample', sample, source))
+            added += 1
+
+        db.commit()
+        return jsonify({'ok': True, 'added': added, 'had_existing': existing_count})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/brands/<int:brand_id>/discover', methods=['POST'])
+def ai_discover(brand_id):
+    """Use AI to discover lookalike competitors, industry forums, or industry leaders."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    data = request.json
+    discover_type = data.get('type', 'competitors')  # competitors, forums, leaders
+
+    # Get existing data for context
+    existing_competitors = [dict(r) for r in db.execute(
+        "SELECT competitor_name, linkedin_url, notes FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+    existing_names = [c['competitor_name'] for c in existing_competitors]
+
+    brand_context = f"""Brand: {brand['name']}
+Industry: F&B / Retail Technology (POS, CRM, AI, Digital Transformation)
+Tagline: {brand['tagline'] or ''}
+Markets: Singapore, Japan, Vietnam, Australia, APAC
+Products: Cloud POS, Unified Restaurant Operating Platform, AI-powered analytics, Self-service kiosks
+Target customers: Multi-store F&B chains, QSR, cloud kitchens, retail chains (5+ outlets)"""
+
+    if existing_competitors:
+        brand_context += f"\n\nKnown competitors: {', '.join(existing_names)}"
+
+    if discover_type == 'competitors':
+        prompt = f"""{brand_context}
+
+Find 8-10 additional competitors or lookalike companies that {brand['name']} should monitor. Focus on:
+- Companies in similar space (F&B POS, restaurant tech, retail DX) in APAC
+- Both direct competitors and adjacent players
+- Include companies the brand may not be tracking yet
+- DO NOT include these already-tracked companies: {', '.join(existing_names) if existing_names else 'none'}
+
+Return ONLY a JSON array:
+[{{"name": "Company Name", "linkedin_url": "https://linkedin.com/company/slug", "website": "https://example.com", "region": "Country/Region", "category": "What they do (brief)", "why": "Why they're relevant to monitor"}}]"""
+
+    elif discover_type == 'forums':
+        prompt = f"""{brand_context}
+
+Find 10-12 industry forums, communities, subreddits, Slack groups, and online communities where {brand['name']}'s target audience (F&B operators, restaurant owners, retail chain managers) actively discuss:
+- POS systems and restaurant technology
+- Digital transformation in F&B
+- Multi-store operations and scaling
+- AI in hospitality/retail
+
+Include both APAC-specific and global communities.
+
+Return ONLY a JSON array:
+[{{"name": "Forum/Community Name", "url": "https://...", "platform": "reddit/slack/discord/forum/linkedin_group/facebook_group", "audience": "Who participates", "activity_level": "high/medium/low", "why": "Why this community matters for {brand['name']}"}}]"""
+
+    elif discover_type == 'leaders':
+        prompt = f"""{brand_context}
+
+Find 10-12 key industry leaders and influencers in the F&B technology, restaurant tech, and retail DX space across APAC that {brand['name']} should follow and engage with. Include:
+- CEOs/founders of competing or complementary companies
+- Industry analysts and thought leaders
+- Conference speakers and content creators in restaurant/retail tech
+- Journalists covering F&B technology in APAC
+
+Return ONLY a JSON array:
+[{{"name": "Person Name", "title": "Job Title", "company": "Company", "linkedin_url": "https://linkedin.com/in/slug", "region": "Country", "why": "Why they're influential and worth engaging with"}}]"""
+    else:
+        return jsonify({'ok': False, 'error': f'Unknown discover type: {discover_type}'}), 400
+
+    result = generate_text(prompt, max_tokens=2000)
+    if not result['ok']:
+        return jsonify(result), 500
+
+    try:
+        import re
+        response_text = result['text']
+        match = re.search(r'\[.*\]', response_text, re.DOTALL)
+        if match:
+            discoveries = json.loads(match.group())
+        else:
+            return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
+
+        return jsonify({'ok': True, 'type': discover_type, 'results': discoveries, 'count': len(discoveries)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/brands/<int:brand_id>/discover/apply', methods=['POST'])
+def apply_discoveries(brand_id):
+    """Save discovered competitors to the database."""
+    db = get_db()
+    data = request.json
+    items = data.get('items', [])
+    added = 0
+    for item in items:
+        name = item.get('name', '')
+        if not name:
+            continue
+        existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
+                              (brand_id, name)).fetchone()
+        if existing:
+            continue
+        db.execute("""
+            INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, website_url, notes)
+            VALUES (?, ?, ?, ?, ?)
+        """, (brand_id, name, item.get('linkedin_url', ''), item.get('website', ''),
+              f"{item.get('region', '')} — {item.get('category', item.get('why', ''))}"))
+        added += 1
+    db.commit()
+    return jsonify({'ok': True, 'added': added})
 
 
 # ─── Folder ↔ Database Sync ──────────────────────────────────────────
@@ -4764,6 +5056,90 @@ def gemini_generate_image():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+@app.route('/api/generate-image/nano-banana', methods=['POST'])
+def nano_banana_generate():
+    """Generate an infographic or text-rich image using Nano Banana Pro (Gemini 3 Pro Image)."""
+    db = get_db()
+    gemini_key = get_setting(db, 'gemini_api_key')
+    if not gemini_key:
+        return jsonify({'ok': False, 'error': 'Gemini API key not configured. Go to Settings.'}), 400
+
+    data = request.json
+    brand_id = data.get('brand_id')
+    prompt = data.get('prompt', '')
+    content_item_id = data.get('content_item_id')
+
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    try:
+        import urllib.request, urllib.error
+        api_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={gemini_key}'
+        req_body = json.dumps({
+            'contents': [{'parts': [{'text': prompt}]}],
+            'generationConfig': {
+                'responseModalities': ['TEXT', 'IMAGE'],
+                'maxOutputTokens': 8192
+            }
+        })
+        req = urllib.request.Request(api_url, data=req_body.encode(),
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            result = json.loads(resp.read().decode())
+
+        # Extract images from generateContent response
+        saved_files = []
+        parts = result.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+        img_idx = 0
+        for part in parts:
+            inline = part.get('inlineData')
+            if inline:
+                img_b64 = inline.get('data', '')
+                mime = inline.get('mimeType', 'image/png')
+                ext = '.png' if 'png' in mime else '.jpg'
+                img_data = base64.b64decode(img_b64)
+
+                output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Images')
+                os.makedirs(output_dir, exist_ok=True)
+                if content_item_id:
+                    filename = f"item-{content_item_id}_{img_idx+1:02d}{ext}"
+                else:
+                    filename = f"nanobanana_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{img_idx}{ext}"
+                filepath = os.path.join(output_dir, filename)
+                with open(filepath, 'wb') as f:
+                    f.write(img_data)
+                rel_path = os.path.relpath(filepath, brand['folder_path'])
+                saved_files.append({'name': filename, 'path': filepath, 'rel_path': rel_path})
+                img_idx += 1
+
+        # Auto-attach to content item if linked
+        if content_item_id and saved_files:
+            item = db.execute('SELECT file_paths FROM content_items WHERE id=?', (content_item_id,)).fetchone()
+            paths = json.loads(item['file_paths'] or '[]') if item else []
+            paths.extend([f['rel_path'] for f in saved_files])
+            db.execute('UPDATE content_items SET file_paths=? WHERE id=?', (json.dumps(paths), content_item_id))
+
+        db.execute("""
+            INSERT INTO notifications (brand_id, notification_type, title, message, due_date)
+            VALUES (?, 'system', ?, ?, ?)
+        """, (brand_id, 'Nano Banana Pro: Infographic Generated',
+              f'Generated {len(saved_files)} image(s) from prompt: {prompt[:100]}...',
+              datetime.now().strftime('%Y-%m-%d')))
+        db.commit()
+
+        return jsonify({'ok': True, 'files': saved_files, 'count': len(saved_files)})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            msg = json.loads(body).get('error', {}).get('message', body)
+        except Exception:
+            msg = body
+        return jsonify({'ok': False, 'error': f'Nano Banana Pro API error ({e.code}): {msg}'}), 500
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/api/gemini/generate-video', methods=['POST'])
 def gemini_generate_video():
     """Generate a video using Gemini Veo API."""
@@ -4990,39 +5366,22 @@ def run_claude_step():
     if not brand:
         return jsonify({'ok': False, 'error': 'Brand not found'}), 404
 
-    # Call Claude API
-    try:
-        import urllib.request
-        req_body = json.dumps({
-            'model': 'claude-sonnet-4-20250514',
-            'max_tokens': 4096,
-            'messages': [{'role': 'user', 'content': prompt}]
-        })
-        req = urllib.request.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=req_body.encode(),
-            headers={
-                'Content-Type': 'application/json',
-                'x-api-key': api_key,
-                'anthropic-version': '2023-06-01',
-            }
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            response_text = result['content'][0]['text'] if result.get('content') else ''
+    result = generate_text(prompt, max_tokens=4096)
+    if not result['ok']:
+        return jsonify(result), 500
 
-        # Create notification
-        db.execute("""
-            INSERT INTO notifications (brand_id, notification_type, title, message, due_date)
-            VALUES (?, 'system', ?, ?, ?)
-        """, (brand_id, f'Claude: {step_name}',
-              f'Claude completed "{step_name}". Response: {response_text[:200]}...',
-              datetime.now().strftime('%Y-%m-%d')))
-        db.commit()
+    response_text = result['text']
 
-        return jsonify({'ok': True, 'response': response_text, 'step_name': step_name})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    # Create notification
+    db.execute("""
+        INSERT INTO notifications (brand_id, notification_type, title, message, due_date)
+        VALUES (?, 'system', ?, ?, ?)
+    """, (brand_id, f'AI: {step_name}',
+          f'AI completed "{step_name}". Response: {response_text[:200]}...',
+          datetime.now().strftime('%Y-%m-%d')))
+    db.commit()
+
+    return jsonify({'ok': True, 'response': response_text, 'step_name': step_name})
 
 
 # ─── Client Review & PDF Export ────────────────────────────────────
@@ -5460,29 +5819,14 @@ Return ONLY valid JSON, no markdown."""
     results = {}
     for key, prompt in prompts.items():
         try:
-            import urllib.request
-            req_body = json.dumps({
-                'model': 'claude-sonnet-4-20250514',
-                'max_tokens': 4096,
-                'messages': [{'role': 'user', 'content': prompt}]
-            })
-            req = urllib.request.Request(
-                'https://api.anthropic.com/v1/messages',
-                data=req_body.encode(),
-                headers={
-                    'Content-Type': 'application/json',
-                    'x-api-key': api_key,
-                    'anthropic-version': '2023-06-01',
-                }
-            )
-            with urllib.request.urlopen(req, timeout=90) as resp:
-                result = json.loads(resp.read().decode())
-                text = result['content'][0]['text'] if result.get('content') else ''
-                # Parse JSON from response
-                text = text.strip()
-                if text.startswith('```'):
-                    text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
-                results[key] = json.loads(text)
+            result = generate_text(prompt, max_tokens=4096)
+            if not result['ok']:
+                results[key] = {'error': result['error']}
+                continue
+            text = result['text'].strip()
+            if text.startswith('```'):
+                text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+            results[key] = json.loads(text)
         except Exception as e:
             results[key] = {'error': str(e)}
 
@@ -6686,27 +7030,10 @@ Please provide:
 3. **Sentiment Analysis** (positive/neutral/negative breakdown with percentages)
 4. **Actionable Recommendations** (3-5 specific actions for improving content or service)
 5. **Content/Service Alignment Score** (1-10) with explanation"""
-    # Call Claude
-    settings_row = db.execute("SELECT value FROM app_settings WHERE key = 'anthropic_api_key'").fetchone()
-    if not settings_row or not settings_row['value']:
-        return jsonify({'ok': False, 'error': 'Claude API key not configured'}), 400
-    api_key = settings_row['value']
-    if api_key.startswith('enc:'):
-        from cryptography.fernet import Fernet
-        enc_key = db.execute("SELECT value FROM app_settings WHERE key = 'encryption_key'").fetchone()
-        if enc_key:
-            api_key = Fernet(enc_key['value'].encode()).decrypt(api_key[4:].encode()).decode()
-    try:
-        body = json.dumps({'model': 'claude-sonnet-4-20250514', 'max_tokens': 2000,
-                           'messages': [{'role': 'user', 'content': prompt}]}).encode()
-        req = urllib.request.Request('https://api.anthropic.com/v1/messages',
-                                    data=body, headers={'Content-Type': 'application/json',
-                                                        'x-api-key': api_key, 'anthropic-version': '2023-06-01'})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-        insight_text = result['content'][0]['text']
-    except Exception as e:
-        return jsonify({'ok': False, 'error': f'Claude API error: {str(e)}'}), 500
+    result = generate_text(prompt, max_tokens=2000)
+    if not result['ok']:
+        return jsonify(result), 500
+    insight_text = result['text']
     db.execute('INSERT INTO feedback_insights (form_id, insight_text, response_count_at_analysis) VALUES (?, ?, ?)',
                (form_id, insight_text, len(responses)))
     db.commit()
