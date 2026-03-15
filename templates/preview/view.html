@@ -1,0 +1,251 @@
+{% extends "brands/detail.html" %}
+{% block title %}Content Studio — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Content Studio{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6" x-data="{ filter: 'all', viewMode: 'grid' }">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Content Studio</h1>
+            <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">Preview all delivered content — images, videos, audio, and documents</p>
+        </div>
+        <div class="flex gap-2">
+            <button @click="viewMode = 'grid'" :class="viewMode === 'grid' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-sm rounded-lg transition-colors" :style="viewMode !== 'grid' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''">
+                <i class="fas fa-th"></i>
+            </button>
+            <button @click="viewMode = 'list'" :class="viewMode === 'list' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-sm rounded-lg transition-colors" :style="viewMode !== 'list' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''">
+                <i class="fas fa-list"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Content Items with Inline Preview -->
+    {% if content_items %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-file-alt mr-2 text-dm-accent"></i>Content Items ({{ content_items | length }})</h2>
+        </div>
+        <div class="max-h-[600px] overflow-y-auto scrollbar-thin" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for item in content_items %}
+            <div class="transition-colors cursor-pointer" style="{% if not loop.last %}border-bottom: 1px solid {{ theme_colors['border-primary'] }};{% endif %}"
+                 x-data="{ expanded: false }"
+                 onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="if(!this.querySelector('[x-data]').__x.$data.expanded) this.style.background='transparent'">
+                <!-- Summary row (clickable) -->
+                <div class="p-4 flex items-start gap-3" @click="expanded = !expanded">
+                    <div class="w-8 h-8 rounded flex items-center justify-center flex-shrink-0
+                        {% if item.content_type == 'video' %}bg-red-500/10 text-red-400
+                        {% elif item.content_type == 'carousel' %}bg-blue-500/10 text-blue-400
+                        {% elif item.content_type == 'blog' %}bg-green-500/10 text-green-400
+                        {% else %}text-sm{% endif %}" {% if item.content_type not in ['video', 'carousel', 'blog'] %}style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"{% endif %}>
+                        <i class="fas fa-{% if item.content_type == 'video' %}video{% elif item.content_type == 'carousel' %}images{% elif item.content_type == 'blog' %}newspaper{% else %}file-alt{% endif %} text-sm"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-chevron-right text-[10px] transition-transform" :class="expanded && 'rotate-90'" style="color: {{ theme_colors['text-muted'] }}"></i>
+                            <h4 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ item.title }}</h4>
+                            <span class="px-2 py-0.5 rounded-full text-[10px]
+                                {% if item.status == 'published' %}bg-green-500/10 text-green-400
+                                {% elif item.status == 'review' %}bg-yellow-500/10 text-yellow-400
+                                {% else %}{% endif %}" {% if item.status not in ['published', 'review'] %}style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"{% endif %}>{{ item.status }}</span>
+                        </div>
+                        <div class="flex gap-3 mt-1 text-[10px]" style="color: {{ theme_colors['text-muted'] }}">
+                            <span>{{ item.content_type }}</span>
+                            <span>{{ item.market }}</span>
+                            {% if item.pillar_name %}
+                            <span style="color: {{ item.pillar_color }}">{{ item.pillar_name }}</span>
+                            {% endif %}
+                            {% if item.publish_date %}
+                            <span><i class="far fa-calendar mr-0.5"></i>{{ item.publish_date }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <a href="/brands/{{ brand.id }}/feedback?edit={{ item.id }}" @click.stop class="text-xs text-dm-accent hover:underline flex-shrink-0">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </a>
+                </div>
+
+                <!-- Expanded Preview: Copy + Media side by side -->
+                <div x-show="expanded" x-cloak class="px-4 pb-4" @click.stop>
+                    <div class="flex gap-4 rounded-lg p-4" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <!-- Copy Preview -->
+                        <div class="flex-1 min-w-0">
+                            <div class="text-[10px] uppercase tracking-wider mb-2 font-medium" style="color: {{ theme_colors['text-muted'] }}">
+                                <i class="fas fa-align-left mr-1"></i>Copy
+                            </div>
+                            {% if item.body_text %}
+                            <div class="text-sm whitespace-pre-line leading-relaxed max-h-60 overflow-y-auto scrollbar-thin" style="color: {{ theme_colors['text-primary'] }}">{{ item.body_text }}</div>
+                            {% else %}
+                            <p class="text-sm italic" style="color: {{ theme_colors['text-disabled'] }}">No copy text available</p>
+                            {% endif %}
+                        </div>
+                        <!-- Media Preview -->
+                        <div class="w-64 flex-shrink-0">
+                            <div class="text-[10px] uppercase tracking-wider mb-2 font-medium" style="color: {{ theme_colors['text-muted'] }}">
+                                <i class="fas fa-image mr-1"></i>Media
+                            </div>
+                            <div id="media-preview-{{ item.id }}" class="space-y-2">
+                                <div class="aspect-video rounded-lg flex items-center justify-center" style="background: {{ theme_colors['bg-primary'] }}">
+                                    <div class="text-center p-4">
+                                        <i class="fas fa-{% if item.content_type == 'video' %}video{% elif item.content_type == 'carousel' %}images{% else %}image{% endif %} text-2xl" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                                        <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">
+                                            {% if item.content_type == 'carousel' %}Carousel slides{% elif item.content_type == 'video' %}Video preview{% else %}Attach media in Asset Hub{% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <a href="/brands/{{ brand.id }}/assets" class="text-[10px] text-dm-accent hover:underline mt-2 inline-block">
+                                <i class="fas fa-external-link-alt mr-0.5"></i>Open Asset Hub
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filter Bar -->
+    <div class="flex gap-2">
+        <button @click="filter = 'all'" :class="filter === 'all' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors" :style="filter !== 'all' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''">All</button>
+        <button @click="filter = 'image'" :class="filter === 'image' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors" :style="filter !== 'image' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''"><i class="fas fa-image mr-1"></i>Images</button>
+        <button @click="filter = 'video'" :class="filter === 'video' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors" :style="filter !== 'video' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''"><i class="fas fa-video mr-1"></i>Videos</button>
+        <button @click="filter = 'audio'" :class="filter === 'audio' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors" :style="filter !== 'audio' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''"><i class="fas fa-music mr-1"></i>Audio</button>
+        <button @click="filter = 'document'" :class="filter === 'document' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors" :style="filter !== 'document' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''"><i class="fas fa-file-pdf mr-1"></i>Documents</button>
+    </div>
+
+    <!-- Media Files Gallery -->
+    {% if media_files %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-photo-video mr-2 text-dm-accent"></i>Media Files ({{ media_files | length }})</h2>
+        </div>
+
+        <!-- Grid View -->
+        <div x-show="viewMode === 'grid'" class="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {% for file in media_files %}
+            <div x-show="filter === 'all' || filter === '{{ file.type }}'"
+                 class="rounded-lg overflow-hidden transition-colors group" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}"
+                 onmouseenter="this.style.borderColor='{{ theme_colors['border-hover'] }}'" onmouseleave="this.style.borderColor='{{ theme_colors['border-primary'] }}'">
+                <div class="aspect-square relative overflow-hidden flex items-center justify-center" style="background: {{ theme_colors['bg-primary'] }}">
+                    {% if file.type == 'image' %}
+                    <img src="/media/{{ file.rel_path }}" alt="{{ file.name }}" class="w-full h-full object-cover" loading="lazy">
+                    {% elif file.type == 'video' %}
+                    <video src="/media/{{ file.rel_path }}" class="w-full h-full object-cover" preload="metadata"></video>
+                    <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <i class="fas fa-play-circle text-4xl text-white/80"></i>
+                    </div>
+                    {% elif file.type == 'audio' %}
+                    <div class="text-center p-4">
+                        <i class="fas fa-music text-4xl text-purple-400 mb-2"></i>
+                        <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ file.ext }}</p>
+                    </div>
+                    {% else %}
+                    <div class="text-center p-4">
+                        <i class="fas fa-file-pdf text-4xl text-red-400 mb-2"></i>
+                        <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ file.ext }}</p>
+                    </div>
+                    {% endif %}
+                    <!-- Type Badge -->
+                    <span class="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] bg-black/60 text-white">{{ file.type }}</span>
+                </div>
+                <div class="p-2">
+                    <p class="text-xs truncate" style="color: {{ theme_colors['text-primary'] }}" title="{{ file.name }}">{{ file.name }}</p>
+                    <div class="flex justify-between text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">
+                        <span>{{ file.folder }}</span>
+                        <span>{{ file.modified }}</span>
+                    </div>
+                </div>
+                <!-- Hover actions -->
+                <div class="p-2 pt-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {% if file.type == 'video' %}
+                    <button onclick="playMedia('/media/{{ file.rel_path }}', 'video')" class="w-full text-xs py-1 rounded transition-colors" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'" onmouseleave="this.style.background='{{ theme_colors['bg-primary'] }}'">
+                        <i class="fas fa-play mr-1"></i>Play
+                    </button>
+                    {% elif file.type == 'audio' %}
+                    <button onclick="playMedia('/media/{{ file.rel_path }}', 'audio')" class="w-full text-xs py-1 rounded transition-colors" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'" onmouseleave="this.style.background='{{ theme_colors['bg-primary'] }}'">
+                        <i class="fas fa-play mr-1"></i>Play
+                    </button>
+                    {% elif file.type == 'image' %}
+                    <button onclick="previewImage('/media/{{ file.rel_path }}', '{{ file.name }}')" class="w-full text-xs py-1 rounded transition-colors" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'" onmouseleave="this.style.background='{{ theme_colors['bg-primary'] }}'">
+                        <i class="fas fa-expand mr-1"></i>Full Size
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- List View -->
+        <div x-show="viewMode === 'list'">
+            {% for file in media_files %}
+            <div x-show="filter === 'all' || filter === '{{ file.type }}'"
+                 class="p-3 flex items-center gap-4 transition-colors" style="{% if not loop.last %}border-bottom: 1px solid {{ theme_colors['border-primary'] }};{% endif %}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="this.style.background='transparent'">
+                <i class="fas fa-{% if file.type == 'image' %}image text-blue-400{% elif file.type == 'video' %}video text-red-400{% elif file.type == 'audio' %}music text-purple-400{% else %}file-pdf text-red-400{% endif %} w-5 text-center"></i>
+                <span class="flex-1 text-sm truncate" style="color: {{ theme_colors['text-primary'] }}">{{ file.name }}</span>
+                <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ file.folder }}</span>
+                <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ file.modified }}</span>
+                <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ (file.size / 1024) | round(1) }}KB</span>
+                {% if file.type in ['video', 'audio'] %}
+                <button onclick="playMedia('/media/{{ file.rel_path }}', '{{ file.type }}')" class="text-xs text-dm-accent hover:underline">Play</button>
+                {% elif file.type == 'image' %}
+                <button onclick="previewImage('/media/{{ file.rel_path }}', '{{ file.name }}')" class="text-xs text-dm-accent hover:underline">Preview</button>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="rounded-xl p-12 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-photo-video text-4xl mb-4" style="color: {{ theme_colors['text-disabled'] }}"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">No media files found</h3>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">Content files will appear here from 04_Content/ and 10_Pipeline/ folders</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Media Player Modal -->
+<div id="mediaModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onclick="if(event.target===this){this.classList.add('hidden'); stopMedia()}">
+    <div class="relative max-w-4xl w-full mx-4">
+        <button onclick="document.getElementById('mediaModal').classList.add('hidden'); stopMedia()" class="absolute -top-10 right-0 text-white hover:text-gray-300">
+            <i class="fas fa-times text-xl"></i>
+        </button>
+        <div id="mediaContent" class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}"></div>
+    </div>
+</div>
+
+<!-- Image Preview Modal -->
+<div id="imageModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="relative max-w-5xl w-full mx-4">
+        <button onclick="document.getElementById('imageModal').classList.add('hidden')" class="absolute -top-10 right-0 text-white hover:text-gray-300">
+            <i class="fas fa-times text-xl"></i>
+        </button>
+        <img id="previewImg" src="" alt="" class="w-full rounded-xl">
+        <p id="previewImgName" class="text-center text-sm mt-2" style="color: {{ theme_colors['text-muted'] }}"></p>
+    </div>
+</div>
+
+<script>
+function playMedia(src, type) {
+    const modal = document.getElementById('mediaModal');
+    const content = document.getElementById('mediaContent');
+    if (type === 'video') {
+        content.innerHTML = `<video src="${src}" controls autoplay class="w-full" style="max-height:80vh"></video>`;
+    } else {
+        content.innerHTML = `<div class="p-8"><audio src="${src}" controls autoplay class="w-full"></audio></div>`;
+    }
+    modal.classList.remove('hidden');
+}
+
+function stopMedia() {
+    const content = document.getElementById('mediaContent');
+    content.innerHTML = '';
+}
+
+function previewImage(src, name) {
+    document.getElementById('previewImg').src = src;
+    document.getElementById('previewImgName').textContent = name;
+    document.getElementById('imageModal').classList.remove('hidden');
+}
+</script>
+{% endblock %}

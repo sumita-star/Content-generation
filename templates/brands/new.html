@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Add Brand — DigitalAIzeme{% endblock %}
+{% block page_title %}Add New Brand{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="border rounded-xl p-6" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <h2 class="text-lg font-bold mb-6 flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+            <i class="fas fa-plus-circle text-dm-accent"></i> Add New Brand
+        </h2>
+
+        <form method="POST" action="/brands/new" class="space-y-5">
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Brand Name *</label>
+                <input type="text" name="name" required class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-dm-primary"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                    placeholder="e.g. DIQIT, Acme Corp">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Tagline</label>
+                <input type="text" name="tagline" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-dm-primary"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                    placeholder="e.g. Bring Your Ideas To Life">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Primary Color</label>
+                    <div class="flex gap-2">
+                        <input type="color" name="primary_color" value="#000000" class="w-10 h-10 rounded cursor-pointer" style="border: 1px solid {{ theme_colors['border-hover'] }}; background: {{ theme_colors['bg-tertiary'] }}">
+                        <input type="text" value="#000000" class="flex-1 rounded-lg px-3 py-2 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" readonly>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Accent Color</label>
+                    <div class="flex gap-2">
+                        <input type="color" name="accent_color" value="#6366f1" class="w-10 h-10 rounded cursor-pointer" style="border: 1px solid {{ theme_colors['border-hover'] }}; background: {{ theme_colors['bg-tertiary'] }}">
+                        <input type="text" value="#6366f1" class="flex-1 rounded-lg px-3 py-2 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Local Folder Path</label>
+                <input type="text" name="folder_path" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-dm-primary"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                    placeholder="/Users/you/Documents/BrandName">
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Path to the brand's content folder. The standard DIQIT folder structure (01_Brand through 10_Pipeline) will be auto-created.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Website</label>
+                <input type="text" name="website" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-dm-primary"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                    placeholder="www.example.com">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Brand Voice Summary</label>
+                <textarea name="voice_summary" rows="3" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-dm-primary resize-none"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                    placeholder="Describe the brand's tone, style, and communication approach..."></textarea>
+            </div>
+
+            <div class="flex gap-3 pt-4">
+                <button type="submit" class="px-6 py-2.5 bg-dm-primary hover:bg-dm-secondary text-white font-medium rounded-lg transition-colors">
+                    Create Brand
+                </button>
+                <a href="/brands" class="px-6 py-2.5 rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

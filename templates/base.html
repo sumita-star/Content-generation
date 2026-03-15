@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DigitalAIzeme{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@300;400;500;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {{ tailwind_theme }}
+            }
+        }
+    </script>
+    <style>
+        {{ css_variables }}
+
+        body { font-family: '{{ theme_fonts.body }}', 'Open Sans', sans-serif; }
+        h1, h2, h3, h4, h5, h6, .font-heading { font-family: '{{ theme_fonts.heading }}', 'Poppins', sans-serif; }
+        code, pre, .font-mono { font-family: '{{ theme_fonts.mono }}', 'Roboto Mono', monospace; }
+
+        [x-cloak] { display: none !important; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--dm-text-muted); border-radius: 3px; }
+        .kanban-col { min-height: 200px; }
+        .drag-over { background: {{ theme_colors['accent-primary'] }}15; border-color: {{ theme_colors['accent-primary'] }} !important; }
+        @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .animate-slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .pulse-dot { animation: pulse-dot 2s infinite; }
+        @keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+        .toast-enter { animation: toastIn 0.3s ease-out; }
+        .toast-exit { animation: toastOut 0.25s ease-in forwards; }
+
+        /* Contextual Help Tooltips */
+        .help-tip { position: relative; display: inline-flex; cursor: help; }
+        .help-tip:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            right: 0;
+            width: 240px;
+            padding: 8px 12px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: {{ theme_colors['text-primary'] }};
+            background: {{ theme_colors['bg-tertiary'] }};
+            border: 1px solid {{ theme_colors['border-hover'] }};
+            border-radius: 8px;
+            z-index: 50;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+        .help-tip:hover::before {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 2px);
+            right: 8px;
+            border: 6px solid transparent;
+            border-top-color: {{ theme_colors['border-hover'] }};
+            z-index: 51;
+        }
+    </style>
+</head>
+<body class="h-full" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}" x-data="{
+    sidebarOpen: window.innerWidth >= 768, notifOpen: false, brandPickerOpen: false,
+    toggleTheme() {
+        const newMode = '{{ theme_mode }}' === 'dark' ? 'light' : 'dark';
+        fetch('/api/settings/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: newMode})
+        }).then(() => location.reload());
+    }
+}">
+    <div class="flex h-full relative">
+        <!-- Mobile sidebar backdrop -->
+        <div x-show="sidebarOpen" @click="sidebarOpen = false" class="fixed inset-0 bg-black/50 z-30 md:hidden" x-transition.opacity x-cloak></div>
+        <!-- Sidebar -->
+        <aside class="w-60 flex flex-col flex-shrink-0 border-r fixed inset-y-0 left-0 z-40 md:static md:z-auto" style="background: {{ theme_colors['sidebar-bg'] }}; border-color: {{ theme_colors['border-primary'] }}" x-show="sidebarOpen" x-transition:enter="transition transform ease-out duration-200" x-transition:enter-start="-translate-x-full" x-transition:enter-end="translate-x-0" x-transition:leave="transition transform ease-in duration-150" x-transition:leave-start="translate-x-0" x-transition:leave-end="-translate-x-full">
+            <!-- Logo -->
+            <div class="p-5 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: {{ theme_colors['accent-primary'] }}30">
+                        <i class="fas fa-bolt text-sm" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold tracking-tight font-heading" style="color: {{ theme_colors['text-primary'] }}">DigitalAIzeme</h1>
+                        <p class="text-[10px] uppercase tracking-widest" style="color: {{ theme_colors['text-muted'] }}">Content Platform</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-thin">
+                {% set nav_active_bg = theme_colors['accent-primary'] + '20' %}
+                <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
+                    {% if request.path == '/' %}text-white{% else %}hover:text-white{% endif %}"
+                    style="{% if request.path == '/' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}">
+                    <i class="fas fa-th-large w-5 text-center"></i><span>Dashboard</span>
+                </a>
+                <a href="/notifications" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
+                    {% if request.path == '/notifications' %}text-white{% else %}hover:text-white{% endif %}"
+                    style="{% if request.path == '/notifications' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}">
+                    <i class="fas fa-tasks w-5 text-center"></i><span>Tasks</span>
+                    {% if unread_notifications > 0 %}
+                    <span class="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{{ unread_notifications }}</span>
+                    {% endif %}
+                </a>
+
+                {% block sidebar_brand_nav %}
+                {# Show brand nav on global pages (Tasks, Settings) if last_brand is available #}
+                {% if last_brand is defined and last_brand %}
+                {% set b = last_brand %}
+                <div class="mt-4 pt-4 border-t" style="border-color: {{ theme_colors['border-primary'] }}">
+                    <p class="px-3 text-[10px] uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">{{ b.name }}</p>
+                    <a href="/brands/{{ b.id }}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-home w-5 text-center"></i><span>Overview</span>
+                    </a>
+                    <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Plan</p>
+                    <a href="/brands/{{ b.id }}/planning" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-lightbulb w-5 text-center"></i><span>Planning</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/templates" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-copy w-5 text-center"></i><span>Templates</span>
+                    </a>
+                    <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Create</p>
+                    <a href="/brands/{{ b.id }}/workflow" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-project-diagram w-5 text-center"></i><span>Workflow</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/pipeline" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-columns w-5 text-center"></i><span>Pipeline</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-palette w-5 text-center"></i><span>Content Studio</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/voice" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-microphone-alt w-5 text-center"></i><span>Brand Voice</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/assets" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-cube w-5 text-center"></i><span>Asset Hub</span>
+                    </a>
+                    <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Publish</p>
+                    <a href="/brands/{{ b.id }}/calendar" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-calendar-alt w-5 text-center"></i><span>Calendar</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/analytics" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-chart-line w-5 text-center"></i><span>Analytics</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/folders" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-folder-open w-5 text-center"></i><span>Folders</span>
+                    </a>
+                </div>
+                {% endif %}
+                {% endblock %}
+            </nav>
+
+            <!-- Settings + Footer -->
+            <div class="border-t p-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                <a href="/settings" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
+                    {% if request.path == '/settings' %}text-white{% else %}hover:text-white{% endif %}"
+                    style="{% if request.path == '/settings' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}">
+                    <i class="fas fa-cog w-5 text-center"></i><span>Settings</span>
+                </a>
+                <div class="text-xs text-center mt-2" style="color: {{ theme_colors['text-disabled'] }}">
+                    DigitalAIzeme v2.1<br>
+                    <span style="color: {{ theme_colors['text-disabled'] }}">Local deployment</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- Top Bar -->
+            <header class="h-14 border-b flex items-center justify-between px-3 md:px-6 flex-shrink-0 backdrop-blur" style="border-color: {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-primary'] }}E0">
+                <div class="flex items-center gap-4">
+                    <button @click="sidebarOpen = !sidebarOpen" class="hover:text-white" style="color: {{ theme_colors['text-secondary'] }}">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 class="text-sm font-medium font-heading" style="color: {{ theme_colors['text-secondary'] }}">{% block page_title %}Dashboard{% endblock %}</h2>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <!-- Brand Picker -->
+                    {% if all_brands %}
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all border"
+                            style="border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-secondary'] }}; background: {{ theme_colors['bg-secondary'] }}"
+                            @mouseenter="$el.style.borderColor='{{ theme_colors['accent-primary'] }}'"
+                            @mouseleave="$el.style.borderColor='{{ theme_colors['border-hover'] }}'">
+                            {% if brand is defined and brand %}
+                            <span class="w-2 h-2 rounded-full" style="background: {{ brand.accent_color }}"></span>
+                            <span class="text-white">{{ brand.name }}</span>
+                            {% else %}
+                            <i class="fas fa-building" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                            <span>Select Brand</span>
+                            {% endif %}
+                            <i class="fas fa-chevron-down text-xs ml-1"></i>
+                        </button>
+                        <div x-show="open" @click.outside="open = false" x-cloak
+                             class="absolute right-0 mt-2 w-56 rounded-xl shadow-2xl z-50 overflow-hidden border"
+                             style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+                            <div class="p-2 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+                                <span class="text-[10px] uppercase tracking-wider px-2" style="color: {{ theme_colors['text-muted'] }}">Switch Brand</span>
+                            </div>
+                            {% for b in all_brands %}
+                            <a href="/brands/{{ b.id }}" class="flex items-center gap-3 px-3 py-2.5 text-sm transition-all hover:text-white"
+                               style="color: {{ theme_colors['text-secondary'] }}"
+                               onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'"
+                               onmouseleave="this.style.background='transparent'">
+                                <span class="w-5 h-5 rounded flex items-center justify-center text-xs font-bold" style="background: {{ b.accent_color }}20; color: {{ b.accent_color }}">{{ b.name[0] }}</span>
+                                <span>{{ b.name }}</span>
+                                {% if brand is defined and brand and brand.id == b.id %}
+                                <i class="fas fa-check ml-auto text-xs" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                                {% endif %}
+                            </a>
+                            {% endfor %}
+                            <a href="/brands/new" class="flex items-center gap-3 px-3 py-2.5 text-sm border-t transition-all"
+                               style="border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['accent-primary'] }}"
+                               onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'"
+                               onmouseleave="this.style.background='transparent'">
+                                <i class="fas fa-plus w-5 text-center"></i><span>Add Brand</span>
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Brand Quick Nav Icons (when brand is selected) -->
+                    {% if brand is defined and brand %}
+                    <div class="hidden lg:flex items-center gap-1 border-l pl-4" style="border-color: {{ theme_colors['border-primary'] }}">
+                        {% macro nav_icon(href, title, icon, path_match) %}
+                        <a href="{{ href }}" title="{{ title }}" class="w-8 h-8 rounded-lg flex items-center justify-center transition-all text-sm"
+                            style="{% if path_match in request.path %}background: {{ theme_colors['accent-primary'] }}25; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-muted'] }}{% endif %}"
+                            onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'; this.style.color='{{ theme_colors['accent-primary'] }}'"
+                            onmouseleave="{% if path_match in request.path %}this.style.background='{{ theme_colors['accent-primary'] }}25'{% else %}this.style.background='transparent'; this.style.color='{{ theme_colors['text-muted'] }}'{% endif %}">
+                            <i class="fas fa-{{ icon }}"></i>
+                        </a>
+                        {% endmacro %}
+                        <!-- Plan -->
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/planning', 'Planning', 'lightbulb', 'planning') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/templates', 'Templates', 'copy', 'templates') }}
+                        <span class="w-px h-4 mx-0.5" style="background: {{ theme_colors['border-primary'] }}"></span>
+                        <!-- Create -->
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/workflow', 'Workflow', 'project-diagram', 'workflow') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/pipeline', 'Pipeline', 'columns', 'pipeline') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/preview', 'Content Studio', 'palette', 'preview') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/voice', 'Brand Voice', 'microphone-alt', 'voice') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/assets', 'Asset Hub', 'cube', 'assets') }}
+                        <span class="w-px h-4 mx-0.5" style="background: {{ theme_colors['border-primary'] }}"></span>
+                        <!-- Publish -->
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/calendar', 'Calendar', 'calendar-alt', 'calendar') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/analytics', 'Analytics', 'chart-line', 'analytics') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/folders', 'Folders', 'folder-open', 'folders') }}
+                    </div>
+                    {% endif %}
+
+                    <!-- Notification Bell -->
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" class="relative hover:text-white" style="color: {{ theme_colors['text-secondary'] }}">
+                            <i class="fas fa-bell"></i>
+                            {% if unread_notifications > 0 %}
+                            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center pulse-dot">{{ unread_notifications }}</span>
+                            {% endif %}
+                        </button>
+                        <div x-show="open" @click.outside="open = false" x-cloak
+                             class="absolute right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden border"
+                             style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+                            <div class="p-3 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+                                <span class="text-sm font-medium">Notifications</span>
+                                <a href="/notifications" class="text-xs hover:underline" style="color: {{ theme_colors['accent-primary'] }}">View all</a>
+                            </div>
+                            <div class="max-h-64 overflow-y-auto">
+                                {% if recent_notifications is defined %}
+                                {% for n in recent_notifications %}
+                                <div class="p-3 border-b hover:opacity-80" style="border-color: {{ theme_colors['border-primary'] }}">
+                                    <div class="flex items-start gap-2">
+                                        <i class="fas fa-{% if n.notification_type == 'task' %}check-circle text-blue-400{% elif n.notification_type == 'overdue' %}exclamation-triangle text-red-400{% elif n.notification_type == 'feedback' %}comment text-yellow-400{% else %}info-circle{% endif %} mt-0.5" style="{% if n.notification_type == 'system' %}color: {{ theme_colors['accent-secondary'] }}{% endif %}"></i>
+                                        <div>
+                                            <p class="text-sm">{{ n.title }}</p>
+                                            <p class="text-xs mt-0.5" style="color: {{ theme_colors['text-muted'] }}">{{ n.message[:80] }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Theme Toggle -->
+                    <button @click="toggleTheme()"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center transition-all text-sm"
+                        style="color: {{ theme_colors['text-muted'] }}; background: {{ theme_colors['bg-tertiary'] }}"
+                        title="Switch to {{ 'dark' if theme_mode == 'light' else 'light' }} mode">
+                        <i class="fas fa-{{ 'moon' if theme_mode == 'light' else 'sun' }}"></i>
+                    </button>
+                    <span class="hidden sm:inline text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ now.strftime('%A, %B %d') if now is defined else '' }}</span>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="flex-1 overflow-y-auto p-3 md:p-6 scrollbar-thin">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-[100] space-y-2 pointer-events-none" style="max-width: 380px;"></div>
+    <script>
+    function toast(message, type = 'success', duration = 3000) {
+        const container = document.getElementById('toastContainer');
+        const colors = {
+            success: { bg: '#065f46', border: '#10B981', icon: 'fas fa-check-circle', iconColor: '#10B981' },
+            error:   { bg: '#7f1d1d', border: '#EF4444', icon: 'fas fa-exclamation-circle', iconColor: '#EF4444' },
+            info:    { bg: '#1e3a5f', border: '#3B82F6', icon: 'fas fa-info-circle', iconColor: '#3B82F6' },
+            warning: { bg: '#78350f', border: '#F59E0B', icon: 'fas fa-exclamation-triangle', iconColor: '#F59E0B' },
+        };
+        const c = colors[type] || colors.info;
+        const el = document.createElement('div');
+        el.className = 'toast-enter pointer-events-auto';
+        el.style.cssText = `background:${c.bg}; border:1px solid ${c.border}; border-radius:0.75rem; padding:0.75rem 1rem; display:flex; align-items:center; gap:0.5rem; box-shadow:0 10px 40px rgba(0,0,0,0.4);`;
+        el.innerHTML = `<i class="${c.icon}" style="color:${c.iconColor}; flex-shrink:0;"></i><span style="color:#fff; font-size:0.8125rem; flex:1;">${message}</span>`;
+        container.appendChild(el);
+        setTimeout(() => { el.className = 'toast-exit pointer-events-auto'; setTimeout(() => el.remove(), 300); }, duration);
+    }
+
+    function withLoading(btn, asyncFn) {
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.classList.add('opacity-60', 'cursor-wait');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>' + btn.textContent.trim();
+        return asyncFn().finally(() => { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-wait'); btn.innerHTML = orig; });
+    }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,666 @@
+{% extends "base.html" %}
+{% block title %}Settings — DigitalAIzeme{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+
+{% if locked %}
+<!-- Password Gate -->
+<div class="max-w-md mx-auto mt-16" x-data="{ password: '', error: '', loading: false }">
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-6 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style="background: {{ theme_colors['accent-primary'] }}20">
+                <i class="fas fa-lock text-2xl" style="color: {{ theme_colors['accent-primary'] }}"></i>
+            </div>
+            <h2 class="text-lg font-semibold mb-1" style="color: {{ theme_colors['text-primary'] }}">Settings Protected</h2>
+            <p class="text-sm mb-6" style="color: {{ theme_colors['text-muted'] }}">Enter your password to access settings and API keys.</p>
+
+            <form @submit.prevent="
+                loading = true; error = '';
+                fetch('/api/settings/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({password})
+                }).then(r => r.json().then(d => {
+                    if (d.ok) location.reload();
+                    else { error = d.error || 'Incorrect password'; loading = false; }
+                })).catch(() => { error = 'Connection error'; loading = false; })
+            ">
+                <input type="password" x-model="password" placeholder="Enter password" autofocus
+                    class="w-full rounded-lg px-4 py-3 text-sm outline-none mb-3"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                <p x-show="error" x-text="error" class="text-xs text-red-400 mb-3"></p>
+                <button type="submit" :disabled="loading"
+                    class="w-full px-4 py-3 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-unlock mr-1"></i>
+                    <span x-text="loading ? 'Unlocking...' : 'Unlock Settings'"></span>
+                </button>
+            </form>
+
+            <p class="text-xs mt-4" style="color: {{ theme_colors['text-disabled'] }}">
+                Recovery email: sumita@digitalaizeme.com
+            </p>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- Full Settings Page -->
+<div class="max-w-3xl mx-auto space-y-6" x-data="settingsApp()">
+
+    <!-- Lock Button (if password is set) -->
+    {% if password_set %}
+    <div class="flex justify-end">
+        <button @click="lockSettings()" class="px-3 py-1.5 rounded-lg text-xs transition-colors"
+            style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-muted'] }}">
+            <i class="fas fa-lock mr-1"></i>Lock Settings
+        </button>
+    </div>
+    {% endif %}
+
+    <!-- Theme -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-palette mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Appearance</h2>
+        </div>
+        <div class="p-4">
+            <div class="flex items-center gap-4">
+                <button @click="setTheme('light')"
+                    class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
+                    style="background: #F8F6F3; border-color: {{ 'var(--dm-accent-primary)' if theme_mode == 'light' else '#E0D8CE' }}">
+                    <i class="fas fa-sun text-2xl mb-2" style="color: #B37A30"></i>
+                    <div class="text-sm font-medium" style="color: #1A1008">Light</div>
+                </button>
+                <button @click="setTheme('dark')"
+                    class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
+                    style="background: #120000; border-color: {{ '#D99549' if theme_mode == 'dark' else '#2A1A1A' }}">
+                    <i class="fas fa-moon text-2xl mb-2" style="color: #D99549"></i>
+                    <div class="text-sm font-medium" style="color: #FFFFFF">Dark</div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Protection -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-shield-alt mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Password Protection</h2>
+            <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Protect settings and API keys with a password.</p>
+        </div>
+        <div class="p-4 space-y-3">
+            {% if password_set %}
+            <div class="flex items-center gap-2 text-sm" style="color: {{ theme_colors['status-success'] }}">
+                <i class="fas fa-check-circle"></i>
+                <span>Password is set. Settings are protected.</span>
+            </div>
+            <div x-show="showChangePassword" x-transition>
+                <div class="space-y-3 mt-3">
+                    <input type="password" x-model="currentPassword" placeholder="Current password"
+                        class="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <input type="password" x-model="newPassword" placeholder="New password"
+                        class="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <div class="flex gap-2">
+                        <button @click="changePassword()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                            <i class="fas fa-save mr-1"></i>Update Password
+                        </button>
+                        <button @click="showChangePassword = false" class="px-4 py-2 text-sm rounded-lg"
+                            style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">Cancel</button>
+                    </div>
+                </div>
+            </div>
+            <button x-show="!showChangePassword" @click="showChangePassword = true" class="text-sm underline" style="color: {{ theme_colors['accent-primary'] }}">
+                Change password
+            </button>
+            {% else %}
+            <div class="flex items-center gap-2 text-sm" style="color: {{ theme_colors['status-warning'] }}">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>No password set. Anyone with access to this machine can view your API keys.</span>
+            </div>
+            <div class="space-y-3 mt-3">
+                <input type="password" x-model="newPassword" placeholder="Choose a password (4+ characters)"
+                    class="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                <button @click="setPassword()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-lock mr-1"></i>Set Password
+                </button>
+            </div>
+            {% endif %}
+            <p x-show="passwordStatus" x-text="passwordStatus" x-transition
+                class="text-xs" :class="passwordError ? 'text-red-400' : 'text-green-400'"></p>
+        </div>
+    </div>
+
+    <!-- Core API Keys -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-key mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Core API Keys</h2>
+            <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Keys are encrypted at rest in your local database. <i class="fas fa-lock text-green-400 ml-1"></i></p>
+        </div>
+        <div class="p-4 space-y-4">
+            <!-- Anthropic / Claude -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-brain mr-1 text-purple-400"></i>Anthropic (Claude) API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.anthropic ? 'text' : 'password'"
+                           x-model="keys.anthropic_api_key"
+                           placeholder="sk-ant-..."
+                           class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                           style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.anthropic = !showKeys.anthropic"
+                            class="px-3 py-2 rounded-lg text-sm"
+                            style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.anthropic ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Used for Claude-powered workflow steps (content generation, revision, etc.)</p>
+            </div>
+
+            <!-- Google API Key -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fab fa-google mr-1 text-blue-400"></i>Google API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.google ? 'text' : 'password'"
+                           x-model="keys.google_api_key"
+                           placeholder="AIza..."
+                           class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                           style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.google = !showKeys.google"
+                            class="px-3 py-2 rounded-lg text-sm"
+                            style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.google ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Used for Google Apps Script triggers and Google services integration.</p>
+            </div>
+
+            <!-- Gemini API Key -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-gem mr-1 text-cyan-400"></i>Gemini API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.gemini ? 'text' : 'password'"
+                           x-model="keys.gemini_api_key"
+                           placeholder="AIza..."
+                           class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                           style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.gemini = !showKeys.gemini"
+                            class="px-3 py-2 rounded-lg text-sm"
+                            style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.gemini ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Used for Gemini-powered image generation and content tasks.</p>
+            </div>
+
+            <!-- Apify -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-spider mr-1" style="color: {{ theme_colors['accent-secondary'] }}"></i>Apify API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.apify ? 'text' : 'password'"
+                           x-model="keys.apify_api_key"
+                           placeholder="apify_api_..."
+                           class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                           style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.apify = !showKeys.apify"
+                            class="px-3 py-2 rounded-lg text-sm"
+                            style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.apify ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Used for LinkedIn post scraping and competitor analysis in the Feedback Loop step.</p>
+            </div>
+
+            <!-- Unsplash -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-camera mr-1 text-pink-400"></i>Unsplash Access Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.unsplash ? 'text' : 'password'" x-model="keys.unsplash_api_key" placeholder="Your Unsplash Access Key"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.unsplash = !showKeys.unsplash" class="px-3 py-2 rounded-lg text-sm"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.unsplash ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Free stock photos. Get key at unsplash.com/developers (50 req/hr free).</p>
+            </div>
+
+            <!-- Pexels -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-image mr-1 text-teal-400"></i>Pexels API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.pexels ? 'text' : 'password'" x-model="keys.pexels_api_key" placeholder="Your Pexels API Key"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.pexels = !showKeys.pexels" class="px-3 py-2 rounded-lg text-sm"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.pexels ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Free stock photos + videos. Get key at pexels.com/api (200 req/hr free).</p>
+            </div>
+
+            <!-- ElevenLabs -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-microphone mr-1 text-indigo-400"></i>ElevenLabs API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.elevenlabs ? 'text' : 'password'" x-model="keys.elevenlabs_api_key" placeholder="Your ElevenLabs API Key"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.elevenlabs = !showKeys.elevenlabs" class="px-3 py-2 rounded-lg text-sm"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.elevenlabs ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">AI text-to-speech. Get key at elevenlabs.io (10K chars/month free).</p>
+            </div>
+
+            <!-- Remove.bg -->
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-eraser mr-1 text-rose-400"></i>Remove.bg API Key
+                </label>
+                <div class="flex gap-2">
+                    <input :type="showKeys.removebg ? 'text' : 'password'" x-model="keys.removebg_api_key" placeholder="Your Remove.bg API Key"
+                        class="flex-1 rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="showKeys.removebg = !showKeys.removebg" class="px-3 py-2 rounded-lg text-sm"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}">
+                        <i :class="showKeys.removebg ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
+                </div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Background removal. Get key at remove.bg/api (50 images/month free).</p>
+            </div>
+
+            <!-- Save Button -->
+            <div class="flex items-center gap-3 pt-2">
+                <button @click="saveKeys()"
+                        class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-save mr-1"></i>Save API Keys
+                </button>
+                <span x-show="saveStatus === 'saved'" x-transition class="text-xs text-green-400">
+                    <i class="fas fa-check mr-1"></i>Saved (encrypted)
+                </span>
+                <span x-show="saveStatus === 'error'" x-transition class="text-xs text-red-400">
+                    <i class="fas fa-times mr-1"></i>Failed to save
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dynamic API Keys -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <div>
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-plus-circle mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Additional API Keys</h2>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Add custom API keys for LinkedIn, Canva, or any other service.</p>
+            </div>
+            <button @click="addDynamicKey()" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-plus mr-1"></i>Add Key
+            </button>
+        </div>
+        <div class="p-4 space-y-3">
+            <template x-for="(dk, idx) in dynamicKeys" :key="idx">
+                <div class="rounded-lg p-3" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="text" x-model="dk.name" placeholder="Key name (e.g. LinkedIn API)"
+                            class="flex-1 rounded px-2 py-1 text-sm outline-none"
+                            style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <button @click="dynamicKeys.splice(idx, 1)" class="text-red-400 hover:text-red-300 text-sm px-2">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <input type="text" x-model="dk.description" placeholder="Description (e.g. For DIQIT company page)"
+                        class="w-full rounded px-2 py-1 text-xs outline-none mb-2"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    <div class="flex gap-2">
+                        <input :type="dk.visible ? 'text' : 'password'" x-model="dk.value" placeholder="API key value"
+                            class="flex-1 rounded px-2 py-1 text-sm outline-none font-mono"
+                            style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <button @click="dk.visible = !dk.visible" class="px-2 py-1 rounded text-xs"
+                            style="background: {{ theme_colors['bg-secondary'] }}; color: {{ theme_colors['text-muted'] }}">
+                            <i :class="dk.visible ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                        </button>
+                    </div>
+                </div>
+            </template>
+            <div x-show="dynamicKeys.length === 0" class="text-center py-4">
+                <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No additional API keys configured.</p>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Click "Add Key" to add LinkedIn, Canva, or other API keys.</p>
+            </div>
+            <div x-show="dynamicKeys.length > 0" class="flex items-center gap-3 pt-2">
+                <button @click="saveDynamicKeys()"
+                    class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-save mr-1"></i>Save Additional Keys
+                </button>
+                <span x-show="dynamicSaveStatus === 'saved'" x-transition class="text-xs text-green-400">
+                    <i class="fas fa-check mr-1"></i>Saved (encrypted)
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Drive Sync -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <div>
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fab fa-google-drive mr-2 text-green-400"></i>Google Drive Sync</h2>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Sync each brand's local folder structure with Google Drive. Configure per brand.</p>
+            </div>
+            <button @click="showDriveForm = !showDriveForm" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-plus mr-1"></i>Add Folder
+            </button>
+        </div>
+        <div class="p-4 space-y-3">
+            <!-- Add Form -->
+            <div x-show="showDriveForm" x-transition class="rounded-lg p-3 space-y-2" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="grid grid-cols-3 gap-2">
+                    <select x-model="driveForm.brand_id"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <option value="">Select Brand</option>
+                        {% for b in brands %}
+                        <option value="{{ b.id }}">{{ b.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" x-model="driveForm.folder_id" placeholder="Google Drive Folder ID"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <input type="text" x-model="driveForm.folder_name" placeholder="Folder display name"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" x-model="driveForm.local_path" placeholder="Local path (e.g. 04_Content)"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <select x-model="driveForm.sync_direction"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <option value="both">Bi-directional</option>
+                        <option value="upload">Upload only</option>
+                        <option value="download">Download only</option>
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <button @click="addDriveSync()" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors">
+                        <i class="fas fa-save mr-1"></i>Save Config
+                    </button>
+                    <button @click="showDriveForm = false" class="px-3 py-1.5 text-xs rounded-lg" style="background: {{ theme_colors['bg-secondary'] }}; color: {{ theme_colors['text-muted'] }}">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Existing Configs -->
+            {% if drive_syncs is defined and drive_syncs %}
+            <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+                {% for sync in drive_syncs %}
+                <div class="flex items-center gap-3 py-3">
+                    <i class="fab fa-google-drive text-lg" style="color: {% if sync.enabled %}#34A853{% else %}{{ theme_colors['text-disabled'] }}{% endif %}"></i>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ sync.folder_name or sync.folder_id }}</p>
+                        <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                            {% if sync.brand_name %}<span class="px-1.5 py-0.5 rounded text-[10px]" style="background: {{ theme_colors['bg-tertiary'] }}">{{ sync.brand_name }}</span> &middot; {% endif %}
+                            {{ sync.local_path or '(root)' }} &middot; {{ sync.sync_direction }} &middot;
+                            {% if sync.last_synced_at %}Last synced: {{ sync.last_synced_at[:16] }}{% else %}Never synced{% endif %}
+                        </p>
+                    </div>
+                    <button onclick="toggleDriveSync({{ sync.id }})" class="text-xs px-2 py-1 rounded-lg transition-colors"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; color: {% if sync.enabled %}{{ theme_colors['status-success'] }}{% else %}{{ theme_colors['text-muted'] }}{% endif %}">
+                        <i class="fas fa-{% if sync.enabled %}toggle-on{% else %}toggle-off{% endif %} mr-1"></i>
+                        {{ 'Enabled' if sync.enabled else 'Disabled' }}
+                    </button>
+                    <button onclick="deleteDriveSync({{ sync.id }})" class="text-xs text-red-400 hover:text-red-300 px-2">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No Drive folders configured.</p>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Link Google Drive folders to keep content in sync.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Daily Tasks -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-sync-alt mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Daily Notification Schedule</h2>
+        </div>
+        <div class="p-4">
+            <p class="text-xs mb-3" style="color: {{ theme_colors['text-muted'] }}">Tasks are generated based on your brands' workflow steps and cadence rules. Overdue notifications are auto-generated when you visit the dashboard.</p>
+            <button @click="generateDaily()"
+                    class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                <i class="fas fa-sync-alt mr-1"></i>Generate Today's Tasks
+            </button>
+            <span x-show="dailyStatus" x-transition class="ml-2 text-xs text-green-400" x-text="dailyStatus"></span>
+        </div>
+    </div>
+
+    <!-- App Info -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-info-circle mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>App Information</h2>
+        </div>
+        <div class="p-4 space-y-3">
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <span style="color: {{ theme_colors['text-muted'] }}">Name</span>
+                    <p style="color: {{ theme_colors['text-primary'] }}">DigitalAIzeme</p>
+                </div>
+                <div>
+                    <span style="color: {{ theme_colors['text-muted'] }}">Version</span>
+                    <p style="color: {{ theme_colors['text-primary'] }}">1.7.0 <span class="text-xs text-green-400">Sprint 6</span></p>
+                </div>
+                <div>
+                    <span style="color: {{ theme_colors['text-muted'] }}">Database</span>
+                    <p style="color: {{ theme_colors['text-primary'] }}">SQLite (local, encrypted keys)</p>
+                </div>
+                <div>
+                    <span style="color: {{ theme_colors['text-muted'] }}">Server</span>
+                    <p style="color: {{ theme_colors['text-primary'] }}">Flask (localhost:5001)</p>
+                </div>
+            </div>
+            <div class="pt-3" style="border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                <span class="text-sm" style="color: {{ theme_colors['text-muted'] }}">Security</span>
+                <div class="rounded-lg p-2 mt-1 text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    <div class="flex items-center gap-2 mb-1"><i class="fas fa-check text-green-400"></i> API keys encrypted at rest (Fernet)</div>
+                    <div class="flex items-center gap-2 mb-1"><i class="fas fa-check text-green-400"></i> Settings page password-protected</div>
+                    <div class="flex items-center gap-2"><i class="fas fa-check text-green-400"></i> Encryption key stored separately from database</div>
+                </div>
+            </div>
+            <div class="pt-3" style="border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                <span class="text-sm" style="color: {{ theme_colors['text-muted'] }}">Database Path</span>
+                <div class="rounded-lg p-2 mt-1 text-xs font-mono" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    digitalize-me/digitalize_me.db
+                </div>
+            </div>
+            <div class="pt-3" style="border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                <span class="text-sm" style="color: {{ theme_colors['text-muted'] }}">Pipeline Configuration</span>
+                <div class="rounded-lg p-2 mt-1 text-xs font-mono" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    Pipeline folder: [brand_folder]/10_Pipeline/Briefs/<br>
+                    Apps Script: [brand_folder]/10_Pipeline/DIQIT_Apps_Script.js<br>
+                    Setup guide: [brand_folder]/10_Pipeline/SETUP_GUIDE.md
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function settingsApp() {
+    return {
+        keys: {
+            anthropic_api_key: '{{ api_keys.anthropic_api_key or "" }}',
+            google_api_key: '{{ api_keys.google_api_key or "" }}',
+            gemini_api_key: '{{ api_keys.gemini_api_key or "" }}',
+            apify_api_key: '{{ api_keys.apify_api_key or "" }}',
+            unsplash_api_key: '{{ api_keys.unsplash_api_key or "" }}',
+            pexels_api_key: '{{ api_keys.pexels_api_key or "" }}',
+            elevenlabs_api_key: '{{ api_keys.elevenlabs_api_key or "" }}',
+            removebg_api_key: '{{ api_keys.removebg_api_key or "" }}',
+        },
+        showKeys: { anthropic: false, google: false, gemini: false, apify: false, unsplash: false, pexels: false, elevenlabs: false, removebg: false },
+        saveStatus: '',
+        dailyStatus: '',
+        currentTheme: '{{ theme_mode }}',
+        newPassword: '',
+        currentPassword: '',
+        passwordStatus: '',
+        passwordError: false,
+        showChangePassword: false,
+        dynamicKeys: {{ dynamic_keys | default([], true) | tojson | safe }},
+        dynamicSaveStatus: '',
+        showDriveForm: false,
+        driveForm: { brand_id: '', folder_id: '', folder_name: '', local_path: '', sync_direction: 'both' },
+
+        setTheme(mode) {
+            fetch('/api/settings/theme', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode})
+            }).then(() => location.reload());
+        },
+
+        async saveKeys() {
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.keys)
+                });
+                const data = await res.json();
+                this.saveStatus = data.ok ? 'saved' : 'error';
+            } catch (e) {
+                this.saveStatus = 'error';
+            }
+            setTimeout(() => this.saveStatus = '', 3000);
+        },
+
+        async setPassword() {
+            try {
+                const res = await fetch('/api/settings/password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: this.newPassword, email: 'sumita@digitalaizeme.com' })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.passwordStatus = 'Password set successfully!';
+                    this.passwordError = false;
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    this.passwordStatus = data.error;
+                    this.passwordError = true;
+                }
+            } catch (e) {
+                this.passwordStatus = 'Failed to set password';
+                this.passwordError = true;
+            }
+        },
+
+        async changePassword() {
+            try {
+                const res = await fetch('/api/settings/password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: this.newPassword, current_password: this.currentPassword })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.passwordStatus = 'Password updated!';
+                    this.passwordError = false;
+                    this.showChangePassword = false;
+                    this.currentPassword = '';
+                    this.newPassword = '';
+                } else {
+                    this.passwordStatus = data.error;
+                    this.passwordError = true;
+                }
+            } catch (e) {
+                this.passwordStatus = 'Failed to update password';
+                this.passwordError = true;
+            }
+            setTimeout(() => this.passwordStatus = '', 4000);
+        },
+
+        lockSettings() {
+            fetch('/api/settings/logout', { method: 'POST' }).then(() => location.reload());
+        },
+
+        addDynamicKey() {
+            this.dynamicKeys.push({ name: '', description: '', value: '', icon: 'fas fa-key', visible: false });
+        },
+
+        async saveDynamicKeys() {
+            try {
+                const res = await fetch('/api/settings/dynamic-keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keys: this.dynamicKeys })
+                });
+                const data = await res.json();
+                this.dynamicSaveStatus = data.ok ? 'saved' : '';
+            } catch (e) {
+                this.dynamicSaveStatus = '';
+            }
+            setTimeout(() => this.dynamicSaveStatus = '', 3000);
+        },
+
+        async generateDaily() {
+            const res = await fetch('/api/notifications/generate-daily', { method: 'POST' });
+            const data = await res.json();
+            this.dailyStatus = `Generated ${data.generated} new notifications`;
+            setTimeout(() => this.dailyStatus = '', 4000);
+        },
+
+        async addDriveSync() {
+            if (!this.driveForm.brand_id) return toast('Select a brand first', 'warning');
+            if (!this.driveForm.folder_id.trim()) return toast('Enter a Drive folder ID', 'warning');
+            const res = await fetch('/api/drive-sync', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(this.driveForm)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast('Drive sync config saved', 'success');
+                this.showDriveForm = false;
+                location.reload();
+            }
+        }
+    };
+}
+
+async function toggleDriveSync(id) {
+    await fetch(`/api/drive-sync/${id}/toggle`, { method: 'PUT' });
+    toast('Sync toggled', 'info');
+    location.reload();
+}
+
+async function deleteDriveSync(id) {
+    if (!confirm('Remove this Drive sync config?')) return;
+    await fetch(`/api/drive-sync/${id}`, { method: 'DELETE' });
+    toast('Drive sync removed', 'info');
+    location.reload();
+}
+</script>
+{% endif %}
+{% endblock %}

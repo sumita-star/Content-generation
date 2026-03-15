@@ -1,0 +1,205 @@
+{% extends "brands/detail.html" %}
+{% block title %}Assets — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Asset Hub{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4" x-data="assetApp()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Asset Creation Hub</h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">AI-powered generation of images, documents, slides, and video prompts</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Generator Panel -->
+        <div class="md:col-span-2 space-y-4">
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-4" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-magic text-purple-400"></i> Generate New Asset
+                    </h3>
+                </div>
+                <div class="p-4 space-y-3">
+                    <!-- Asset Type -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Asset Type</label>
+                        <div class="grid grid-cols-5 gap-2 mt-1">
+                            <template x-for="[type, icon, label] in [['image','fa-image','Image'], ['document','fa-file-alt','Document'], ['slides','fa-desktop','Slides'], ['video_prompt','fa-video','Video'], ['social_graphic','fa-share-alt','Social']]">
+                                <button @click="assetType = type"
+                                    :class="assetType === type ? 'border-purple-500 text-purple-400' : ''"
+                                    class="p-3 rounded-lg border text-center text-sm transition-all"
+                                    :style="assetType !== type ? 'background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-secondary'] }}' : 'background: rgba(168,85,247,0.1); border-color: rgb(168,85,247)'">
+                                    <i :class="'fas ' + icon + ' text-lg mb-1 block'"></i>
+                                    <span x-text="label" class="text-xs"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Link to Content Item -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Link to Content Item (optional)</label>
+                        <select x-model="contentItemId" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="">— standalone asset —</option>
+                            {% for item in content_items %}
+                            <option value="{{ item.id }}">{{ item.title[:60] }} ({{ item.content_type }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Prompt -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Describe what you need</label>
+                        <textarea x-model="prompt" rows="4" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none resize-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="E.g., Create a LinkedIn carousel about unified POS benefits for multi-store QSR operators..."></textarea>
+                    </div>
+
+                    <button @click="generate($event.currentTarget)" class="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors">
+                        <i class="fas fa-bolt mr-1"></i>Generate Asset
+                    </button>
+                </div>
+            </div>
+
+            <!-- Generated Output Preview -->
+            <template x-if="generatedResult">
+                <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                    <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                        <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                            <i class="fas fa-check-circle text-green-400"></i> Generated Output
+                        </h3>
+                        <button @click="copyResult()" class="text-xs text-dm-accent hover:underline"><i class="far fa-copy mr-1"></i>Copy</button>
+                    </div>
+                    <div class="p-4">
+                        <pre class="text-sm whitespace-pre-wrap leading-relaxed" style="color: {{ theme_colors['text-primary'] }}; font-family: inherit" x-text="generatedResult"></pre>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Job History -->
+        <div class="space-y-4">
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-history text-blue-400"></i> Recent Jobs
+                    </h3>
+                </div>
+                {% if jobs %}
+                <div class="divide-y max-h-[600px] overflow-y-auto scrollbar-thin" style="border-color: {{ theme_colors['border-primary'] }}">
+                    {% for job in jobs %}
+                    <div class="p-3 group cursor-pointer transition-colors" onclick="loadJobContent({{ job.id }})" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                        <div class="flex items-center gap-2 mb-1">
+                            <i class="fas fa-{% if job.asset_type == 'image' %}image text-pink-400{% elif job.asset_type == 'document' %}file-alt text-blue-400{% elif job.asset_type == 'slides' %}desktop text-green-400{% elif job.asset_type == 'video_prompt' %}video text-red-400{% else %}share-alt text-yellow-400{% endif %} text-xs"></i>
+                            <span class="text-xs font-medium capitalize" style="color: {{ theme_colors['text-primary'] }}">{{ job.asset_type | replace('_', ' ') }}</span>
+                            <span class="ml-auto text-[10px] px-2 py-0.5 rounded-full
+                                {% if job.status == 'completed' %}bg-green-500/20 text-green-400
+                                {% elif job.status == 'failed' %}bg-red-500/20 text-red-400
+                                {% elif job.status == 'generating' %}bg-yellow-500/20 text-yellow-400
+                                {% else %}bg-gray-500/20{% endif %}"
+                                style="{% if job.status not in ['completed','failed','generating'] %}color: {{ theme_colors['text-muted'] }}{% endif %}">{{ job.status }}</span>
+                        </div>
+                        <p class="text-xs truncate" style="color: {{ theme_colors['text-muted'] }}">{{ job.prompt[:80] }}</p>
+                        {% if job.content_title %}
+                        <p class="text-[10px] mt-0.5" style="color: {{ theme_colors['text-disabled'] }}">{{ job.content_title[:40] }}</p>
+                        {% endif %}
+                        <div class="flex items-center justify-between mt-1">
+                            <span class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}">{{ job.created_at[:16] }}</span>
+                            <button onclick="event.stopPropagation(); deleteJob({{ job.id }})" class="opacity-0 group-hover:opacity-100 text-red-400 text-[10px]"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-6 text-center" style="color: {{ theme_colors['text-muted'] }}">
+                    <i class="fas fa-cube text-2xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                    <p class="text-sm">No assets generated yet</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Quick Templates -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm" style="color: {{ theme_colors['text-primary'] }}">Quick Templates</h3>
+                </div>
+                <div class="p-2 space-y-1">
+                    <button @click="assetType='social_graphic'; prompt='LinkedIn post graphic for DIQIT POSTAP — unified operations theme, dark tech aesthetic, data visualization overlay'" class="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                        <i class="fas fa-share-alt text-yellow-400 mr-2"></i>LinkedIn Post Graphic
+                    </button>
+                    <button @click="assetType='slides'; prompt='5-slide pitch deck for DIQIT POSTAP targeting QSR chain CxOs. Cover: problem, solution, differentiators, case study, CTA'" class="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                        <i class="fas fa-desktop text-green-400 mr-2"></i>Pitch Deck Outline
+                    </button>
+                    <button @click="assetType='video_prompt'; prompt='60-second LinkedIn video script about how fragmented POS systems hurt multi-store F&B operators. Hook → problem → POSTAP solution → CTA'" class="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                        <i class="fas fa-video text-red-400 mr-2"></i>Video Script
+                    </button>
+                    <button @click="assetType='image'; prompt='Professional tech-forward hero image for blog post about AI in restaurant operations. Dark background, glowing data elements, futuristic feel'" class="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                        <i class="fas fa-image text-pink-400 mr-2"></i>Blog Hero Image Prompt
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function assetApp() {
+    return {
+        assetType: 'social_graphic',
+        contentItemId: '',
+        prompt: '',
+        generatedResult: null,
+
+        async generate(btn) {
+            if (!this.prompt.trim()) return toast('Enter a prompt', 'warning');
+            const self = this;
+            withLoading(btn, async () => {
+                const res = await fetch('/api/assets/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        brand_id: {{ brand.id }},
+                        asset_type: self.assetType,
+                        prompt: self.prompt.trim(),
+                        content_item_id: self.contentItemId || null,
+                        provider: 'claude'
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    // Load full content
+                    const full = await fetch(`/api/assets/${data.job_id}/content`).then(r => r.json());
+                    if (full.ok) self.generatedResult = full.content;
+                    toast('Asset generated', 'success');
+                } else {
+                    toast('Generation failed: ' + (data.error || 'Unknown'), 'error');
+                }
+            });
+        },
+
+        copyResult() {
+            if (this.generatedResult) {
+                navigator.clipboard.writeText(this.generatedResult);
+                toast('Copied to clipboard', 'info');
+            }
+        }
+    };
+}
+
+async function loadJobContent(jobId) {
+    const res = await fetch(`/api/assets/${jobId}/content`);
+    const data = await res.json();
+    if (data.ok) {
+        // Use Alpine to set the result
+        const app = document.querySelector('[x-data]').__x.$data;
+        app.generatedResult = data.content;
+        toast('Loaded asset content', 'info');
+    }
+}
+
+async function deleteJob(jobId) {
+    await fetch(`/api/assets/${jobId}`, { method: 'DELETE' });
+    toast('Asset deleted', 'info');
+    location.reload();
+}
+</script>
+{% endblock %}

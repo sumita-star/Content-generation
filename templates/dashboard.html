@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — DigitalAIzeme{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block sidebar_brand_nav %}
+{% if brands %}
+<div class="mt-4 pt-4 border-t" style="border-color: {{ theme_colors['border-primary'] }}">
+    <p class="px-3 text-[10px] uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">Your Brands</p>
+    {% for brand in brands %}
+    <a href="/brands/{{ brand.id }}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'; this.style.color='{{ theme_colors['text-primary'] }}'" onmouseleave="this.style.background='transparent'; this.style.color='{{ theme_colors['text-secondary'] }}'">
+        <div class="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold" style="background: {{ brand.accent_color }}20; color: {{ brand.accent_color }}">
+            {{ brand.name[0] }}
+        </div>
+        <span>{{ brand.name }}</span>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- Welcome -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Welcome back</h1>
+            <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">Here's what's happening across your brands today.</p>
+        </div>
+        <a href="/brands/new" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+            <i class="fas fa-plus"></i> Add Brand
+        </a>
+    </div>
+
+    <!-- Brand Cards -->
+    {% if brands %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for brand in brands %}
+        <a href="/brands/{{ brand.id }}" class="rounded-xl p-5 transition-all group border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" onmouseenter="this.style.borderColor='{{ theme_colors['text-muted'] }}'" onmouseleave="this.style.borderColor='{{ theme_colors['border-primary'] }}'">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold" style="background: {{ brand.accent_color }}20; color: {{ brand.accent_color }}">
+                    {{ brand.name[0] }}
+                </div>
+                <div>
+                    <h3 class="font-semibold group-hover:text-dm-accent transition-colors" style="color: {{ theme_colors['text-primary'] }}">{{ brand.name }}</h3>
+                    <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ brand.tagline or '' }}</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="text-center p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ stats[brand.id].total_content }}</div>
+                    <div class="text-[10px] uppercase" style="color: {{ theme_colors['text-muted'] }}">Total</div>
+                </div>
+                <div class="text-center p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <div class="text-lg font-bold text-blue-400">{{ stats[brand.id].in_progress }}</div>
+                    <div class="text-[10px] uppercase" style="color: {{ theme_colors['text-muted'] }}">Active</div>
+                </div>
+                <div class="text-center p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <div class="text-lg font-bold text-green-400">{{ stats[brand.id].published }}</div>
+                    <div class="text-[10px] uppercase" style="color: {{ theme_colors['text-muted'] }}">Published</div>
+                </div>
+            </div>
+            {% if stats[brand.id].pending_feedback > 0 %}
+            <div class="mt-3 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-400">
+                <i class="fas fa-comment-dots mr-1"></i> {{ stats[brand.id].pending_feedback }} pending feedback
+            </div>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="rounded-xl p-12 text-center border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-building text-4xl mb-4" style="color: {{ theme_colors['text-disabled'] }}"></i>
+        <h3 class="text-lg font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">No brands yet</h3>
+        <p class="text-sm mb-4" style="color: {{ theme_colors['text-muted'] }}">Add your first brand to get started with content workflows.</p>
+        <a href="/brands/new" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors inline-flex items-center gap-2">
+            <i class="fas fa-plus"></i> Add Brand
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Today's Tasks -->
+    {% if today_tasks %}
+    <div class="rounded-xl overflow-hidden border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fas fa-calendar-day text-dm-accent"></i> Today's Tasks
+            </h2>
+            <button onclick="generateDailyNotifications()" class="text-xs text-dm-accent hover:underline">
+                <i class="fas fa-sync-alt mr-1"></i> Refresh
+            </button>
+        </div>
+        <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for task in today_tasks %}
+            <div class="p-4 flex items-center gap-4 transition-colors animate-slide-in" style="animation-delay: {{ loop.index * 50 }}ms; border-color: {{ theme_colors['border-primary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                <div class="w-2 h-2 rounded-full" style="background: {{ task.brand_color }}"></div>
+                <div class="flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs px-2 py-0.5 rounded-full" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">{{ task.brand_name }}</span>
+                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ task.task }}</span>
+                    </div>
+                    <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">{{ task.description }}</p>
+                </div>
+                {% if task.duration > 0 %}
+                <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}"><i class="far fa-clock mr-1"></i>{{ task.duration }} min</span>
+                {% endif %}
+                {% if task.tools %}
+                <div class="flex gap-1 flex-wrap">
+                    {% for tool in task.tools[:3] %}
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-dm-primary/10 text-dm-accent">{{ tool }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent Notifications -->
+    {% if recent_notifications %}
+    <div class="rounded-xl overflow-hidden border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fas fa-bell text-yellow-400"></i> Recent Notifications
+            </h2>
+            <a href="/notifications" class="text-xs text-dm-accent hover:underline">View all</a>
+        </div>
+        <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for n in recent_notifications %}
+            <div class="p-4 flex items-center gap-3" style="border-color: {{ theme_colors['border-primary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                <i class="fas fa-{% if n.notification_type == 'task' %}check-circle text-blue-400{% elif n.notification_type == 'overdue' %}exclamation-triangle text-red-400{% elif n.notification_type == 'feedback' %}comment text-yellow-400{% else %}info-circle{% endif %}" {% if n.notification_type not in ['task', 'overdue', 'feedback'] %}style="color: {{ theme_colors['text-secondary'] }}"{% endif %}></i>
+                <div class="flex-1">
+                    <p class="text-sm" style="color: {{ theme_colors['text-primary'] }}">{{ n.title }}</p>
+                    <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ n.message[:120] }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function generateDailyNotifications() {
+    const res = await fetch('/api/notifications/generate-daily', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) location.reload();
+}
+</script>
+{% endblock %}

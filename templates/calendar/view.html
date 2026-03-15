@@ -1,0 +1,435 @@
+{% extends "brands/detail.html" %}
+{% block title %}Calendar — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Calendar{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6" x-data="calendarApp()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                Content Calendar
+                <span class="help-tip ml-1" data-tip="Click any day to add content. Cadence warnings show when you're under-posting. Use 'Recurring' to batch-create items on a schedule.">
+                    <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </h1>
+            <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">Plan and schedule your content publishing cadence</p>
+        </div>
+        <div class="flex gap-2">
+            <button @click="showAddModal = true" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white rounded-lg text-sm transition-colors">
+                <i class="fas fa-plus mr-1"></i>Add Content
+            </button>
+            <button @click="showRecurringModal = true" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors">
+                <i class="fas fa-redo mr-1"></i>Recurring
+            </button>
+            <button @click="syncToGcal()" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-sm transition-colors border border-blue-600/20">
+                <i class="fab fa-google mr-1"></i>Sync to GCal
+            </button>
+            <div class="flex gap-1 ml-2">
+                <button @click="changeMonth(-1)" class="px-3 py-1.5 rounded-lg text-sm" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'" onmouseleave="this.style.background='{{ theme_colors['bg-tertiary'] }}'">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <span class="px-4 py-1.5 rounded-lg text-sm font-medium" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-primary'] }}" x-text="monthLabel"></span>
+                <button @click="changeMonth(1)" class="px-3 py-1.5 rounded-lg text-sm" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'" onmouseleave="this.style.background='{{ theme_colors['bg-tertiary'] }}'">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cadence Overview -->
+    {% if cadences %}
+    <div class="grid grid-cols-{{ cadences|length }} gap-4">
+        {% for cadence in cadences %}
+        <div class="border rounded-xl p-4" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ cadence.name }}</h3>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-dm-primary/10 text-dm-accent">{{ cadence.posts_per_week }}x/week</span>
+            </div>
+            <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ cadence.channel }}</p>
+            {% set pdays = cadence.preferred_days | from_json %}
+            {% if pdays %}
+            <div class="flex flex-wrap gap-1 mt-2">
+                {% for day in pdays %}
+                <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">{{ day[:3] }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if cadence.notes %}
+            <p class="text-xs mt-2" style="color: {{ theme_colors['text-muted'] }}">{{ cadence.notes }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Cadence Warnings (loaded dynamically) -->
+    <div id="cadenceWarnings" class="hidden">
+        <div id="cadenceWarningsList" class="space-y-2"></div>
+    </div>
+
+    <!-- Calendar Grid -->
+    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <!-- Day Headers -->
+        <div class="grid grid-cols-7 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <template x-for="day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']">
+                <div class="p-2 text-center text-xs font-medium uppercase" style="color: {{ theme_colors['text-muted'] }}" x-text="day"></div>
+            </template>
+        </div>
+        <!-- Calendar Days -->
+        <div class="grid grid-cols-7">
+            <template x-for="(day, idx) in calendarDays" :key="idx">
+                <div class="border-b border-r p-2 min-h-[100px]"
+                     :style="'border-color: {{ theme_colors['border-primary'] }}; background: ' + (day.isCurrentMonth ? '{{ theme_colors['bg-secondary'] }}' : '{{ theme_colors['bg-primary'] }}')"
+                     @click="day.isCurrentMonth && openAddForDate(day.date)">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs font-medium"
+                              :class="day.isToday ? 'bg-dm-primary text-white px-1.5 py-0.5 rounded-full' : ''"
+                              :style="!day.isToday ? (day.isCurrentMonth ? 'color: {{ theme_colors['text-secondary'] }}' : 'color: {{ theme_colors['text-disabled'] }}') : ''"
+                              x-text="day.dayNum"></span>
+                    </div>
+                    <template x-for="item in day.items" :key="item.id">
+                        <div class="text-[10px] px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer"
+                             :style="'background:' + (item.pillar_color || '#6366f1') + '20; color:' + (item.pillar_color || '#6366f1')"
+                             :title="item.title"
+                             x-text="item.title">
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Scheduled Items List -->
+    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-list-ol mr-2 text-dm-accent"></i>Scheduled Content</h2>
+        </div>
+        {% if content_items %}
+        <div style="--tw-divide-color: {{ theme_colors['border-primary'] }}" class="divide-y">
+            {% for item in content_items %}
+            <div class="p-3 flex items-center gap-3" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="this.style.background=''">
+                {% if item.pillar_color %}
+                <div class="w-2 h-2 rounded-full flex-shrink-0" style="background: {{ item.pillar_color }}"></div>
+                {% endif %}
+                <span class="text-sm w-24 flex-shrink-0" style="color: {{ theme_colors['text-secondary'] }}">{{ item.publish_date }}</span>
+                <span class="text-sm flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ item.title }}</span>
+                <span class="text-xs px-2 py-0.5 rounded" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">{{ item.content_type }}</span>
+                <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ item.market }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full
+                    {% if item.status == 'published' %}bg-green-500/10 text-green-400
+                    {% elif item.status == 'ready' %}bg-orange-500/10 text-orange-400
+                    {% else %}bg-gray-700 text-gray-400{% endif %}">{{ item.status }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="p-8 text-center text-sm" style="color: {{ theme_colors['text-muted'] }}">
+            No scheduled content. Add items from the Pipeline with a publish date.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Add Single Content Modal -->
+    <div x-show="showAddModal" x-cloak class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="showAddModal = false">
+        <div class="border rounded-xl p-6 w-[420px] max-h-[80vh] overflow-y-auto" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+            <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-plus mr-2 text-dm-accent"></i>Add Content Item</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Title</label>
+                    <input x-model="newItem.title" type="text" placeholder="Content title" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Content Type</label>
+                        <select x-model="newItem.content_type" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="linkedin_post">LinkedIn Post</option>
+                            <option value="carousel">Carousel</option>
+                            <option value="video">Video</option>
+                            <option value="blog">Blog</option>
+                            <option value="reel">Reel</option>
+                            <option value="email">Email</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Market</label>
+                        <select x-model="newItem.market" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="APAC">APAC</option>
+                            <option value="Singapore">Singapore</option>
+                            <option value="Japan">Japan</option>
+                            <option value="Australia">Australia</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Publish Date</label>
+                    <input x-model="newItem.publish_date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Pillar</label>
+                    <select x-model="newItem.pillar_id" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <option value="">No pillar</option>
+                        {% for pillar in pillars %}
+                        <option value="{{ pillar.id }}">{{ pillar.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button @click="addSingleItem()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Add</button>
+                <button @click="showAddModal = false" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recurring Content Modal -->
+    <div x-show="showRecurringModal" x-cloak class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="showRecurringModal = false">
+        <div class="border rounded-xl p-6 w-[480px] max-h-[80vh] overflow-y-auto" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+            <h3 class="text-lg font-bold mb-1" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-redo mr-2 text-green-400"></i>Create Recurring Content</h3>
+            <p class="text-xs mb-4" style="color: {{ theme_colors['text-muted'] }}">Schedule multiple content items at regular intervals</p>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Title Template</label>
+                    <input x-model="recurring.title" type="text" placeholder="e.g. Weekly LinkedIn Post" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Each item will be numbered: "Weekly LinkedIn Post #1", "#2", etc.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Content Type</label>
+                        <select x-model="recurring.content_type" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="linkedin_post">LinkedIn Post</option>
+                            <option value="carousel">Carousel</option>
+                            <option value="video">Video</option>
+                            <option value="blog">Blog</option>
+                            <option value="reel">Reel</option>
+                            <option value="email">Email</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Market</label>
+                        <select x-model="recurring.market" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="APAC">APAC</option>
+                            <option value="Singapore">Singapore</option>
+                            <option value="Japan">Japan</option>
+                            <option value="Australia">Australia</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Pillar</label>
+                    <select x-model="recurring.pillar_id" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <option value="">No pillar</option>
+                        {% for pillar in pillars %}
+                        <option value="{{ pillar.id }}">{{ pillar.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Start Date</label>
+                        <input x-model="recurring.start_date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Every X Days</label>
+                        <input x-model="recurring.interval_days" type="number" min="1" max="90" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">How Many</label>
+                        <input x-model="recurring.count" type="number" min="1" max="52" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-dm-primary/50 outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    </div>
+                </div>
+
+                <!-- Preview of scheduled dates -->
+                <div class="rounded-lg p-3 border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+                    <h4 class="text-xs uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">Preview Schedule</h4>
+                    <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto scrollbar-thin">
+                        <template x-for="(date, i) in previewDates" :key="i">
+                            <span class="text-[10px] px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20" x-text="date"></span>
+                        </template>
+                    </div>
+                    <p class="text-[10px] mt-2" style="color: {{ theme_colors['text-muted'] }}" x-text="previewDates.length + ' items will be created'"></p>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button @click="createRecurring()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-redo mr-1"></i>Create All
+                </button>
+                <button @click="showRecurringModal = false" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load cadence warnings on page load
+(async function checkCadence() {
+    const res = await fetch('/api/brands/{{ brand.id }}/cadence-check');
+    const data = await res.json();
+    if (data.ok && data.warnings && data.warnings.length > 0) {
+        const container = document.getElementById('cadenceWarnings');
+        const list = document.getElementById('cadenceWarningsList');
+        container.classList.remove('hidden');
+        const icons = { error: 'exclamation-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const colors = { error: 'text-red-400 bg-red-500/10 border-red-500/20', warning: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20', info: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
+        list.innerHTML = data.warnings.map(w => `
+            <div class="flex items-center gap-3 px-4 py-2.5 rounded-lg border text-sm ${colors[w.severity] || colors.info}">
+                <i class="fas fa-${icons[w.severity] || icons.info}"></i>
+                <span>${w.message}</span>
+            </div>
+        `).join('');
+    }
+})();
+
+function calendarApp() {
+    const items = {{ content_items_json | tojson }};
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+    return {
+        currentMonth: now.getMonth(),
+        currentYear: now.getFullYear(),
+        showAddModal: false,
+        showRecurringModal: false,
+        newItem: {
+            title: '',
+            content_type: 'linkedin_post',
+            market: 'APAC',
+            publish_date: todayStr,
+            pillar_id: '',
+        },
+        recurring: {
+            title: 'Weekly LinkedIn Post',
+            content_type: 'linkedin_post',
+            market: 'APAC',
+            pillar_id: '',
+            start_date: todayStr,
+            interval_days: 7,
+            count: 4,
+        },
+
+        get monthLabel() {
+            return new Date(this.currentYear, this.currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        },
+
+        get previewDates() {
+            const dates = [];
+            if (!this.recurring.start_date) return dates;
+            const start = new Date(this.recurring.start_date + 'T00:00:00');
+            const interval = parseInt(this.recurring.interval_days) || 7;
+            const count = Math.min(parseInt(this.recurring.count) || 4, 52);
+            for (let i = 0; i < count; i++) {
+                const d = new Date(start.getTime() + i * interval * 86400000);
+                dates.push(d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+            }
+            return dates;
+        },
+
+        changeMonth(delta) {
+            this.currentMonth += delta;
+            if (this.currentMonth > 11) { this.currentMonth = 0; this.currentYear++; }
+            if (this.currentMonth < 0) { this.currentMonth = 11; this.currentYear--; }
+        },
+
+        get calendarDays() {
+            const firstDay = new Date(this.currentYear, this.currentMonth, 1);
+            const lastDay = new Date(this.currentYear, this.currentMonth + 1, 0);
+            let startDay = firstDay.getDay() - 1;
+            if (startDay < 0) startDay = 6;
+
+            const days = [];
+            const today = new Date();
+
+            const prevLast = new Date(this.currentYear, this.currentMonth, 0);
+            for (let i = startDay - 1; i >= 0; i--) {
+                days.push({ dayNum: prevLast.getDate() - i, isCurrentMonth: false, isToday: false, items: [], date: '' });
+            }
+
+            for (let d = 1; d <= lastDay.getDate(); d++) {
+                const dateStr = `${this.currentYear}-${String(this.currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dayItems = items.filter(item => item.publish_date === dateStr).map(item => ({
+                    id: item.id,
+                    title: item.title,
+                    pillar_color: item.pillar_color || '#6366f1'
+                }));
+                days.push({
+                    dayNum: d,
+                    isCurrentMonth: true,
+                    isToday: d === today.getDate() && this.currentMonth === today.getMonth() && this.currentYear === today.getFullYear(),
+                    items: dayItems,
+                    date: dateStr
+                });
+            }
+
+            const remaining = 42 - days.length;
+            for (let i = 1; i <= remaining; i++) {
+                days.push({ dayNum: i, isCurrentMonth: false, isToday: false, items: [], date: '' });
+            }
+
+            return days;
+        },
+
+        openAddForDate(date) {
+            this.newItem.publish_date = date;
+            this.showAddModal = true;
+        },
+
+        async addSingleItem() {
+            if (!this.newItem.title.trim()) return toast('Enter a title', 'warning');
+            const res = await fetch('/api/content-items', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    brand_id: {{ brand.id }},
+                    title: this.newItem.title,
+                    content_type: this.newItem.content_type,
+                    market: this.newItem.market,
+                    publish_date: this.newItem.publish_date,
+                    pillar_id: this.newItem.pillar_id || null,
+                })
+            });
+            if (res.ok) {
+                this.showAddModal = false;
+                location.reload();
+            }
+        },
+
+        async createRecurring() {
+            if (!this.recurring.title.trim()) return toast('Enter a title template', 'warning');
+            if (!this.recurring.start_date) return toast('Select a start date', 'warning');
+
+            const res = await fetch('/api/content-items/recurring', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    brand_id: {{ brand.id }},
+                    title: this.recurring.title,
+                    content_type: this.recurring.content_type,
+                    market: this.recurring.market,
+                    pillar_id: this.recurring.pillar_id || null,
+                    start_date: this.recurring.start_date,
+                    interval_days: parseInt(this.recurring.interval_days) || 7,
+                    count: Math.min(parseInt(this.recurring.count) || 4, 52),
+                })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast(`Created ${data.total} recurring content items!`, 'success');
+                this.showRecurringModal = false;
+                location.reload();
+            }
+        },
+        async syncToGcal() {
+            try {
+                const res = await fetch('/api/gcal/job-spec', { method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ brand_id: {{ brand.id }} })});
+                const data = await res.json();
+                if (data.ok) {
+                    const count = data.job_spec.events.length;
+                    await navigator.clipboard.writeText(JSON.stringify(data.job_spec, null, 2));
+                    toast(`${count} calendar events ready. Job spec copied — ask Claude Code to sync via GCal MCP.`, 'info');
+                } else { toast(data.error, 'error'); }
+            } catch(e) { toast(e.message, 'error'); }
+        },
+    };
+}
+</script>
+{% endblock %}

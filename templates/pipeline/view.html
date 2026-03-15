@@ -1,0 +1,346 @@
+{% extends "brands/detail.html" %}
+{% block title %}Pipeline — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Pipeline{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
+            Content Pipeline
+            <span class="help-tip ml-1" data-tip="Drag cards between columns to advance status. Use 'Next Step' to auto-chain to the next workflow step. 'Run All' processes all steps at once.">
+                <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+            </span>
+        </h1>
+        <div class="flex gap-2">
+            <!-- Trigger Pipeline Button -->
+            <button onclick="withLoading(this, triggerPipeline)" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+                <i class="fas fa-play"></i> Trigger Generation
+            </button>
+            <button onclick="document.getElementById('addContentModal').classList.remove('hidden')" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+                <i class="fas fa-plus"></i> Add Content
+            </button>
+        </div>
+    </div>
+
+    <!-- Pipeline Trigger Status -->
+    <div id="triggerStatus" class="hidden border rounded-xl p-4" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-spinner fa-spin text-dm-accent" id="triggerSpinner"></i>
+            <span id="triggerMessage" class="text-sm text-gray-300"></span>
+        </div>
+    </div>
+
+    <!-- Kanban Board -->
+    <div class="flex gap-3 overflow-x-auto pb-4 -mx-3 px-3 md:mx-0 md:px-0" style="min-height: 500px;">
+        {% for col in columns %}
+        <div class="flex-shrink-0 w-64 border rounded-xl overflow-hidden"
+             style="background: {{ theme_colors['bg-secondary'] }}80; border-color: {{ theme_colors['border-primary'] }}"
+             ondragover="event.preventDefault(); this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="dropItem(event, '{{ col }}'); this.classList.remove('drag-over')">
+            <div class="p-3 border-b flex items-center justify-between sticky top-0 backdrop-blur" style="border-color: {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-secondary'] }}E0">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full
+                        {% if col == 'backlog' %}bg-gray-500
+                        {% elif col == 'research' %}bg-purple-500
+                        {% elif col == 'drafting' %}bg-blue-500
+                        {% elif col == 'visuals' %}bg-cyan-500
+                        {% elif col == 'review' %}bg-yellow-500
+                        {% elif col == 'ready' %}bg-orange-500
+                        {% elif col == 'published' %}bg-green-500
+                        {% elif col == 'analyzed' %}bg-emerald-500
+                        {% endif %}"></span>
+                    <span class="text-xs font-medium uppercase tracking-wider" style="color: {{ theme_colors['text-secondary'] }}">{{ col }}</span>
+                </div>
+                <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ pipeline[col] | length }}</span>
+            </div>
+            <div class="p-2 space-y-2 kanban-col overflow-y-auto" style="max-height: 600px;">
+                {% for item in pipeline[col] %}
+                <div class="border rounded-lg p-3 cursor-move transition-colors group"
+                     style="background: {{ theme_colors['bg-tertiary'] }}CC; border-color: {{ theme_colors['border-hover'] }}"
+                     draggable="true"
+                     ondragstart="event.dataTransfer.setData('text/plain', '{{ item.id }}')"
+                     onmouseenter="this.style.borderColor='#6b7280'"
+                     onmouseleave="this.style.borderColor='{{ theme_colors['border-hover'] }}'"
+                     x-data="{ showActions: false }">
+                    {% if item.pillar_color %}
+                    <div class="w-full h-1 rounded-full mb-2" style="background: {{ item.pillar_color }}"></div>
+                    {% endif %}
+                    {% if item.file_paths %}
+                    {% set files = item.file_paths | from_json if item.file_paths else [] %}
+                    {% if files %}
+                    <div class="mb-2 flex gap-1 overflow-hidden rounded-lg" style="max-height: 80px;">
+                        {% for fp in files[:3] %}
+                        {% if fp.lower().endswith(('.png','.jpg','.jpeg','.gif','.webp')) %}
+                        <img src="/media/{{ fp }}" class="w-full object-cover rounded-lg" style="max-height: 80px;" onerror="this.style.display='none'">
+                        {% elif fp.lower().endswith(('.mp4','.mov','.webm')) %}
+                        <div class="w-full h-16 rounded-lg flex items-center justify-center" style="background: {{ theme_colors['bg-secondary'] }}">
+                            <i class="fas fa-play-circle text-xl text-dm-accent"></i>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                    <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">{{ item.title[:40] }}</h4>
+                    <div class="flex items-center gap-2 text-[10px]" style="color: {{ theme_colors['text-muted'] }}">
+                        <span class="px-1.5 py-0.5 rounded" style="background: {{ theme_colors['border-hover'] }}80">{{ item.content_type }}</span>
+                        <span>{{ item.market }}</span>
+                    </div>
+                    {% if item.pillar_name %}
+                    <div class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">{{ item.pillar_name }}</div>
+                    {% endif %}
+                    {% if item.publish_date %}
+                    <div class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}"><i class="far fa-calendar mr-1"></i>{{ item.publish_date }}</div>
+                    {% endif %}
+                    {% set tags = item.media_tags | default('[]') | from_json %}
+                    {% if tags %}
+                    <div class="flex gap-0.5 flex-wrap mt-1">
+                        {% for tag in tags %}
+                        <span class="text-[8px] px-1 py-0.5 rounded-full
+                            {% if 'translate' in tag %}bg-blue-500/15 text-blue-400
+                            {% elif tag == 'stock_image' %}bg-pink-500/15 text-pink-400
+                            {% elif tag == 'tts' %}bg-purple-500/15 text-purple-400
+                            {% elif tag == 'qr_code' %}bg-teal-500/15 text-teal-400
+                            {% elif tag == 'short_url' %}bg-orange-500/15 text-orange-400
+                            {% elif tag == 'remove_bg' %}bg-green-500/15 text-green-400
+                            {% else %}bg-gray-500/15 text-gray-400{% endif %}"
+                            title="{{ tag }}">{{ tag | replace('_', ' ') }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <!-- Actions -->
+                    <div class="mt-2 flex gap-1 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
+                        {% if item.status not in ['published', 'analyzed', 'ready'] %}
+                        <button onclick="withLoading(this, () => completeStep({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-green-300 hover:bg-green-900" style="background: rgba(34,197,94,0.2)" title="Complete current step and advance to next"><i class="fas fa-forward mr-0.5"></i>Next Step</button>
+                        {% endif %}
+                        <button onclick="editContent({{ item.id }})" class="text-[10px] px-2 py-0.5 rounded text-gray-300 hover:bg-gray-600" style="background: {{ theme_colors['border-hover'] }}80">Edit</button>
+                        <button onclick="giveFeedback({{ item.id }}, '{{ item.title | replace("'", "\\'") }}')" class="text-[10px] px-2 py-0.5 rounded text-gray-300 hover:bg-gray-600" style="background: {{ theme_colors['border-hover'] }}80">Feedback</button>
+                        {% if item.status not in ['published', 'analyzed', 'ready'] %}
+                        <button onclick="withLoading(this, () => runFullPipeline({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-purple-300 hover:bg-purple-900" style="background: rgba(147,51,234,0.2)"><i class="fas fa-bolt mr-0.5"></i>Run All</button>
+                        {% endif %}
+                        {% if tags %}
+                        <button onclick="withLoading(this, () => runTools({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-teal-300 hover:bg-teal-900" style="background: rgba(20,184,166,0.2)" title="Run media tools for current status"><i class="fas fa-toolbox mr-0.5"></i>Tools</button>
+                        {% endif %}
+                        <button onclick="deleteContent({{ item.id }})" class="text-[10px] px-2 py-0.5 bg-red-900/50 rounded text-red-400 hover:bg-red-900">Del</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Add Content Modal -->
+<div id="addContentModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-[500px] max-h-[80vh] overflow-y-auto" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+        <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}">Add Content Item</h3>
+        <div class="space-y-3" x-data="{
+            title: '', content_type: 'linkedin_post', market: 'APAC',
+            pillar_id: '', body_text: '', publish_date: ''
+        }">
+            <div>
+                <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Title *</label>
+                <input x-model="title" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Content Type</label>
+                    <select x-model="content_type" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <option value="linkedin_post">LinkedIn Post</option>
+                        <option value="carousel">Carousel</option>
+                        <option value="video">Video</option>
+                        <option value="blog">Blog</option>
+                        <option value="email">Email</option>
+                        <option value="reel">Reel</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Market</label>
+                    <select x-model="market" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                        <option value="APAC">APAC</option>
+                        <option value="Japan">Japan</option>
+                        <option value="Singapore">Singapore</option>
+                        <option value="Australia">Australia</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Content Pillar</label>
+                <select x-model="pillar_id" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <option value="">None</option>
+                    {% for pillar in pillars %}
+                    <option value="{{ pillar.id }}">{{ pillar.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Body Text</label>
+                <textarea x-model="body_text" rows="4" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none focus:ring-2 focus:ring-dm-primary/50 resize-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Post content..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Publish Date</label>
+                <input x-model="publish_date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button @click="fetch('/api/content-items', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({brand_id:{{ brand.id }}, title, content_type, market, pillar_id: pillar_id || null, body_text, publish_date: publish_date || null})
+                }).then(()=>location.reload())"
+                class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Add</button>
+                <button onclick="document.getElementById('addContentModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Feedback Modal -->
+<div id="feedbackModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-[500px]" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+        <h3 class="text-lg font-bold mb-1" style="color: {{ theme_colors['text-primary'] }}">Submit Feedback</h3>
+        <p class="text-sm mb-4" style="color: {{ theme_colors['text-secondary'] }}" id="feedbackTitle"></p>
+        <div class="space-y-3">
+            <select id="feedbackType" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                <option value="revision">Request Revision</option>
+                <option value="approval">Approve</option>
+                <option value="rejection">Reject</option>
+                <option value="note">Add Note</option>
+            </select>
+            <textarea id="feedbackText" rows="4" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50 resize-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Describe what changes are needed..."></textarea>
+            <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-robot mr-1"></i>This feedback can be sent to Claude for automated revision.</p>
+            <div class="flex gap-2">
+                <button onclick="withLoading(this, submitFeedback)" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Submit</button>
+                <button onclick="document.getElementById('feedbackModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+            </div>
+        </div>
+        <input type="hidden" id="feedbackItemId">
+    </div>
+</div>
+
+<script>
+let currentFeedbackItemId = null;
+
+async function dropItem(event, newStatus) {
+    event.preventDefault();
+    const itemId = event.dataTransfer.getData('text/plain');
+    await fetch(`/api/content-items/${itemId}/status`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+    });
+    location.reload();
+}
+
+function giveFeedback(itemId, title) {
+    currentFeedbackItemId = itemId;
+    document.getElementById('feedbackItemId').value = itemId;
+    document.getElementById('feedbackTitle').textContent = title;
+    document.getElementById('feedbackText').value = '';
+    document.getElementById('feedbackModal').classList.remove('hidden');
+}
+
+async function submitFeedback() {
+    const itemId = document.getElementById('feedbackItemId').value;
+    const feedbackType = document.getElementById('feedbackType').value;
+    const feedbackText = document.getElementById('feedbackText').value;
+    if (!feedbackText.trim()) return toast('Please enter feedback text', 'warning');
+
+    await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            content_item_id: parseInt(itemId),
+            feedback_type: feedbackType,
+            feedback_text: feedbackText
+        })
+    });
+    document.getElementById('feedbackModal').classList.add('hidden');
+    location.reload();
+}
+
+async function deleteContent(itemId) {
+    if (!confirm('Delete this content item?')) return;
+    await fetch(`/api/content-items/${itemId}`, { method: 'DELETE' });
+    location.reload();
+}
+
+function editContent(itemId) {
+    window.location.href = `/brands/{{ brand.id }}/feedback?edit=${itemId}`;
+}
+
+async function runFullPipeline(itemId) {
+    const res = await fetch('/api/pipeline/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ brand_id: {{ brand.id }}, content_item_id: itemId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        toast(`Pipeline complete — ${data.steps_completed} steps, status: ${data.final_status}`, 'success');
+        location.reload();
+    } else {
+        toast('Pipeline failed: ' + (data.error || 'Unknown'), 'error');
+    }
+}
+
+async function completeStep(itemId) {
+    const res = await fetch(`/api/content-items/${itemId}/complete-step`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.ok) {
+        let msg = `Completed "${data.completed_step}"`;
+        if (data.next_step) msg += ` → now on "${data.next_step}"`;
+        else msg += ' — all steps done!';
+        toast(msg, 'success');
+        location.reload();
+    } else {
+        toast(data.error || 'Failed to advance step', 'error');
+    }
+}
+
+async function runTools(itemId) {
+    const res = await fetch(`/api/content-items/${itemId}/run-tools`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    const data = await res.json();
+    if (data.ok) {
+        const completed = data.results.filter(r => r.status === 'completed').length;
+        const skipped = data.results.filter(r => r.status === 'skipped').length;
+        const failed = data.results.filter(r => r.status === 'failed').length;
+        if (completed > 0) toast(`${completed} tool(s) executed at "${data.status}" status`, 'success');
+        else if (data.results.length === 0) toast('No tools to run at current status', 'info');
+        else toast(`${skipped} skipped, ${failed} failed — check Settings for API keys`, 'warning');
+    } else {
+        toast(data.error || 'Failed to run tools', 'error');
+    }
+}
+
+async function triggerPipeline() {
+    const statusDiv = document.getElementById('triggerStatus');
+    const spinner = document.getElementById('triggerSpinner');
+    const msgEl = document.getElementById('triggerMessage');
+
+    statusDiv.classList.remove('hidden');
+    msgEl.textContent = 'Triggering content generation pipeline...';
+
+    try {
+        const res = await fetch('/api/pipeline/trigger', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ brand_id: {{ brand.id }} })
+        });
+        const data = await res.json();
+        spinner.className = 'fas fa-check-circle text-green-400';
+        msgEl.textContent = data.message;
+    } catch (e) {
+        spinner.className = 'fas fa-exclamation-circle text-red-400';
+        msgEl.textContent = 'Error triggering pipeline: ' + e.message;
+    }
+}
+</script>
+{% endblock %}

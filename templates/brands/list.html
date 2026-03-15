@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Brands — DigitalAIzeme{% endblock %}
+{% block page_title %}All Brands{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Your Brands</h1>
+        <a href="/brands/new" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+            <i class="fas fa-plus"></i> Add Brand
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for brand in brands %}
+        <div class="border rounded-xl overflow-hidden transition-all" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}"
+             onmouseenter="this.style.borderColor='{{ theme_colors['border-hover'] }}'"
+             onmouseleave="this.style.borderColor='{{ theme_colors['border-primary'] }}'">
+            <div class="p-5">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-bold" style="background: {{ brand.accent_color }}20; color: {{ brand.accent_color }}">
+                        {{ brand.name[0] }}
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ brand.name }}</h3>
+                        <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">{{ brand.tagline or 'No tagline' }}</p>
+                        {% if brand.website %}
+                        <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ brand.website }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="flex gap-1">
+                        <div class="w-5 h-5 rounded" style="background: {{ brand.primary_color }}; border: 1px solid {{ theme_colors['border-hover'] }}"></div>
+                        <div class="w-5 h-5 rounded" style="background: {{ brand.accent_color }}"></div>
+                    </div>
+                </div>
+                <p class="text-sm mb-4" style="color: {{ theme_colors['text-secondary'] }}">{{ brand.voice_summary[:150] if brand.voice_summary else 'No voice summary' }}</p>
+                <div class="flex items-center gap-4 text-sm" style="color: {{ theme_colors['text-muted'] }}">
+                    <span><i class="fas fa-layer-group mr-1"></i>{{ stats[brand.id].pillars }} pillars</span>
+                    <span><i class="fas fa-file-alt mr-1"></i>{{ stats[brand.id].content }} items</span>
+                    <span><i class="fas fa-check-circle mr-1 text-green-500"></i>{{ stats[brand.id].published }} published</span>
+                </div>
+            </div>
+            <div class="border-t p-3 flex gap-2" style="border-color: {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-tertiary'] }}33">
+                <a href="/brands/{{ brand.id }}" class="flex-1 text-center py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Overview</a>
+                <a href="/brands/{{ brand.id }}/pipeline" class="flex-1 text-center py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Pipeline</a>
+                <a href="/brands/{{ brand.id }}/workflow" class="flex-1 text-center py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Workflow</a>
+                <a href="/brands/{{ brand.id }}/preview" class="flex-1 text-center py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Preview</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,407 @@
+{% extends "brands/detail.html" %}
+{% block title %}Analytics — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Analytics{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
+<div class="max-w-full mx-auto space-y-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                Analytics
+                <span class="help-tip ml-1" data-tip="Performance analytics with self-improving loops. Run weekly analysis to get AI insights, then review pillars monthly. Insights feed directly into planning recommendations.">
+                    <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Content performance and production metrics</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="withLoading(this, () => analyzePerformance())" class="px-3 py-1.5 text-xs rounded-lg transition-colors bg-purple-600 hover:bg-purple-700 text-white">
+                <i class="fas fa-brain mr-1"></i>Weekly Analysis
+            </button>
+            <button onclick="withLoading(this, () => reviewPillars())" class="px-3 py-1.5 text-xs rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
+                <i class="fas fa-sync-alt mr-1"></i>Review Pillars
+            </button>
+            <button onclick="document.getElementById('addMetricModal').classList.remove('hidden')" class="px-3 py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <i class="fas fa-plus mr-1"></i>Log Metric
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {% set total = status_data.values() | sum %}
+        {% set published = status_data.get('published', 0) %}
+        {% set active = total - published - status_data.get('backlog', 0) %}
+        {% set overdue_count = overdue | length %}
+        <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-2xl font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ total }}</div>
+            <div class="text-xs uppercase tracking-wider mt-1" style="color: {{ theme_colors['text-muted'] }}">Total Content</div>
+        </div>
+        <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-2xl font-bold text-blue-400">{{ active }}</div>
+            <div class="text-xs uppercase tracking-wider mt-1" style="color: {{ theme_colors['text-muted'] }}">In Progress</div>
+        </div>
+        <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-2xl font-bold text-green-400">{{ published }}</div>
+            <div class="text-xs uppercase tracking-wider mt-1" style="color: {{ theme_colors['text-muted'] }}">Published</div>
+        </div>
+        <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-2xl font-bold {% if overdue_count > 0 %}text-red-400{% endif %}" style="{% if overdue_count == 0 %}color: {{ theme_colors['text-primary'] }}{% endif %}">{{ overdue_count }}</div>
+            <div class="text-xs uppercase tracking-wider mt-1" style="color: {{ theme_colors['text-muted'] }}">Overdue</div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Status Distribution -->
+        <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <h3 class="text-sm font-medium mb-3" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-chart-pie mr-2 text-dm-accent"></i>Status Distribution</h3>
+            <div style="max-height: 250px; display: flex; justify-content: center;">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Content by Type -->
+        <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <h3 class="text-sm font-medium mb-3" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-th-large mr-2 text-dm-accent"></i>Content by Type</h3>
+            <div style="max-height: 250px; display: flex; justify-content: center;">
+                <canvas id="typeChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monthly Output Chart -->
+    <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <h3 class="text-sm font-medium mb-3" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-chart-bar mr-2 text-dm-accent"></i>Monthly Output</h3>
+        <div style="max-height: 280px;">
+            <canvas id="monthlyChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Pillar Breakdown -->
+    {% if pillar_data %}
+    <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <h3 class="text-sm font-medium mb-3" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-layer-group mr-2 text-dm-accent"></i>Content by Pillar</h3>
+        <div class="space-y-2">
+            {% for p in pillar_data %}
+            <div class="flex items-center gap-3">
+                <span class="w-3 h-3 rounded-full flex-shrink-0" style="background: {{ p.color or '#6366f1' }}"></span>
+                <span class="text-sm flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ p.name }}</span>
+                <span class="text-sm font-semibold" style="color: {{ theme_colors['text-secondary'] }}">{{ p.cnt }}</span>
+                <div class="w-32 h-2 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    {% set max_cnt = pillar_data | map(attribute='cnt') | max %}
+                    <div class="h-full rounded-full" style="background: {{ p.color or '#6366f1' }}; width: {{ (p.cnt / max_cnt * 100) if max_cnt > 0 else 0 }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Overdue Items -->
+    {% if overdue %}
+    <div class="rounded-xl p-4 border border-red-500/30" style="background: {{ theme_colors['bg-secondary'] }}">
+        <h3 class="text-sm font-medium mb-3 text-red-400"><i class="fas fa-exclamation-triangle mr-2"></i>Overdue Items ({{ overdue | length }})</h3>
+        <div class="space-y-2">
+            {% for item in overdue %}
+            <div class="flex items-center gap-3 p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <span class="text-sm flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ item.title }}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-400">Due: {{ item.publish_date }}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded capitalize" style="background: {{ theme_colors['border-hover'] }}80; color: {{ theme_colors['text-muted'] }}">{{ item.status }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Self-Improving Loops -->
+    <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <h3 class="text-sm font-medium mb-3" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-infinity mr-2 text-dm-accent"></i>Self-Improving Loops</h3>
+        <div class="grid grid-cols-3 gap-3">
+            <div class="rounded-lg p-3 text-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <i class="fas fa-chart-line text-purple-400 text-lg mb-1"></i>
+                <div class="text-xs font-medium" style="color: {{ theme_colors['text-primary'] }}">Weekly Analysis</div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Apify scrape → AI insights → Planning recommendations</p>
+                <div class="mt-2"><i class="fas fa-arrow-down text-[10px]" style="color: {{ theme_colors['text-disabled'] }}"></i></div>
+            </div>
+            <div class="rounded-lg p-3 text-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <i class="fas fa-layer-group text-blue-400 text-lg mb-1"></i>
+                <div class="text-xs font-medium" style="color: {{ theme_colors['text-primary'] }}">Monthly Pillar Review</div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Performance data → pillar adjustment → content mix rebalance</p>
+                <div class="mt-2"><i class="fas fa-arrow-down text-[10px]" style="color: {{ theme_colors['text-disabled'] }}"></i></div>
+            </div>
+            <div class="rounded-lg p-3 text-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <i class="fas fa-calendar-check text-green-400 text-lg mb-1"></i>
+                <div class="text-xs font-medium" style="color: {{ theme_colors['text-primary'] }}">Cadence Optimization</div>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Schedule compliance → gap detection → auto-adjust cadence</p>
+                <div class="mt-2"><i class="fas fa-arrow-down text-[10px]" style="color: {{ theme_colors['text-disabled'] }}"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Insights -->
+    {% if insights %}
+    <div class="rounded-xl overflow-hidden border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-lightbulb mr-2 text-yellow-400"></i>AI Insights</h3>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400">{{ insights | length }} insights</span>
+        </div>
+        <div class="max-h-80 overflow-y-auto scrollbar-thin">
+            {% for insight in insights %}
+            <div class="p-4 transition-colors" style="{% if not loop.last %}border-bottom: 1px solid {{ theme_colors['border-primary'] }};{% endif %}"
+                 onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="this.style.background='transparent'">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
+                        {% if insight.insight_type == 'weekly_analysis' %}bg-purple-500/10{% elif insight.insight_type == 'pillar_review' %}bg-blue-500/10{% else %}bg-green-500/10{% endif %}">
+                        <i class="fas fa-{% if insight.insight_type == 'weekly_analysis' %}brain text-purple-400{% elif insight.insight_type == 'pillar_review' %}layer-group text-blue-400{% else %}chart-line text-green-400{% endif %} text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] px-2 py-0.5 rounded-full capitalize" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">{{ insight.insight_type | replace('_', ' ') }}</span>
+                            <span class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}">{{ insight.created_at[:10] }}</span>
+                            {% if insight.applied %}
+                            <span class="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400"><i class="fas fa-check mr-0.5"></i>Applied</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-sm mt-1" style="color: {{ theme_colors['text-primary'] }}">{{ insight.insight_text[:300] }}</p>
+                        {% if insight.recommendations %}
+                        <div class="mt-2 space-y-1" x-data="{ open: false }">
+                            <button @click="open = !open" class="text-[10px] text-dm-accent hover:underline">
+                                <i class="fas fa-chevron-right text-[8px] transition-transform" :class="open && 'rotate-90'"></i>
+                                View recommendations
+                            </button>
+                            <div x-show="open" x-cloak class="space-y-1 mt-1">
+                                {% set recs = insight.recommendations | default('[]', true) %}
+                                {% for rec in recs if recs is string %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if not insight.applied and insight.insight_type == 'pillar_review' %}
+                        <button onclick="applyInsight({{ insight.id }})" class="mt-2 text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                            <i class="fas fa-check mr-1"></i>Apply Pillar Updates
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Competitor Tracking -->
+    <div class="rounded-xl p-4 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-binoculars mr-2 text-dm-accent"></i>Competitor Tracking</h3>
+            <button onclick="document.getElementById('addCompetitorModal').classList.remove('hidden')" class="text-[10px] px-2 py-1 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-plus mr-1"></i>Add
+            </button>
+        </div>
+        {% if competitors %}
+        <div class="space-y-2">
+            {% for c in competitors %}
+            <div class="flex items-center gap-3 p-2 rounded-lg group" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-secondary'] }}">{{ c.competitor_name[0] }}</div>
+                <div class="flex-1">
+                    <span class="text-sm" style="color: {{ theme_colors['text-primary'] }}">{{ c.competitor_name }}</span>
+                    {% if c.linkedin_url %}
+                    <a href="{{ c.linkedin_url }}" target="_blank" class="text-[10px] text-blue-400 hover:underline ml-2"><i class="fab fa-linkedin mr-0.5"></i>LinkedIn</a>
+                    {% endif %}
+                </div>
+                <button onclick="deleteCompetitor({{ c.id }})" class="text-[10px] text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><i class="fas fa-trash"></i></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-center py-4" style="color: {{ theme_colors['text-muted'] }}">No competitors tracked yet. Add competitors to benchmark against.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add Metric Modal -->
+<div id="addMetricModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-[400px]" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}" x-data="{ metric_type: 'impressions', metric_value: '', content_item_id: '', snapshot_date: new Date().toISOString().split('T')[0] }">
+        <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}">Log Performance Metric</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Metric Type</label>
+                <select x-model="metric_type" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <option value="impressions">Impressions</option>
+                    <option value="likes">Likes</option>
+                    <option value="comments">Comments</option>
+                    <option value="shares">Shares</option>
+                    <option value="clicks">Clicks</option>
+                    <option value="engagement_rate">Engagement Rate (%)</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Value</label>
+                <input x-model="metric_value" type="number" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}">
+            </div>
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Date</label>
+                <input x-model="snapshot_date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}">
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button @click="fetch('/api/analytics/snapshot', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({brand_id:{{ brand.id }}, metric_type, metric_value:parseFloat(metric_value), snapshot_date, source:'manual'})
+                }).then(()=>{toast('Metric logged','success');location.reload()})"
+                class="px-4 py-2 bg-dm-primary text-white text-sm rounded-lg">Save</button>
+                <button onclick="document.getElementById('addMetricModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Competitor Modal -->
+<div id="addCompetitorModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-[400px]" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}" x-data="{ name: '', linkedin: '', website: '', notes: '' }">
+        <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}">Add Competitor</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Name *</label>
+                <input x-model="name" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}">
+            </div>
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">LinkedIn URL</label>
+                <input x-model="linkedin" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="https://linkedin.com/company/...">
+            </div>
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Website</label>
+                <input x-model="website" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}">
+            </div>
+            <div>
+                <label class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Notes</label>
+                <textarea x-model="notes" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm mt-1 outline-none resize-none" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-primary'] }}"></textarea>
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button @click="if(!name.trim())return toast('Enter a name','warning');fetch('/api/competitors',{
+                    method:'POST',headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({brand_id:{{ brand.id }},competitor_name:name,linkedin_url:linkedin,website_url:website,notes})
+                }).then(()=>{toast('Competitor added','success');location.reload()})"
+                class="px-4 py-2 bg-dm-primary text-white text-sm rounded-lg">Add</button>
+                <button onclick="document.getElementById('addCompetitorModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const chartColors = {
+    backlog: '#6b7280', research: '#a855f7', drafting: '#3b82f6',
+    visuals: '#06b6d4', review: '#eab308', ready: '#f97316',
+    published: '#22c55e', analyzed: '#10b981'
+};
+const typeColors = {
+    linkedin_post: '#0077b5', carousel: '#6366f1', video: '#ef4444',
+    blog: '#f59e0b', email: '#8b5cf6', reel: '#ec4899'
+};
+
+// Status chart
+const statusData = {{ status_data | tojson | safe }};
+if (Object.keys(statusData).length > 0) {
+    new Chart(document.getElementById('statusChart'), {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(statusData).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+            datasets: [{
+                data: Object.values(statusData),
+                backgroundColor: Object.keys(statusData).map(s => chartColors[s] || '#6b7280'),
+                borderWidth: 0
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { color: '{{ theme_colors["text-secondary"] }}', font: { size: 10 } } } } }
+    });
+}
+
+// Type chart
+const typeData = {{ type_data | tojson | safe }};
+if (Object.keys(typeData).length > 0) {
+    new Chart(document.getElementById('typeChart'), {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(typeData).map(t => t.replace('_', ' ')),
+            datasets: [{
+                data: Object.values(typeData),
+                backgroundColor: Object.keys(typeData).map(t => typeColors[t] || '#6b7280'),
+                borderWidth: 0
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { color: '{{ theme_colors["text-secondary"] }}', font: { size: 10 } } } } }
+    });
+}
+
+// Monthly output chart
+const monthlyData = {{ monthly_data | tojson | safe }};
+const publishedData = {{ published_data | tojson | safe }};
+const allMonths = [...new Set([...monthlyData.map(m => m.month), ...publishedData.map(m => m.month)])].sort();
+const createdByMonth = {};
+monthlyData.forEach(m => createdByMonth[m.month] = m.cnt);
+const pubByMonth = {};
+publishedData.forEach(m => pubByMonth[m.month] = m.cnt);
+
+if (allMonths.length > 0) {
+    new Chart(document.getElementById('monthlyChart'), {
+        type: 'bar',
+        data: {
+            labels: allMonths.map(m => { const [y,mo] = m.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo)-1] + ' ' + y; }),
+            datasets: [
+                { label: 'Created', data: allMonths.map(m => createdByMonth[m] || 0), backgroundColor: '#3b82f680', borderRadius: 6 },
+                { label: 'Published', data: allMonths.map(m => pubByMonth[m] || 0), backgroundColor: '#22c55e80', borderRadius: 6 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { color: '{{ theme_colors["text-muted"] }}' }, grid: { color: '{{ theme_colors["border-primary"] }}' } }, x: { ticks: { color: '{{ theme_colors["text-muted"] }}' }, grid: { display: false } } },
+            plugins: { legend: { labels: { color: '{{ theme_colors["text-secondary"] }}', font: { size: 11 } } } }
+        }
+    });
+}
+
+async function deleteCompetitor(id) {
+    if (!confirm('Remove this competitor?')) return;
+    await fetch(`/api/competitors/${id}`, { method: 'DELETE' });
+    toast('Competitor removed', 'info');
+    location.reload();
+}
+
+async function analyzePerformance() {
+    const res = await fetch('/api/brands/{{ brand.id }}/analyze-performance', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+        toast('Weekly analysis complete — insights generated', 'success');
+        location.reload();
+    } else {
+        toast('Analysis failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+}
+
+async function reviewPillars() {
+    const res = await fetch('/api/brands/{{ brand.id }}/review-pillars', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+        toast('Pillar review complete — see recommendations below', 'success');
+        location.reload();
+    } else {
+        toast('Review failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+}
+
+async function applyInsight(insightId) {
+    const res = await fetch(`/api/brands/{{ brand.id }}/apply-insight/${insightId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.ok) {
+        toast('Insight marked as applied', 'success');
+        location.reload();
+    }
+}
+</script>
+{% endblock %}

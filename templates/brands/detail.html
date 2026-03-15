@@ -1,0 +1,589 @@
+{% extends "base.html" %}
+{% block title %}{{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }}{% endblock %}
+
+{% block sidebar_brand_nav %}
+<div class="mt-4 pt-4 border-t" style="border-color: {{ theme_colors['border-primary'] }}">
+    <p class="px-3 text-[10px] uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">{{ brand.name }}</p>
+    <a href="/brands/{{ brand.id }}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/brands/' ~ brand.id|string %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if request.path != '/brands/' ~ brand.id|string %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-home w-5 text-center"></i><span>Overview</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/onboarding" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'onboarding' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'onboarding' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-rocket w-5 text-center"></i><span>Onboarding</span>
+    </a>
+
+    <!-- Strategy & Planning -->
+    <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Plan</p>
+    <a href="/brands/{{ brand.id }}/planning" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'planning' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'planning' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-lightbulb w-5 text-center"></i><span>Planning</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/templates" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'templates' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'templates' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-copy w-5 text-center"></i><span>Templates</span>
+    </a>
+
+    <!-- Execute & Create -->
+    <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Create</p>
+    <a href="/brands/{{ brand.id }}/workflow" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'workflow' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'workflow' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-project-diagram w-5 text-center"></i><span>Workflow</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/pipeline" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'pipeline' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'pipeline' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-columns w-5 text-center"></i><span>Pipeline</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'preview' in request.path or 'feedback' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'preview' not in request.path and 'feedback' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-palette w-5 text-center"></i><span>Content Studio</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/voice" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'voice' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'voice' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-microphone-alt w-5 text-center"></i><span>Brand Voice</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/assets" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'assets' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'assets' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-cube w-5 text-center"></i><span>Asset Hub</span>
+    </a>
+
+    <!-- Publish & Measure -->
+    <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Publish</p>
+    <a href="/brands/{{ brand.id }}/calendar" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'calendar' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'calendar' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-calendar-alt w-5 text-center"></i><span>Calendar</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/analytics" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'analytics' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'analytics' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-chart-line w-5 text-center"></i><span>Analytics</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/client-review" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'client-review' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'client-review' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-file-pdf w-5 text-center"></i><span>Client Review</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/feedback-forms" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'feedback-forms' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'feedback-forms' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-poll w-5 text-center"></i><span>Feedback Forms</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/folders" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'folders' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'folders' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-folder-open w-5 text-center"></i><span>Folders</span>
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <!-- Brand Header -->
+    <div class="border rounded-xl p-6" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-start gap-5">
+            <div class="w-16 h-16 rounded-xl flex items-center justify-center text-3xl font-bold flex-shrink-0" style="background: {{ brand.accent_color }}20; color: {{ brand.accent_color }}">
+                {{ brand.name[0] }}
+            </div>
+            <div class="flex-1">
+                <h1 class="text-2xl font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ brand.name }}</h1>
+                <p class="mt-1" style="color: {{ theme_colors['text-secondary'] }}">{{ brand.tagline or '' }}</p>
+                {% if brand.website %}
+                <p class="text-sm text-dm-accent mt-1">{{ brand.website }}</p>
+                {% endif %}
+                {% if brand.voice_summary %}
+                <p class="text-sm mt-2" style="color: {{ theme_colors['text-muted'] }}">{{ brand.voice_summary }}</p>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="flex gap-2">
+                    <div class="w-8 h-8 rounded-lg" style="background: {{ brand.primary_color }}; border: 1px solid #555" title="Primary"></div>
+                    <div class="w-8 h-8 rounded-lg" style="background: {{ brand.accent_color }}" title="Accent"></div>
+                </div>
+                <div x-data="{ editing: false, kitId: '{{ brand.canva_brand_kit_id or '' }}' }">
+                    <template x-if="!editing">
+                        <button @click="editing = true" class="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" title="Canva Brand Kit">
+                            <i class="fab fa-figma"></i>
+                            <span x-text="kitId ? 'Kit: ' + kitId.substring(0, 8) + '...' : 'Link Brand Kit'"></span>
+                        </button>
+                    </template>
+                    <div x-show="editing" x-cloak class="flex gap-1">
+                        <input x-model="kitId" type="text" class="border rounded px-2 py-1 text-[10px] w-40" style="background: {{ theme_colors['input-bg'] }}; border-color: {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Canva Brand Kit ID">
+                        <button @click="fetch('/api/brands/{{ brand.id }}/canva-brand-kit', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({brand_kit_id: kitId})}).then(()=>{toast('Brand kit saved','success'); editing=false})" class="px-2 py-1 bg-dm-primary text-white text-[10px] rounded"><i class="fas fa-check"></i></button>
+                        <button @click="editing = false" class="px-2 py-1 text-[10px] rounded" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-4 gap-4">
+        <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-3xl font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ content_stats.total }}</div>
+            <div class="text-xs uppercase mt-1" style="color: {{ theme_colors['text-muted'] }}">Total Content</div>
+        </div>
+        <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-3xl font-bold" style="color: {{ theme_colors['text-secondary'] }}">{{ content_stats.backlog }}</div>
+            <div class="text-xs uppercase mt-1" style="color: {{ theme_colors['text-muted'] }}">Backlog</div>
+        </div>
+        <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-3xl font-bold text-blue-400">{{ content_stats.in_progress }}</div>
+            <div class="text-xs uppercase mt-1" style="color: {{ theme_colors['text-muted'] }}">In Progress</div>
+        </div>
+        <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-3xl font-bold text-green-400">{{ content_stats.published }}</div>
+            <div class="text-xs uppercase mt-1" style="color: {{ theme_colors['text-muted'] }}">Published</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-6">
+        <!-- Content Pillars -->
+        <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-layer-group mr-2 text-dm-accent"></i>Content Pillars</h2>
+                <div class="flex items-center gap-2">
+                    <span class="help-tip" data-tip="Content pillars are the core themes your brand publishes around. Each piece of content maps to a pillar for balanced coverage.">
+                        <i class="fas fa-question-circle text-sm" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                    </span>
+                    <button onclick="document.getElementById('addPillarModal').classList.remove('hidden')" class="text-xs text-dm-accent hover:underline">
+                        <i class="fas fa-plus mr-1"></i>Add
+                    </button>
+                </div>
+            </div>
+            <div style="--tw-divide-color: {{ theme_colors['border-primary'] }}" class="divide-y">
+                {% for pillar in pillars %}
+                <div class="p-3 flex items-center gap-3 group"
+                     x-data='{ "editingPillar": false, "pName": {{ pillar.name | tojson }}, "pDesc": {{ (pillar.description or "") | tojson }}, "pColor": "{{ pillar.color }}" }'>
+                    <div class="w-3 h-3 rounded-full flex-shrink-0" style="background: {{ pillar.color }}"></div>
+                    <div class="flex-1">
+                        <div x-show="!editingPillar">
+                            <span class="text-sm" style="color: {{ theme_colors['text-primary'] }}">{{ pillar.name }}</span>
+                            {% if pillar.description %}
+                            <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ pillar.description[:80] }}</p>
+                            {% endif %}
+                        </div>
+                        <div x-show="editingPillar" x-cloak class="space-y-2">
+                            <input x-model="pName" class="w-full rounded px-2 py-1 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <input x-model="pDesc" class="w-full rounded px-2 py-1 text-xs" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-secondary'] }}" placeholder="Description">
+                            <div class="flex gap-2 items-center">
+                                <input x-model="pColor" type="color" class="w-6 h-6 rounded cursor-pointer border-0">
+                                <button @click="fetch('/api/pillars/{{ pillar.id }}', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:pName, description:pDesc, color:pColor}) }).then(()=>location.reload())"
+                                    class="px-2 py-0.5 bg-dm-primary text-white text-xs rounded">Save</button>
+                                <button @click="editingPillar=false" class="px-2 py-0.5 text-xs rounded" style="color: {{ theme_colors['text-muted'] }}">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button @click="editingPillar = !editingPillar" class="w-6 h-6 rounded flex items-center justify-center text-[10px] hover:bg-blue-500/20 text-blue-400" style="background: {{ theme_colors['bg-tertiary'] }}" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="if(confirm('Delete this pillar?')) fetch('/api/pillars/{{ pillar.id }}', {method:'DELETE'}).then(()=>location.reload())"
+                            class="w-6 h-6 rounded flex items-center justify-center text-[10px] hover:bg-red-500/20 text-red-400" style="background: {{ theme_colors['bg-tertiary'] }}" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <!-- AI Suggest Pillars -->
+            <div class="p-3 border-t" style="border-color: {{ theme_colors['border-primary'] }}">
+                <button onclick="suggestPillars(this)" class="w-full px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 text-xs rounded-lg transition-colors border border-purple-600/20">
+                    <i class="fas fa-robot mr-1"></i>AI Suggest Pillar Updates
+                </button>
+                <div id="pillarSuggestions" class="mt-2 hidden space-y-2"></div>
+            </div>
+        </div>
+
+        <!-- Cadence Rules -->
+        <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-clock mr-2 text-dm-accent"></i>Publishing Cadence
+                    <span class="help-tip ml-1" data-tip="Cadence rules define how many posts per week on each channel. The calendar page will warn you when you're falling behind.">
+                        <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                    </span>
+                </h2>
+                <button onclick="document.getElementById('addCadenceModal').classList.remove('hidden')" class="text-xs text-dm-accent hover:underline">
+                    <i class="fas fa-plus mr-1"></i>Add
+                </button>
+            </div>
+            <div style="--tw-divide-color: {{ theme_colors['border-primary'] }}" class="divide-y">
+                {% for cadence in cadences %}
+                <div class="p-3 group"
+                     x-data='{ "editingCadence": false, "cName": {{ cadence.name | tojson }}, "cChannel": "{{ cadence.channel }}", "cPosts": {{ cadence.posts_per_week }}, "cNotes": {{ (cadence.notes or "") | tojson }} }'>
+                    <div x-show="!editingCadence" class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ cadence.name }}</span>
+                                <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">{{ cadence.posts_per_week }}x/week</span>
+                            </div>
+                            <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ cadence.channel }} &middot; {{ cadence.notes or '' }}</p>
+                        </div>
+                        <div class="flex gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button @click="editingCadence = true" class="w-6 h-6 rounded flex items-center justify-center text-[10px] hover:bg-blue-500/20 text-blue-400" style="background: {{ theme_colors['bg-tertiary'] }}" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="if(confirm('Delete this cadence rule?')) fetch('/api/cadence/{{ cadence.id }}', {method:'DELETE'}).then(()=>location.reload())"
+                                class="w-6 h-6 rounded flex items-center justify-center text-[10px] hover:bg-red-500/20 text-red-400" style="background: {{ theme_colors['bg-tertiary'] }}" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div x-show="editingCadence" x-cloak class="space-y-2">
+                        <div class="grid grid-cols-3 gap-2">
+                            <input x-model="cName" class="col-span-2 rounded px-2 py-1 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Name">
+                            <input x-model="cPosts" type="number" class="rounded px-2 py-1 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="x/week">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <select x-model="cChannel" class="rounded px-2 py-1 text-xs" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                                <option>LinkedIn</option><option>Blog</option><option>Email</option><option>Video</option><option>Twitter</option><option>Instagram</option>
+                            </select>
+                            <input x-model="cNotes" class="rounded px-2 py-1 text-xs" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-secondary'] }}" placeholder="Notes">
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="fetch('/api/cadence/{{ cadence.id }}', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:cName, channel:cChannel, posts_per_week:parseInt(cPosts), preferred_days:[], preferred_times:[], notes:cNotes}) }).then(()=>location.reload())"
+                                class="px-2 py-0.5 bg-dm-primary text-white text-xs rounded">Save</button>
+                            <button @click="editingCadence=false" class="px-2 py-0.5 text-xs rounded" style="color: {{ theme_colors['text-muted'] }}">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% if not cadences %}
+                <div class="p-4 text-center text-sm" style="color: {{ theme_colors['text-muted'] }}">No cadence rules configured</div>
+                {% endif %}
+            </div>
+            <!-- AI Suggest Cadence -->
+            <div class="p-3 border-t" style="border-color: {{ theme_colors['border-primary'] }}">
+                <button onclick="suggestCadence(this)" class="w-full px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 text-xs rounded-lg transition-colors border border-purple-600/20">
+                    <i class="fas fa-robot mr-1"></i>AI Suggest Cadence Updates
+                </button>
+                <div id="cadenceSuggestions" class="mt-2 hidden space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Cadence Modal -->
+    <div id="addCadenceModal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50" onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="rounded-xl p-6 w-96 space-y-4" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}"
+             x-data="{ name:'', channel:'LinkedIn', posts:3, notes:'' }">
+            <h3 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">Add Cadence Rule</h3>
+            <input x-model="name" class="w-full rounded-lg px-3 py-2 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Rule name">
+            <div class="grid grid-cols-2 gap-3">
+                <select x-model="channel" class="rounded-lg px-3 py-2 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <option>LinkedIn</option><option>Blog</option><option>Email</option><option>Video</option><option>Twitter</option><option>Instagram</option>
+                </select>
+                <input x-model="posts" type="number" class="rounded-lg px-3 py-2 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Posts/week">
+            </div>
+            <input x-model="notes" class="w-full rounded-lg px-3 py-2 text-sm" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-secondary'] }}" placeholder="Notes (optional)">
+            <div class="flex gap-2 justify-end">
+                <button onclick="this.closest('#addCadenceModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+                <button @click="fetch('/api/cadence', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({brand_id:{{ brand.id }}, name, channel, posts_per_week:parseInt(posts), preferred_days:[], preferred_times:[], notes}) }).then(()=>location.reload())"
+                    class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Add Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="grid grid-cols-3 gap-3">
+        <a href="/brands/{{ brand.id }}/workflow" class="border rounded-xl p-4 text-center hover:border-dm-primary transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <i class="fas fa-project-diagram text-2xl group-hover:text-dm-accent mb-2" style="color: {{ theme_colors['text-muted'] }}"></i>
+            <div class="text-sm text-gray-300">Workflow</div>
+        </a>
+        <a href="/brands/{{ brand.id }}/pipeline" class="border rounded-xl p-4 text-center hover:border-dm-primary transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <i class="fas fa-columns text-2xl group-hover:text-dm-accent mb-2" style="color: {{ theme_colors['text-muted'] }}"></i>
+            <div class="text-sm text-gray-300">Pipeline</div>
+        </a>
+        <a href="/brands/{{ brand.id }}/preview" class="border rounded-xl p-4 text-center hover:border-dm-primary transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <i class="fas fa-palette text-2xl group-hover:text-dm-accent mb-2" style="color: {{ theme_colors['text-muted'] }}"></i>
+            <div class="text-sm text-gray-300">Content Studio</div>
+        </a>
+    </div>
+
+    <!-- File Drop Zone + Folder Sync -->
+    <div class="grid grid-cols-2 gap-4">
+        <!-- Smart File Drop -->
+        <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-cloud-upload-alt mr-2 text-dm-accent"></i>Smart File Drop
+                </h2>
+                <span class="help-tip" data-tip="Drop any file here and it will be auto-routed to the correct DIQIT folder based on its name and type.">
+                    <i class="fas fa-question-circle text-sm" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </div>
+            <div id="dropZone" class="p-6 text-center border-2 border-dashed rounded-lg m-4 transition-colors cursor-pointer"
+                 style="border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-muted'] }}"
+                 ondragover="event.preventDefault(); this.style.borderColor='{{ theme_colors['accent-primary'] }}'; this.style.background='{{ theme_colors['bg-tertiary'] }}'"
+                 ondragleave="this.style.borderColor='{{ theme_colors['border-hover'] }}'; this.style.background='transparent'"
+                 ondrop="handleDrop(event)"
+                 onclick="document.getElementById('fileInput').click()">
+                <i class="fas fa-cloud-upload-alt text-3xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                <p class="text-sm">Drag & drop files here</p>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Files are auto-routed to the right folder</p>
+                <input type="file" id="fileInput" class="hidden" multiple onchange="handleFileSelect(this.files)">
+            </div>
+            <div id="dropResult" class="hidden px-4 pb-4">
+                <div id="dropResultContent"></div>
+            </div>
+        </div>
+
+        <!-- Folder Sync -->
+        <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-sync-alt mr-2 text-dm-accent"></i>Folder Sync
+                </h2>
+                <span class="help-tip" data-tip="Scans your DIQIT folders for content files and imports them into the database. Use this to sync content created outside the app.">
+                    <i class="fas fa-question-circle text-sm" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </div>
+            <div class="p-4 space-y-3">
+                <!-- Folder Path Config -->
+                <div x-data="{ editing: false, folderPath: '{{ brand.folder_path or '' }}' }">
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Root folder</span>
+                        <button @click="editing = !editing" class="text-[10px] text-dm-accent hover:underline">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                    </div>
+                    <div x-show="!editing" class="font-mono text-xs px-2 py-1 rounded mt-1" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                        {{ brand.folder_path or 'Not configured — click pencil to set' }}
+                    </div>
+                    <div x-show="editing" x-cloak class="mt-1 flex gap-2">
+                        <input x-model="folderPath" type="text" class="flex-1 border rounded-lg px-3 py-1.5 text-xs outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="/path/to/brand/folder">
+                        <button @click="fetch('/api/brands/{{ brand.id }}/update-folder-path', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder_path:folderPath})}).then(()=>{toast('Folder path updated','success');location.reload()})" class="px-2 py-1 bg-dm-primary text-white text-xs rounded-lg">Save</button>
+                    </div>
+                </div>
+                {% if brand.folder_path %}
+                <button onclick="createFolderStructure(this)" class="w-full px-3 py-1.5 text-xs rounded-lg transition-colors border flex items-center justify-center gap-1" style="border-color: {{ theme_colors['border-hover'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-folder-plus"></i> Create Missing Folders
+                </button>
+                {% endif %}
+                <div id="syncStatus" class="hidden text-sm p-3 rounded-lg border" style="border-color: {{ theme_colors['border-hover'] }}; background: {{ theme_colors['bg-tertiary'] }}">
+                    <span id="syncMessage"></span>
+                </div>
+                <button onclick="syncFolders(this)" class="w-full px-4 py-2.5 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2">
+                    <i class="fas fa-sync-alt"></i> Sync Now
+                </button>
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ content_stats.total }}</div>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">Items in DB</div>
+                    </div>
+                    <div class="p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <div class="text-lg font-bold text-green-400" id="syncedCount">—</div>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">Last Sync</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Content -->
+    {% if recent_content %}
+    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-file-alt mr-2 text-dm-accent"></i>Recent Content</h2>
+        </div>
+        <table class="w-full text-sm">
+            <thead style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <tr>
+                    <th class="px-4 py-2 text-left text-xs uppercase">Title</th>
+                    <th class="px-4 py-2 text-left text-xs uppercase">Type</th>
+                    <th class="px-4 py-2 text-left text-xs uppercase">Market</th>
+                    <th class="px-4 py-2 text-left text-xs uppercase">Status</th>
+                    <th class="px-4 py-2 text-left text-xs uppercase">Date</th>
+                </tr>
+            </thead>
+            <tbody style="--tw-divide-color: {{ theme_colors['border-primary'] }}" class="divide-y">
+                {% for item in recent_content %}
+                <tr onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="this.style.background=''">
+                    <td class="px-4 py-3" style="color: {{ theme_colors['text-primary'] }}">{{ item.title[:50] }}</td>
+                    <td class="px-4 py-3" style="color: {{ theme_colors['text-secondary'] }}">{{ item.content_type }}</td>
+                    <td class="px-4 py-3" style="color: {{ theme_colors['text-secondary'] }}">{{ item.market }}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-0.5 rounded-full text-xs
+                            {% if item.status == 'published' %}bg-green-500/10 text-green-400
+                            {% elif item.status == 'review' %}bg-yellow-500/10 text-yellow-400
+                            {% elif item.status == 'backlog' %}bg-gray-500/10 text-gray-400
+                            {% else %}bg-blue-500/10 text-blue-400{% endif %}">
+                            {{ item.status }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3" style="color: {{ theme_colors['text-muted'] }}">{{ item.publish_date or 'Unscheduled' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function handleDrop(e) {
+    e.preventDefault();
+    e.currentTarget.style.borderColor = '{{ theme_colors["border-hover"] }}';
+    e.currentTarget.style.background = 'transparent';
+    const files = e.dataTransfer.files;
+    if (files.length > 0) await uploadFiles(files);
+}
+
+async function handleFileSelect(files) {
+    if (files.length > 0) await uploadFiles(files);
+}
+
+async function uploadFiles(files) {
+    const resultDiv = document.getElementById('dropResult');
+    const resultContent = document.getElementById('dropResultContent');
+    resultDiv.classList.remove('hidden');
+    resultContent.innerHTML = '<p class="text-sm" style="color: {{ theme_colors["text-secondary"] }}"><i class="fas fa-spinner fa-spin mr-1"></i>Routing files...</p>';
+
+    const results = [];
+    for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const res = await fetch('/api/brands/{{ brand.id }}/file-drop', { method: 'POST', body: formData });
+            const data = await res.json();
+            results.push(data);
+        } catch (err) {
+            results.push({ ok: false, filename: file.name, error: err.message });
+        }
+    }
+
+    resultContent.innerHTML = results.map(r =>
+        r.ok
+            ? `<div class="flex items-center gap-2 text-sm py-1"><i class="fas fa-check-circle text-green-400"></i><span style="color: {{ theme_colors['text-primary'] }}">${r.filename}</span><span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">→ ${r.routed_to}/</span></div>`
+            : `<div class="flex items-center gap-2 text-sm py-1"><i class="fas fa-times-circle text-red-400"></i><span style="color: {{ theme_colors['text-primary'] }}">${r.filename}</span><span class="text-xs text-red-400">${r.error}</span></div>`
+    ).join('');
+}
+
+async function createFolderStructure(btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/brands/{{ brand.id }}/create-folder-structure', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+            if (data.total > 0) {
+                toast(`Created ${data.total} folders: ${data.created.join(', ')}`, 'success');
+            } else {
+                toast('All folders already exist', 'info');
+            }
+        } else {
+            toast('Error: ' + (data.error || 'Unknown'), 'error');
+        }
+    } catch(e) { toast(e.message, 'error'); }
+    btn.innerHTML = orig;
+    btn.disabled = false;
+}
+
+async function syncFolders(btn) {
+    const origHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+    btn.disabled = true;
+
+    const statusDiv = document.getElementById('syncStatus');
+    const msgEl = document.getElementById('syncMessage');
+    statusDiv.classList.remove('hidden');
+    msgEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Scanning folders...';
+
+    try {
+        const res = await fetch('/api/brands/{{ brand.id }}/sync-folders', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+            msgEl.innerHTML = `<i class="fas fa-check-circle text-green-400 mr-1"></i> Imported ${data.content_items} items, found ${data.files_found} files (${data.skipped} already existed)`;
+            document.getElementById('syncedCount').textContent = `+${data.content_items}`;
+            if (data.content_items > 0) {
+                setTimeout(() => location.reload(), 1500);
+            }
+        } else {
+            msgEl.innerHTML = `<i class="fas fa-times-circle text-red-400 mr-1"></i> ${data.error}`;
+        }
+    } catch (err) {
+        msgEl.innerHTML = `<i class="fas fa-times-circle text-red-400 mr-1"></i> ${err.message}`;
+    }
+
+    btn.innerHTML = origHTML;
+    btn.disabled = false;
+}
+
+async function suggestPillars(btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Analyzing...';
+    btn.disabled = true;
+    const container = document.getElementById('pillarSuggestions');
+    container.classList.remove('hidden');
+    container.innerHTML = '<div class="text-xs" style="color: {{ theme_colors["text-muted"] }}"><i class="fas fa-spinner fa-spin mr-1"></i>Getting AI suggestions...</div>';
+    try {
+        const res = await fetch('/api/brands/{{ brand.id }}/suggest-pillars', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok && data.suggestions.length) {
+            container.innerHTML = data.suggestions.map(s => `
+                <div class="rounded-lg p-2 text-xs border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] mr-1 ${s.action==='add'?'bg-green-500/20 text-green-400':s.action==='remove'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${s.action}</span>
+                            ${s.name}
+                        </span>
+                        ${s.action==='add'?`<button onclick="fetch('/api/pillars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brand_id:{{ brand.id }},name:'${s.name.replace(/'/g,"\\'")}',description:'${(s.description||'').replace(/'/g,"\\'")}',color:'${s.color||'#6366f1'}'})}).then(()=>location.reload())" class="px-2 py-0.5 bg-green-600/20 text-green-400 rounded text-[10px]">Apply</button>`
+                         :s.action==='remove'?`<button onclick="if(confirm('Remove pillar?'))fetch('/api/pillars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brand_id:{{ brand.id }},name:'${s.name.replace(/'/g,"\\'")}',_action:'remove'})}).then(()=>location.reload())" class="px-2 py-0.5 bg-red-600/20 text-red-400 rounded text-[10px]">Remove</button>`:''}
+                    </div>
+                    <p class="mt-1" style="color: {{ theme_colors['text-muted'] }}">${s.reason || s.description || ''}</p>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = `<div class="text-xs" style="color: {{ theme_colors['text-muted'] }}">${data.error || 'No suggestions at this time'}</div>`;
+        }
+    } catch(e) { container.innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`; }
+    btn.innerHTML = orig;
+    btn.disabled = false;
+}
+
+async function suggestCadence(btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Analyzing...';
+    btn.disabled = true;
+    const container = document.getElementById('cadenceSuggestions');
+    container.classList.remove('hidden');
+    container.innerHTML = '<div class="text-xs" style="color: {{ theme_colors["text-muted"] }}"><i class="fas fa-spinner fa-spin mr-1"></i>Getting AI suggestions...</div>';
+    try {
+        const res = await fetch('/api/brands/{{ brand.id }}/suggest-cadence', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok && data.suggestions.length) {
+            container.innerHTML = data.suggestions.map(s => `
+                <div class="rounded-lg p-2 text-xs border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] mr-1 ${s.action==='add'?'bg-green-500/20 text-green-400':s.action==='remove'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${s.action}</span>
+                            ${s.name} — ${s.channel || ''} ${s.posts_per_week || ''}x/week
+                        </span>
+                        ${s.action==='add'?`<button onclick="fetch('/api/cadence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brand_id:{{ brand.id }},name:'${s.name.replace(/'/g,"\\'")}',channel:'${s.channel||'LinkedIn'}',posts_per_week:${s.posts_per_week||3},preferred_days:${JSON.stringify(s.preferred_days||[])},preferred_times:${JSON.stringify(s.preferred_times||[])},notes:'${(s.reason||'').replace(/'/g,"\\'")}'})}).then(()=>location.reload())" class="px-2 py-0.5 bg-green-600/20 text-green-400 rounded text-[10px]">Apply</button>`:''}
+                    </div>
+                    <p class="mt-1" style="color: {{ theme_colors['text-muted'] }}">${s.reason || ''}</p>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = `<div class="text-xs" style="color: {{ theme_colors['text-muted'] }}">${data.error || 'No suggestions at this time'}</div>`;
+        }
+    } catch(e) { container.innerHTML = `<div class="text-xs text-red-400">${e.message}</div>`; }
+    btn.innerHTML = orig;
+    btn.disabled = false;
+}
+</script>
+
+<!-- Add Pillar Modal -->
+<div id="addPillarModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-96" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}" x-data="{ name: '', desc: '', color: '#6366f1' }">
+        <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}">Add Content Pillar</h3>
+        <div class="space-y-3">
+            <input x-model="name" type="text" placeholder="Pillar name" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+            <input x-model="desc" type="text" placeholder="Description" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+            <input x-model="color" type="color" class="w-10 h-10 rounded border cursor-pointer focus:ring-2 focus:ring-dm-primary/50" style="border-color: {{ theme_colors['input-border'] }}; background: {{ theme_colors['input-bg'] }}">
+        </div>
+        <div class="flex gap-2 mt-4">
+            <button @click="fetch('/api/pillars', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({brand_id:{{ brand.id }}, name, description:desc, color}) }).then(()=>location.reload())"
+                class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Add</button>
+            <button onclick="this.closest('#addPillarModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

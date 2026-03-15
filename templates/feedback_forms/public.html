@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ form.title }} — {{ form.brand_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        .star-btn { transition: all 0.15s; }
+        .star-btn:hover, .star-btn.active { transform: scale(1.15); }
+        .nps-btn { transition: all 0.15s; }
+        .nps-btn.active { transform: scale(1.1); font-weight: 700; }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+
+{% if closed %}
+<!-- Form Closed -->
+<div class="min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-md w-full text-center">
+        <div class="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center" style="background: {{ form.primary_color or '#000' }}15">
+            <i class="fas fa-lock text-2xl" style="color: {{ form.primary_color or '#000' }}"></i>
+        </div>
+        <h1 class="text-xl font-bold text-gray-800 mb-2">Form Closed</h1>
+        <p class="text-sm text-gray-500">This feedback form is no longer accepting responses.</p>
+        <p class="text-xs text-gray-400 mt-4">{{ form.brand_name }}</p>
+    </div>
+</div>
+
+{% else %}
+<!-- Active Form -->
+<div class="min-h-screen" x-data="publicForm()">
+
+    <!-- Header -->
+    <div class="py-6 px-4 text-center" style="background: {{ form.primary_color or '#000' }}">
+        <h1 class="text-xl font-bold text-white mb-1">{{ form.title }}</h1>
+        {% if form.description %}
+        <p class="text-sm text-white/70">{{ form.description }}</p>
+        {% endif %}
+        <p class="text-xs text-white/40 mt-2">{{ form.brand_name }}</p>
+    </div>
+
+    <!-- Form Body -->
+    <div x-show="!submitted" class="max-w-lg mx-auto px-4 py-6 space-y-6">
+
+        {% set fields = form.fields | from_json %}
+        {% for field in fields %}
+        <div class="space-y-2">
+            <label class="text-sm font-medium text-gray-700 block">
+                {{ field.label }}
+                {% if field.required %}<span class="text-red-500">*</span>{% endif %}
+            </label>
+
+            {% if field.type == 'rating' %}
+            <div class="flex gap-2">
+                {% for i in range(1, 6) %}
+                <button type="button" @click="responses['{{ field.id }}'] = {{ i }}"
+                    class="star-btn text-3xl"
+                    :class="responses['{{ field.id }}'] >= {{ i }} ? 'text-yellow-400 active' : 'text-gray-300'">
+                    <i class="fas fa-star"></i>
+                </button>
+                {% endfor %}
+            </div>
+
+            {% elif field.type == 'nps' %}
+            <div class="grid grid-cols-11 gap-1">
+                {% for i in range(0, 11) %}
+                <button type="button" @click="responses['{{ field.id }}'] = {{ i }}"
+                    class="nps-btn h-10 rounded-lg text-sm border transition-all"
+                    :class="responses['{{ field.id }}'] === {{ i }}
+                        ? '{{ 'bg-red-500 text-white border-red-500' if i <= 6 else ('bg-yellow-500 text-white border-yellow-500' if i <= 8 else 'bg-green-500 text-white border-green-500') }} active'
+                        : 'border-gray-300 text-gray-600 hover:bg-gray-50'">
+                    {{ i }}
+                </button>
+                {% endfor %}
+            </div>
+            <div class="flex justify-between text-xs text-gray-400">
+                <span>Not at all likely</span><span>Extremely likely</span>
+            </div>
+
+            {% elif field.type == 'text' %}
+            <input type="text" x-model="responses['{{ field.id }}']"
+                class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition"
+                placeholder="{{ field.options.placeholder if field.options and field.options.placeholder else 'Your answer' }}">
+
+            {% elif field.type == 'textarea' %}
+            <textarea x-model="responses['{{ field.id }}']" rows="{{ field.options.rows if field.options and field.options.rows else 4 }}"
+                class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none resize-none transition"
+                placeholder="{{ field.options.placeholder if field.options and field.options.placeholder else 'Your answer' }}"></textarea>
+
+            {% elif field.type == 'select' %}
+            <div class="space-y-2">
+                {% for choice in field.options.choices %}
+                <label class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition"
+                    :class="responses['{{ field.id }}'] === '{{ choice }}' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'"
+                    @click="responses['{{ field.id }}'] = '{{ choice }}'">
+                    <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition"
+                        :class="responses['{{ field.id }}'] === '{{ choice }}' ? 'border-blue-500' : 'border-gray-300'">
+                        <div class="w-2.5 h-2.5 rounded-full transition"
+                            :class="responses['{{ field.id }}'] === '{{ choice }}' ? 'bg-blue-500' : ''"></div>
+                    </div>
+                    <span class="text-sm text-gray-700">{{ choice }}</span>
+                </label>
+                {% endfor %}
+            </div>
+
+            {% elif field.type == 'multi_select' %}
+            <div class="space-y-2">
+                {% for choice in field.options.choices %}
+                <label class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition"
+                    :class="(responses['{{ field.id }}'] || []).includes('{{ choice }}') ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'"
+                    @click="toggleMulti('{{ field.id }}', '{{ choice }}')">
+                    <div class="w-5 h-5 rounded border-2 flex items-center justify-center transition"
+                        :class="(responses['{{ field.id }}'] || []).includes('{{ choice }}') ? 'border-blue-500 bg-blue-500' : 'border-gray-300'">
+                        <i class="fas fa-check text-white text-[10px]"
+                            x-show="(responses['{{ field.id }}'] || []).includes('{{ choice }}')"></i>
+                    </div>
+                    <span class="text-sm text-gray-700">{{ choice }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Validation error -->
+            <p x-show="errors['{{ field.id }}']" x-cloak class="text-xs text-red-500" x-text="errors['{{ field.id }}']"></p>
+        </div>
+        {% endfor %}
+
+        <!-- Optional contact info -->
+        <div class="pt-4 border-t border-gray-200 space-y-3">
+            <p class="text-xs text-gray-400">Optional — share your contact info</p>
+            <input type="text" x-model="name" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/50" placeholder="Your name">
+            <input type="email" x-model="email" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/50" placeholder="Your email">
+        </div>
+
+        <!-- Submit -->
+        <button @click="submitForm()" :disabled="submitting"
+            class="w-full py-3.5 rounded-xl text-white text-sm font-semibold transition-all disabled:opacity-50"
+            style="background: {{ form.primary_color or '#000' }}">
+            <span x-show="!submitting">Submit Feedback</span>
+            <span x-show="submitting"><i class="fas fa-spinner fa-spin mr-1"></i>Submitting...</span>
+        </button>
+
+        <p x-show="submitError" x-cloak class="text-sm text-red-500 text-center" x-text="submitError"></p>
+    </div>
+
+    <!-- Thank You Screen -->
+    <div x-show="submitted" x-cloak class="max-w-lg mx-auto px-4 py-16 text-center">
+        <div class="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center" style="background: {{ form.primary_color or '#000' }}15">
+            <i class="fas fa-check text-3xl" style="color: {{ form.primary_color or '#000' }}"></i>
+        </div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2" x-text="thankYouMsg"></h2>
+        <p class="text-sm text-gray-500">Your feedback has been recorded.</p>
+    </div>
+</div>
+
+<script>
+function publicForm() {
+    const requiredFields = {{ (form.fields | from_json) | selectattr('required') | map(attribute='id') | list | tojson }};
+    return {
+        responses: {},
+        errors: {},
+        name: '',
+        email: '',
+        submitting: false,
+        submitted: false,
+        submitError: '',
+        thankYouMsg: 'Thank you!',
+
+        toggleMulti(fieldId, choice) {
+            if (!this.responses[fieldId]) this.responses[fieldId] = [];
+            const idx = this.responses[fieldId].indexOf(choice);
+            if (idx >= 0) this.responses[fieldId].splice(idx, 1);
+            else this.responses[fieldId].push(choice);
+        },
+
+        validate() {
+            this.errors = {};
+            let valid = true;
+            requiredFields.forEach(fid => {
+                const val = this.responses[fid];
+                if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
+                    this.errors[fid] = 'This field is required';
+                    valid = false;
+                }
+            });
+            return valid;
+        },
+
+        async submitForm() {
+            if (!this.validate()) return;
+            this.submitting = true;
+            this.submitError = '';
+            try {
+                const res = await fetch('/f/{{ form.share_token }}/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        responses: this.responses,
+                        name: this.name,
+                        email: this.email,
+                        source: '{{ source or "web" }}'
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.thankYouMsg = data.message || 'Thank you!';
+                    this.submitted = true;
+                } else {
+                    this.submitError = data.error || 'Submission failed. Please try again.';
+                }
+            } catch (e) {
+                this.submitError = 'Network error. Please try again.';
+            }
+            this.submitting = false;
+        }
+    };
+}
+</script>
+{% endif %}
+
+</body>
+</html>

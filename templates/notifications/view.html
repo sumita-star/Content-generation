@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Tasks & Alerts — DigitalAIzeme{% endblock %}
+{% block page_title %}Tasks & Alerts{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6" x-data="tasksApp()">
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                Tasks & Alerts
+                <span class="help-tip ml-1" data-tip="Tasks are generated from your workflow steps. Use 'Validate All' to auto-check if tasks are done by scanning for new files in linked folders. Copy Prompt copies step instructions for manual execution.">
+                    <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </h1>
+            <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">Your actionable workflow tasks and notifications</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="validateAllTasks(this)" class="px-3 py-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 text-xs rounded-lg transition-colors border border-green-600/20">
+                <i class="fas fa-check-double mr-1"></i>Validate All
+            </button>
+            <button onclick="generateDaily(this)" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-sync-alt mr-1"></i>Generate Today's Tasks
+            </button>
+            <button onclick="markAllRead()" class="px-3 py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-check-double mr-1"></i>Mark All Read
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex items-center gap-3 flex-wrap">
+        <!-- Brand filter -->
+        <select x-model="filterBrand" @change="applyFilters()"
+            class="text-xs rounded-lg px-3 py-1.5 border outline-none"
+            style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-primary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <option value="">All Brands</option>
+            {% for b in brands %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+        </select>
+        <!-- Step type filter -->
+        <div class="flex gap-1">
+            <button @click="filterType = 'action'; applyFilters()" :class="filterType === 'action' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors border" :style="filterType !== 'action' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}' : 'border-color: transparent'">
+                <i class="fas fa-hand-pointer mr-1"></i>Needs Action
+            </button>
+            <button @click="filterType = 'all'; applyFilters()" :class="filterType === 'all' ? 'bg-dm-primary text-white' : ''" class="px-3 py-1.5 text-xs rounded-lg transition-colors border" :style="filterType !== 'all' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}' : 'border-color: transparent'">
+                <i class="fas fa-list mr-1"></i>All Tasks
+            </button>
+        </div>
+        <span class="text-xs ml-auto" style="color: {{ theme_colors['text-muted'] }}" x-text="visibleCount + ' task(s) shown'"></span>
+    </div>
+
+    <!-- Active Tasks -->
+    {% if tasks %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fas fa-tasks text-dm-accent"></i> Active Tasks
+                <span class="text-xs px-2 py-0.5 rounded-full bg-dm-primary/20 text-dm-accent" x-text="visibleCount"></span>
+            </h2>
+        </div>
+        <div>
+            {% for t in tasks %}
+            <div class="p-4 flex items-start gap-4 transition-all task-row {% if not t.is_read %}bg-dm-primary/5{% endif %}"
+                 id="task-{{ t.id }}" data-brand-id="{{ t.brand_id or '' }}" data-step-type="{{ t.step_type or 'manual' }}"
+                 style="{% if not loop.last %}border-bottom: 1px solid {{ theme_colors['border-primary'] }};{% endif %}{% if t.step_type == 'automated' %} display: none;{% endif %}"
+                 x-data="{ validating: false, validationResult: null }">
+                <!-- Done checkbox -->
+                <button onclick="markDone({{ t.id }}, this)" class="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 hover:border-green-400 transition-colors" style="border-color: {{ theme_colors['border-hover'] }}" title="Mark as done">
+                </button>
+                <!-- Icon -->
+                <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
+                    {% if t.step_type == 'automated' %}bg-green-500/10
+                    {% elif t.step_type == 'semi-auto' %}bg-blue-500/10
+                    {% elif t.notification_type == 'system' %}bg-purple-500/10
+                    {% else %}bg-yellow-500/10{% endif %}">
+                    {% if t.step_type == 'automated' %}
+                    <i class="fas fa-robot text-green-400"></i>
+                    {% elif t.step_type == 'semi-auto' %}
+                    <i class="fas fa-user-cog text-blue-400"></i>
+                    {% elif t.notification_type == 'system' %}
+                    <i class="fas fa-bolt text-purple-400"></i>
+                    {% else %}
+                    <i class="fas fa-user text-yellow-400"></i>
+                    {% endif %}
+                </div>
+                <!-- Content -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h4 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ t.title }}</h4>
+                        {% if not t.is_read %}
+                        <span class="w-2 h-2 rounded-full bg-dm-accent pulse-dot"></span>
+                        {% endif %}
+                        {% if t.step_type %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-medium
+                            {% if t.step_type == 'automated' %}bg-green-500/10 text-green-400 border border-green-500/20
+                            {% elif t.step_type == 'semi-auto' %}bg-blue-500/10 text-blue-400 border border-blue-500/20
+                            {% else %}bg-yellow-500/10 text-yellow-400 border border-yellow-500/20{% endif %}">
+                            {{ t.step_type }}
+                        </span>
+                        {% endif %}
+                        {% if t.duration_minutes and t.duration_minutes > 0 %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                            <i class="far fa-clock mr-0.5"></i>{{ t.duration_minutes }} min
+                        </span>
+                        {% endif %}
+                    </div>
+                    <p class="text-sm mt-0.5" style="color: {{ theme_colors['text-secondary'] }}">{{ t.message }}</p>
+                    <!-- Context row -->
+                    <div class="flex items-center gap-3 mt-2 text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                        {% if t.brand_name %}
+                        <span class="px-2 py-0.5 rounded" style="background: {{ theme_colors['bg-tertiary'] }}">{{ t.brand_name }}</span>
+                        {% endif %}
+                        {% if t.due_date %}
+                        <span><i class="far fa-calendar mr-1"></i>{{ t.due_date }}</span>
+                        {% endif %}
+                        {% if t.action_url and t.action_type == 'go_to_page' %}
+                        <a href="{{ t.action_url }}" class="text-dm-accent hover:underline"><i class="fas fa-arrow-right mr-1"></i>Go to Workflow</a>
+                        {% elif t.action_url and t.action_type in ('open_folder', 'upload') %}
+                        <span><i class="fas fa-folder mr-1"></i>{{ t.action_url }}</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Validation result -->
+                    <div x-show="validationResult" x-cloak class="mt-2 rounded-lg p-2 text-xs"
+                         :class="validationResult?.validated ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'">
+                        <span x-text="validationResult?.reason"></span>
+                        <template x-if="validationResult?.recent_files?.length">
+                            <div class="mt-1 space-y-0.5">
+                                <template x-for="f in validationResult.recent_files.slice(0, 5)" :key="f.name">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-file text-[10px]"></i>
+                                        <span x-text="f.name"></span>
+                                        <span class="opacity-60" x-text="f.modified"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <!-- Action buttons -->
+                <div class="flex-shrink-0 flex flex-col gap-2">
+                    <div class="flex gap-2">
+                        {% if t.action_type == 'trigger_claude' and t.step_id %}
+                        <button onclick="triggerStep({{ t.step_id }}, 'claude', '{{ t.title | replace("'", "\\'") }}', {{ t.brand_id }}, this)"
+                            class="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 text-xs rounded-lg transition-colors border border-purple-600/20">
+                            <i class="fas fa-brain"></i>Run with Claude
+                        </button>
+                        {% elif t.action_type == 'trigger_apify' and t.step_id %}
+                        <button onclick="triggerStep({{ t.step_id }}, 'apify_claude', '{{ t.title | replace("'", "\\'") }}', {{ t.brand_id }}, this)"
+                            class="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 text-xs rounded-lg transition-colors border border-cyan-600/20">
+                            <i class="fas fa-spider"></i>Scrape & Analyze
+                        </button>
+                        {% elif t.action_type in ['trigger_apps_script', 'trigger_gemini'] and t.step_id %}
+                        <button onclick="triggerStep({{ t.step_id }}, 'gemini', '{{ t.title | replace("'", "\\'") }}', {{ t.brand_id }}, this)"
+                            class="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 text-xs rounded-lg transition-colors border border-orange-600/20">
+                            <i class="fas fa-magic"></i>Generate with Gemini
+                        </button>
+                        {% elif t.action_type == 'upload' %}
+                        <a href="/brands/{{ t.brand_id }}/workflow" class="flex items-center gap-1.5 px-3 py-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 text-xs rounded-lg transition-colors border border-green-600/20">
+                            <i class="fas fa-upload"></i>Upload Files
+                        </a>
+                        {% elif t.action_type == 'open_folder' %}
+                        <button onclick="openFolder('{{ t.action_url }}', {{ t.brand_id }})"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors border" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                            <i class="fas fa-folder-open text-yellow-500"></i>Open Folder
+                        </button>
+                        {% elif t.action_type == 'go_to_page' %}
+                        <a href="{{ t.action_url }}" class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors border" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                            <i class="fas fa-arrow-right"></i>Open
+                        </a>
+                        {% endif %}
+                    </div>
+                    <!-- Smart task actions: Validate + Copy Prompt -->
+                    <div class="flex gap-2">
+                        {% if t.step_id %}
+                        <button @click="validateTask({{ t.id }})"
+                            :disabled="validating"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors border" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}"
+                            title="Check if files exist in the output folder">
+                            <template x-if="validating"><span><i class="fas fa-spinner fa-spin"></i></span></template>
+                            <template x-if="!validating"><span><i class="fas fa-search-plus mr-0.5"></i>Validate</span></template>
+                        </button>
+                        <button onclick="copyPrompt({{ t.step_id }}, '{{ t.title | replace("'", "\\'") }}')"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors border" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}"
+                            title="Copy step instructions to clipboard for manual execution">
+                            <i class="fas fa-copy mr-0.5"></i>Copy Prompt
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Done Today -->
+    {% if done_today %}
+    <div class="rounded-xl overflow-hidden" x-data="{ doneOpen: false }" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-3 flex items-center gap-2 cursor-pointer" @click="doneOpen = !doneOpen" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <i class="fas fa-chevron-right text-xs transition-transform" :class="doneOpen && 'rotate-90'" style="color: {{ theme_colors['text-muted'] }}"></i>
+            <h2 class="text-sm font-medium flex items-center gap-2" style="color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-check-circle text-green-400"></i> Done Today
+                <span class="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400">{{ done_today | length }}</span>
+            </h2>
+        </div>
+        <div>
+            <div x-show="doneOpen" x-cloak>
+                {% for t in done_today %}
+                <div class="p-3 flex items-center gap-3 text-sm" style="{% if not loop.last %}border-bottom: 1px solid {{ theme_colors['border-primary'] }};{% endif %} opacity: 0.6">
+                    <i class="fas fa-check-circle text-green-500"></i>
+                    <span class="line-through" style="color: {{ theme_colors['text-secondary'] }}">{{ t.title }}</span>
+                    {% if t.brand_name %}
+                    <span class="text-xs px-2 py-0.5 rounded ml-auto" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">{{ t.brand_name }}</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Alerts -->
+    {% if alerts %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fas fa-exclamation-circle text-red-400"></i> Alerts
+                <span class="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400">{{ alerts | length }}</span>
+            </h2>
+        </div>
+        <div>
+            {% for a in alerts %}
+            <div class="p-4 flex items-start gap-4 transition-colors" style="{% if not loop.last %}border-bottom: 1px solid {{ theme_colors['border-primary'] }};{% endif %}"
+                 onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="this.style.background='transparent'">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
+                    {% if a.notification_type == 'overdue' %}bg-red-500/10
+                    {% elif a.notification_type == 'feedback' %}bg-yellow-500/10
+                    {% else %}bg-purple-500/10{% endif %}">
+                    <i class="fas fa-{% if a.notification_type == 'overdue' %}exclamation-triangle text-red-400{% elif a.notification_type == 'feedback' %}comment text-yellow-400{% else %}bell text-purple-400{% endif %}"></i>
+                </div>
+                <div class="flex-1">
+                    <h4 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ a.title }}</h4>
+                    <p class="text-sm mt-0.5" style="color: {{ theme_colors['text-secondary'] }}">{{ a.message }}</p>
+                    <div class="flex items-center gap-3 mt-2 text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                        {% if a.brand_name %}
+                        <span class="px-2 py-0.5 rounded" style="background: {{ theme_colors['bg-tertiary'] }}">{{ a.brand_name }}</span>
+                        {% endif %}
+                        <span><i class="far fa-clock mr-1"></i>{{ a.created_at }}</span>
+                    </div>
+                </div>
+                {% if a.action_url %}
+                <a href="{{ a.action_url }}" class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors border flex-shrink-0" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                    <i class="fas fa-arrow-right"></i>{{ a.action_label or 'Open' }}
+                </a>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Empty state -->
+    {% if not tasks and not alerts and not done_today %}
+    <div class="rounded-xl p-12 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-check-double text-4xl mb-4 text-green-500"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">All clear!</h3>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">No tasks or alerts. Click "Generate Today's Tasks" to create tasks from your workflow schedule.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function tasksApp() {
+    return {
+        filterBrand: '',
+        filterType: 'action',
+        visibleCount: 0,
+        init() {
+            this.applyFilters();
+        },
+        applyFilters() {
+            const rows = document.querySelectorAll('.task-row');
+            let count = 0;
+            rows.forEach(row => {
+                const brandId = row.dataset.brandId;
+                const stepType = row.dataset.stepType;
+                let show = true;
+                if (this.filterBrand && brandId !== this.filterBrand) show = false;
+                if (this.filterType === 'action' && stepType === 'automated') show = false;
+                row.style.display = show ? '' : 'none';
+                if (show) count++;
+            });
+            this.visibleCount = count;
+        },
+        async validateTask(notifId) {
+            this.validating = true;
+            this.validationResult = null;
+            try {
+                const res = await fetch(`/api/tasks/${notifId}/validate`, { method: 'POST' });
+                const data = await res.json();
+                this.validationResult = data;
+                if (data.validated) {
+                    toast('Task validated — files found! Auto-marked as done.', 'success');
+                    setTimeout(() => {
+                        const row = document.getElementById(`task-${notifId}`);
+                        if (row) { row.style.opacity = '0.4'; setTimeout(() => row.remove(), 600); }
+                    }, 2000);
+                } else {
+                    toast(data.reason || 'No new files found', 'warning');
+                }
+            } catch (err) {
+                toast('Validation error: ' + err.message, 'error');
+            }
+            this.validating = false;
+        }
+    };
+}
+
+async function markDone(id, btn) {
+    await fetch(`/api/notifications/${id}/done`, { method: 'PUT' });
+    const row = document.getElementById(`task-${id}`);
+    btn.innerHTML = '<i class="fas fa-check text-green-400"></i>';
+    btn.style.borderColor = '#4ade80';
+    row.style.opacity = '0.4';
+    row.style.transition = 'opacity 0.3s';
+    setTimeout(() => row.remove(), 600);
+    toast('Task marked as done', 'success');
+}
+
+async function markAllRead() {
+    await fetch('/api/notifications/read-all', { method: 'PUT' });
+    location.reload();
+}
+
+async function generateDaily(btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Generating...';
+    await fetch('/api/notifications/generate-daily', { method: 'POST' });
+    location.reload();
+}
+
+async function validateAllTasks(btn) {
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Validating...';
+    try {
+        const res = await fetch('/api/tasks/validate-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.validated > 0) {
+            toast(`${data.validated} task(s) auto-validated and marked done!`, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            toast('No tasks could be auto-validated (no new files found)', 'info');
+        }
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+    btn.innerHTML = origHTML;
+    btn.disabled = false;
+}
+
+async function copyPrompt(stepId, stepName) {
+    try {
+        const res = await fetch(`/api/workflow-steps/${stepId}/brief`);
+        const data = await res.json();
+        const text = `STEP: ${stepName}\n${'='.repeat(40)}\n\nINSTRUCTIONS:\n${data.instructions || 'No instructions'}\n\nBRIEF TEMPLATE:\n${data.brief_template || 'No brief template'}`;
+        await navigator.clipboard.writeText(text);
+        toast('Step prompt copied to clipboard!', 'success');
+    } catch (err) {
+        toast('Could not copy: ' + err.message, 'error');
+    }
+}
+
+async function triggerStep(stepId, triggerType, stepName, brandId, btn) {
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Running...';
+    btn.classList.add('cursor-wait');
+
+    try {
+        let res;
+        if (triggerType === 'apps_script' || triggerType === 'gemini') {
+            res = await fetch('/api/apps-script/run-local', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ brand_id: brandId, step_id: stepId })
+            });
+        } else if (triggerType === 'apify_claude') {
+            const scrapeRes = await fetch('/api/apify/scrape', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ brand_id: brandId, url: 'https://www.linkedin.com/company/diqit/', scraper_type: 'linkedin_posts' })
+            });
+            const scrapeData = await scrapeRes.json();
+            const scrapeResults = scrapeData.ok ? JSON.stringify(scrapeData.results || scrapeData, null, 2).substring(0, 3000) : 'Scrape returned no results';
+            const prompt = `Analyzing LinkedIn performance for "${stepName}". Scrape results:\n${scrapeResults}\n\nAnalyze: 1. Best posts 2. Engagement trends 3. Content types 4. Recommendations`;
+            res = await fetch('/api/claude/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brand_id: brandId, step_id: stepId, step_name: stepName, prompt: prompt }) });
+        } else if (triggerType === 'claude') {
+            const briefRes = await fetch(`/api/workflow-steps/${stepId}/brief`);
+            const briefData = await briefRes.json();
+            const instructions = briefData.instructions || briefData.brief_template || '';
+            const prompt = `Working on "${stepName}" step.\n\nInstructions:\n${instructions}\n\nPlease complete this step.`;
+            res = await fetch('/api/claude/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brand_id: brandId, step_id: stepId, step_name: stepName, prompt: prompt }) });
+        } else {
+            res = await fetch('/api/pipeline/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brand_id: brandId, step_id: stepId, trigger_type: triggerType, step_name: stepName }) });
+        }
+
+        const data = await res.json();
+        if (data.ok) {
+            btn.innerHTML = '<i class="fas fa-check-circle mr-1"></i>Done';
+            btn.classList.remove('cursor-wait');
+            btn.classList.add('text-green-400');
+            toast(`${stepName} completed successfully`, 'success');
+        } else {
+            btn.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i>Failed';
+            btn.classList.add('text-red-400');
+            toast(`Failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (err) {
+        btn.innerHTML = origHTML;
+        btn.disabled = false;
+        btn.classList.remove('cursor-wait');
+        toast(`Error: ${err.message}`, 'error');
+    }
+}
+
+function openFolder(relativePath, brandId) {
+    fetch(`/api/brands/${brandId}/folder-path`).then(r => r.json()).then(data => {
+        const brandFolder = data.folder_path || '';
+        fetch('/api/open-folder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ brand_folder: brandFolder, path: relativePath })
+        }).then(r => r.json()).then(result => {
+            if (!result.ok) toast('Could not open folder: ' + (result.error || 'Unknown error'), 'error');
+        });
+    });
+}
+</script>
+{% endblock %}

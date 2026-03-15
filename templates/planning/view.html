@@ -1,0 +1,239 @@
+{% extends "brands/detail.html" %}
+{% block title %}Planning — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Planning{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4" x-data="planningApp()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                Content Planning
+                <span class="help-tip ml-1" data-tip="Create monthly plans, generate AI recommendations, approve items, then schedule to calendar. With auto-pipeline ON, scheduled items enter the workflow immediately.">
+                    <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">AI-powered monthly content plans with auto-scheduling</p>
+        </div>
+        <button @click="showNewPlan = true" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+            <i class="fas fa-plus"></i> New Plan
+        </button>
+    </div>
+
+    <!-- Current Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {% for status, count in content_stats.items() %}
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ count }}</div>
+            <div class="text-[10px] uppercase tracking-wider capitalize" style="color: {{ theme_colors['text-muted'] }}">{{ status }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Plans -->
+    {% if plans %}
+    {% for plan in plans %}
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['accent-primary'] }}">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
+                        {% set parts = plan.plan_month.split('-') %}
+                        {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][parts[1]|int - 1] }} {{ parts[0] }}
+                    </h3>
+                    <div class="flex items-center gap-2 text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                        <span class="px-2 py-0.5 rounded-full capitalize
+                            {% if plan.status == 'approved' %}bg-green-500/20 text-green-400
+                            {% elif plan.status == 'draft' %}bg-yellow-500/20 text-yellow-400
+                            {% else %}bg-gray-500/20{% endif %}"
+                            style="{% if plan.status not in ['approved','draft'] %}color: {{ theme_colors['text-muted'] }}{% endif %}">{{ plan.status }}</span>
+                        <span>{{ plan.plan_items | length }} items</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                {% if plan.status == 'draft' and not plan.plan_items %}
+                <button onclick="withLoading(this, () => generatePlan({{ plan.id }}))" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg transition-colors">
+                    <i class="fas fa-robot mr-1"></i>Generate with AI
+                </button>
+                {% endif %}
+                {% if plan.plan_items %}
+                {% set approved_count = plan.plan_items | selectattr('status', 'equalto', 'approved') | list | length %}
+                {% if approved_count > 0 and plan.status == 'draft' %}
+                <div class="flex items-center gap-2" x-data="{ autoPipeline: true }">
+                    <label class="flex items-center gap-1.5 cursor-pointer text-[10px]" style="color: {{ theme_colors['text-muted'] }}">
+                        <input type="checkbox" x-model="autoPipeline" class="accent-dm-primary w-3 h-3">
+                        <span>Auto-pipeline</span>
+                    </label>
+                    <button @click="withLoading($el, () => schedulePlan({{ plan.id }}, autoPipeline))" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors">
+                        <i class="fas fa-calendar-plus mr-1"></i>Schedule {{ approved_count }}
+                    </button>
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        {% if plan.plan_items %}
+        <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for item in plan.plan_items %}
+            <div class="p-3 flex flex-wrap md:flex-nowrap items-center gap-3 transition-colors" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                <!-- Status toggle -->
+                <div class="flex gap-1">
+                    <button onclick="updatePlanItemStatus({{ plan.id }}, {{ item.id }}, 'approved')"
+                        class="w-6 h-6 rounded flex items-center justify-center text-[10px] transition-colors
+                        {% if item.status == 'approved' %}bg-green-500/30 text-green-400{% else %}hover:bg-green-500/10 hover:text-green-400{% endif %}"
+                        style="{% if item.status != 'approved' %}background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}{% endif %}"
+                        title="Approve"><i class="fas fa-check"></i></button>
+                    <button onclick="updatePlanItemStatus({{ plan.id }}, {{ item.id }}, 'rejected')"
+                        class="w-6 h-6 rounded flex items-center justify-center text-[10px] transition-colors
+                        {% if item.status == 'rejected' %}bg-red-500/30 text-red-400{% else %}hover:bg-red-500/10 hover:text-red-400{% endif %}"
+                        style="{% if item.status != 'rejected' %}background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}{% endif %}"
+                        title="Reject"><i class="fas fa-times"></i></button>
+                </div>
+
+                {% if item.pillar_color %}
+                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background: {{ item.pillar_color }}"></span>
+                {% endif %}
+
+                <div class="flex-1">
+                    <span class="text-sm {% if item.status == 'rejected' %}line-through{% endif %}" style="color: {{ theme_colors['text-primary'] }}">{{ item.title }}</span>
+                    {% if item.rationale %}
+                    <p class="text-[10px] mt-0.5" style="color: {{ theme_colors['text-muted'] }}">{{ item.rationale }}</p>
+                    {% endif %}
+                </div>
+
+                <span class="text-[10px] px-2 py-0.5 rounded" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">{{ item.content_type | replace('_', ' ') }}</span>
+                <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ item.market }}</span>
+                {% if item.suggested_date %}
+                <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}"><i class="far fa-calendar mr-0.5"></i>{{ item.suggested_date }}</span>
+                {% endif %}
+
+                {% set tags = item.media_tags | default('[]') | from_json %}
+                {% if tags %}
+                <div class="flex gap-0.5 flex-wrap">
+                    {% for tag in tags %}
+                    <span class="text-[9px] px-1.5 py-0.5 rounded-full
+                        {% if 'translate' in tag %}bg-blue-500/15 text-blue-400 border border-blue-500/20
+                        {% elif tag == 'stock_image' %}bg-pink-500/15 text-pink-400 border border-pink-500/20
+                        {% elif tag == 'tts' %}bg-purple-500/15 text-purple-400 border border-purple-500/20
+                        {% elif tag == 'chart' %}bg-yellow-500/15 text-yellow-400 border border-yellow-500/20
+                        {% elif tag == 'diagram' %}bg-indigo-500/15 text-indigo-400 border border-indigo-500/20
+                        {% elif tag == 'qr_code' %}bg-teal-500/15 text-teal-400 border border-teal-500/20
+                        {% else %}bg-gray-500/15 text-gray-400 border border-gray-500/20{% endif %}"
+                        title="{{ tag }}">{{ tag | replace('_', ' ') }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if item.status == 'scheduled' %}
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400"><i class="fas fa-check mr-0.5"></i>Scheduled</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="p-8 text-center" style="color: {{ theme_colors['text-muted'] }}">
+            <i class="fas fa-robot text-3xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+            <p class="text-sm">Click "Generate with AI" to create content recommendations for this month.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="rounded-xl p-12 text-center border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-lightbulb text-4xl mb-4" style="color: {{ theme_colors['text-disabled'] }}"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">No plans yet</h3>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">Create a monthly plan and let AI suggest content based on your pillars and cadence.</p>
+    </div>
+    {% endif %}
+
+    <!-- New Plan Modal -->
+    <div x-show="showNewPlan" x-cloak class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="showNewPlan = false">
+        <div class="border rounded-xl p-6 w-[400px]" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+            <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}">Create Monthly Plan</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Month</label>
+                    <input x-model="newPlanMonth" type="month" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Notes (optional)</label>
+                    <textarea x-model="newPlanNotes" rows="2" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none resize-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Focus areas, themes..."></textarea>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button @click="createPlan()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Create</button>
+                    <button @click="showNewPlan = false" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function planningApp() {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return {
+        showNewPlan: false,
+        newPlanMonth: nextMonth.toISOString().substring(0, 7),
+        newPlanNotes: '',
+
+        async createPlan() {
+            if (!this.newPlanMonth) return toast('Select a month', 'warning');
+            await fetch('/api/plans', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    brand_id: {{ brand.id }},
+                    plan_month: this.newPlanMonth,
+                    notes: this.newPlanNotes,
+                    items: []
+                })
+            });
+            toast('Plan created', 'success');
+            location.reload();
+        }
+    };
+}
+
+async function generatePlan(planId) {
+    const res = await fetch(`/api/plans/${planId}/generate`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+        toast(`Generated ${data.count} content recommendations`, 'success');
+        location.reload();
+    } else {
+        toast('AI generation failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+}
+
+async function schedulePlan(planId, autoPipeline = false) {
+    const res = await fetch(`/api/plans/${planId}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_pipeline: autoPipeline })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        let msg = `Scheduled ${data.created} items to the calendar`;
+        if (data.pipeline_started > 0) msg += ` — ${data.pipeline_started} entered the pipeline`;
+        toast(msg, 'success');
+        location.reload();
+    } else {
+        toast('Scheduling failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+}
+
+async function updatePlanItemStatus(planId, itemId, status) {
+    await fetch(`/api/plans/${planId}/items/${itemId}/status`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status })
+    });
+    location.reload();
+}
+</script>
+{% endblock %}

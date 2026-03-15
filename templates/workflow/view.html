@@ -1,0 +1,572 @@
+{% extends "brands/detail.html" %}
+{% block title %}Workflow — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Workflow{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6" x-data="workflowApp()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Content Workflow</h1>
+            <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">{{ template.name if template else 'No workflow configured' }}</p>
+        </div>
+        <div class="flex gap-2">
+            {% if template %}
+            <button onclick="addStep()" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-plus mr-1"></i>Add Step
+            </button>
+            <button onclick="runLocalPipeline()" class="px-3 py-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 text-xs rounded-lg transition-colors border border-orange-600/20">
+                <i class="fas fa-magic mr-1"></i>Run Image Pipeline
+            </button>
+            {% endif %}
+            <span class="text-xs px-2.5 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20"><i class="fas fa-robot mr-1"></i>Automated</span>
+            <span class="text-xs px-2.5 py-1 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"><i class="fas fa-user mr-1"></i>Manual</span>
+            <span class="text-xs px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20"><i class="fas fa-user-cog mr-1"></i>Semi-Auto</span>
+        </div>
+    </div>
+
+    <!-- Timeline View -->
+    {% if steps %}
+    <div class="space-y-4" id="steps-list">
+        {% for step in steps %}
+        <div class="rounded-xl overflow-hidden animate-slide-in" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}; animation-delay: {{ loop.index * 80 }}ms"
+             data-step-id="{{ step.id }}"
+             x-data="{ expanded: false, editing: false, uploading: false, triggerStatus: null, claudeResponse: null, triggerError: null }">
+            <!-- Step Header -->
+            <div class="p-4 flex items-center gap-4 cursor-pointer" @click="expanded = !expanded">
+                <!-- Drag handle + Step number -->
+                <div class="flex items-center gap-2">
+                    <button onclick="event.stopPropagation()" class="drag-handle cursor-grab text-xs opacity-30 hover:opacity-70 transition-opacity" style="color: {{ theme_colors['text-muted'] }}" title="Drag to reorder">
+                        <i class="fas fa-grip-vertical"></i>
+                    </button>
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0
+                        {% if step.step_type == 'automated' %}bg-green-500/20 text-green-400
+                        {% elif step.step_type == 'semi-auto' %}bg-blue-500/20 text-blue-400
+                        {% else %}bg-yellow-500/20 text-yellow-400{% endif %}">
+                        {{ step.sort_order }}
+                    </div>
+                </div>
+                <div class="flex-1">
+                    <div class="flex items-center gap-3">
+                        <h3 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">{{ step.name }}</h3>
+                        {% if step.step_type == 'automated' %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 uppercase tracking-wider font-medium">
+                            <i class="fas fa-robot mr-0.5"></i>Automated
+                        </span>
+                        {% elif step.step_type == 'semi-auto' %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider font-medium">
+                            <i class="fas fa-user-cog mr-0.5"></i>Semi-Auto
+                        </span>
+                        {% else %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 uppercase tracking-wider font-medium">
+                            <i class="fas fa-user mr-0.5"></i>Manual
+                        </span>
+                        {% endif %}
+                        {% if step.trigger_type and step.trigger_type != 'none' %}
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                            {% if step.trigger_type in ['apps_script', 'gemini'] %}<i class="fas fa-magic mr-0.5"></i>Gemini
+                            {% elif step.trigger_type == 'apify_claude' %}<i class="fas fa-spider mr-0.5"></i>Apify + Claude
+                            {% elif step.trigger_type == 'claude' %}<i class="fas fa-brain mr-0.5"></i>Claude
+                            {% endif %}
+                        </span>
+                        {% endif %}
+                        <span class="text-xs px-2 py-0.5 rounded-full" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                            <i class="far fa-calendar mr-1"></i>{{ step.day_of_week }}
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                            <i class="far fa-clock mr-1"></i>{{ step.duration_minutes }} min
+                        </span>
+                    </div>
+                    <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">{{ step.description }}</p>
+                </div>
+                {% if step.linked_folder %}
+                <button onclick="event.stopPropagation(); openFolder('{{ step.linked_folder }}')" class="text-xs px-2 py-1 rounded cursor-pointer hover:bg-yellow-500/10 transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" title="Open {{ step.linked_folder }} in Finder">
+                    <i class="fas fa-folder-open mr-1 text-yellow-500"></i>{{ step.linked_folder }}
+                </button>
+                {% endif %}
+                <i class="fas fa-chevron-down transition-transform" style="color: {{ theme_colors['text-muted'] }}" :class="expanded && 'rotate-180'"></i>
+            </div>
+
+            <!-- Expanded Content -->
+            <div x-show="expanded" x-cloak style="border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="p-5 space-y-4">
+                    <!-- Instructions -->
+                    <div>
+                        <h4 class="text-xs uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">Instructions</h4>
+                        <div class="rounded-lg p-4 text-sm whitespace-pre-line" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">{{ step.instructions }}</div>
+                    </div>
+
+                    <!-- Tools -->
+                    {% set tools = step.tools | from_json %}
+                    <div>
+                        <h4 class="text-xs uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">Tools</h4>
+                        <div class="flex flex-wrap gap-2">
+                            {% for tool in tools %}
+                            <span class="px-3 py-1 rounded-lg bg-dm-primary/10 text-dm-accent text-xs border border-dm-primary/20">
+                                {{ tool }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Checklist -->
+                    {% set checklist = step.checklist | from_json %}
+                    {% if checklist %}
+                    <div>
+                        <h4 class="text-xs uppercase tracking-wider mb-2" style="color: {{ theme_colors['text-muted'] }}">Checklist</h4>
+                        <div class="space-y-2">
+                            {% for item in checklist %}
+                            <label class="flex items-center gap-3 text-sm cursor-pointer" style="color: {{ theme_colors['text-secondary'] }}"
+                                   onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'"
+                                   onmouseleave="this.style.color='{{ theme_colors['text-secondary'] }}'">
+                                <input type="checkbox" class="w-4 h-4 rounded text-dm-primary focus:ring-dm-primary" style="border-color: {{ theme_colors['text-muted'] }}; background: {{ theme_colors['bg-tertiary'] }}">
+                                <span>{{ item }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Action Buttons Row -->
+                    <div class="flex flex-wrap gap-3 pt-2" style="border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                        {% if step.brief_template and step.step_type in ['manual', 'semi-auto'] %}
+                        <button @click="downloadBrief({{ step.id }}, '{{ step.name | replace("'", "\\'") }}')"
+                            class="flex items-center gap-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-sm rounded-lg transition-colors border border-blue-600/20">
+                            <i class="fas fa-download"></i>Download Brief
+                        </button>
+                        {% endif %}
+
+                        {% if step.upload_folder and step.step_type in ['manual', 'semi-auto'] %}
+                        <div class="relative">
+                            <button @click="uploading = !uploading"
+                                class="flex items-center gap-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 text-sm rounded-lg transition-colors border border-green-600/20">
+                                <i class="fas fa-upload"></i>Upload Finished Product
+                            </button>
+                            <div x-show="uploading" x-cloak
+                                 class="mt-2 p-4 rounded-lg space-y-3" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs" style="color: {{ theme_colors['text-secondary'] }}">Upload to: <span class="text-yellow-400">{{ step.upload_folder }}</span></p>
+                                    <button onclick="openFolder('{{ step.upload_folder }}')" class="text-[10px] px-2 py-0.5 rounded hover:bg-yellow-500/20 text-yellow-500 transition-colors" title="Open upload folder in Finder">
+                                        <i class="fas fa-external-link-alt mr-0.5"></i>Open
+                                    </button>
+                                </div>
+                                <input type="file" id="upload-{{ step.id }}" multiple
+                                    class="block w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-dm-primary file:text-white hover:file:bg-dm-secondary file:cursor-pointer" style="color: {{ theme_colors['text-secondary'] }}">
+                                <button @click="uploadFiles({{ step.id }}, '{{ step.upload_folder }}')"
+                                    class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors">
+                                    <i class="fas fa-cloud-upload-alt mr-1"></i>Upload
+                                </button>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Trigger Button -->
+                        {% if step.trigger_type and step.trigger_type != 'none' %}
+                        <button @click="triggerStep({{ step.id }}, '{{ step.trigger_type }}', '{{ step.name | replace("'", "\\'") }}')"
+                            :disabled="triggerStatus === 'running'"
+                            class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors border"
+                            :class="triggerStatus === 'running'
+                                ? 'bg-gray-700 text-gray-500 border-gray-600 cursor-wait'
+                                : triggerStatus === 'completed'
+                                    ? 'bg-green-600/20 text-green-400 border-green-600/20'
+                                    : triggerStatus === 'failed'
+                                        ? 'bg-red-600/20 text-red-400 border-red-600/20'
+                                        : '{% if step.trigger_type in ["apps_script", "gemini"] %}bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border-orange-600/20{% elif step.trigger_type == "apify_claude" %}bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border-cyan-600/20{% else %}bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border-purple-600/20{% endif %}'">
+                            <template x-if="triggerStatus === 'running'">
+                                <span><i class="fas fa-spinner fa-spin mr-1"></i>Running...</span>
+                            </template>
+                            <template x-if="triggerStatus === 'completed'">
+                                <span><i class="fas fa-check-circle mr-1"></i>Completed</span>
+                            </template>
+                            <template x-if="triggerStatus === 'failed'">
+                                <span><i class="fas fa-exclamation-circle mr-1"></i>Failed — Retry</span>
+                            </template>
+                            <template x-if="!triggerStatus">
+                                <span>
+                                    {% if step.trigger_type in ['apps_script', 'gemini'] %}
+                                    <i class="fas fa-magic mr-1"></i>Generate with Gemini
+                                    {% elif step.trigger_type == 'apify_claude' %}
+                                    <i class="fas fa-spider mr-1"></i>Scrape & Analyze
+                                    {% elif step.trigger_type == 'claude' %}
+                                    <i class="fas fa-brain mr-1"></i>Run with Claude
+                                    {% endif %}
+                                </span>
+                            </template>
+                        </button>
+                        {% endif %}
+
+                        {% if step.linked_folder %}
+                        <button onclick="openFolder('{{ step.linked_folder }}')"
+                            class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors"
+                            style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"
+                            onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'"
+                            onmouseleave="this.style.background='{{ theme_colors['bg-tertiary'] }}'">
+                            <i class="fas fa-folder-open text-yellow-500"></i>Open Folder
+                        </button>
+                        {% endif %}
+
+                        <!-- Schedule button -->
+                        <div x-data="{ schedOpen: false }" class="relative">
+                            <button @click="schedOpen = !schedOpen"
+                                class="flex items-center gap-2 px-4 py-2 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 text-sm rounded-lg transition-colors border border-orange-600/20">
+                                <i class="fas fa-clock"></i>Schedule
+                            </button>
+                            <div x-show="schedOpen" x-cloak @click.away="schedOpen = false" class="absolute top-full left-0 mt-1 rounded-lg shadow-lg p-3 space-y-2 z-20 w-48"
+                                style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                                <p class="text-[10px] font-semibold" style="color: {{ theme_colors['text-secondary'] }}">Auto-run frequency:</p>
+                                {% for freq in ['daily', 'weekly', 'biweekly', 'monthly'] %}
+                                <button onclick="scheduleStep({{ step.id }}, '{{ freq }}', {{ brand.id }}); this.closest('[x-data]').__x.$data.schedOpen = false"
+                                    class="block w-full text-left px-3 py-1.5 text-xs rounded hover:bg-orange-500/10 transition-colors"
+                                    style="color: {{ theme_colors['text-primary'] }}">
+                                    <i class="fas fa-{% if freq == 'daily' %}sun{% elif freq == 'weekly' %}calendar-week{% elif freq == 'biweekly' %}calendar-alt{% else %}calendar{% endif %} mr-2 text-orange-400"></i>{{ freq | capitalize }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- Move / Delete / Edit buttons -->
+                        <div class="flex gap-2 ml-auto">
+                            {% if not loop.first %}
+                            <button onclick="event.stopPropagation(); moveStep({{ step.id }}, 'up')" class="px-2 py-2 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" title="Move up">
+                                <i class="fas fa-arrow-up"></i>
+                            </button>
+                            {% endif %}
+                            {% if not loop.last %}
+                            <button onclick="event.stopPropagation(); moveStep({{ step.id }}, 'down')" class="px-2 py-2 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" title="Move down">
+                                <i class="fas fa-arrow-down"></i>
+                            </button>
+                            {% endif %}
+                            <button onclick="event.stopPropagation(); deleteStep({{ step.id }}, '{{ step.name | replace("'", "\\'") }}')"
+                                class="px-2 py-2 text-xs rounded-lg transition-colors hover:bg-red-500/20 text-red-400" style="background: {{ theme_colors['bg-tertiary'] }}" title="Delete step">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            <button @click="editing = !editing; event.stopPropagation()" class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors"
+                                style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"
+                                onmouseenter="this.style.background='{{ theme_colors['border-hover'] }}'"
+                                onmouseleave="this.style.background='{{ theme_colors['bg-tertiary'] }}'">
+                                <i class="fas fa-edit"></i>Edit Step
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Trigger Status Notification -->
+                    <div x-show="triggerStatus" x-cloak class="rounded-lg p-3 text-sm flex items-center gap-3"
+                         :class="triggerStatus === 'running' ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400'
+                                : triggerStatus === 'completed' ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                                : 'bg-red-500/10 border border-red-500/20 text-red-400'">
+                        <template x-if="triggerStatus === 'running'">
+                            <span><i class="fas fa-spinner fa-spin mr-2"></i>Step is currently running. You'll be notified when complete.</span>
+                        </template>
+                        <template x-if="triggerStatus === 'completed'">
+                            <div>
+                                <span><i class="fas fa-check-circle mr-2"></i>Step completed successfully.</span>
+                                <template x-if="claudeResponse">
+                                    <div class="mt-2 p-3 rounded-lg text-xs max-h-40 overflow-y-auto whitespace-pre-wrap" style="background: {{ theme_colors['bg-secondary'] }}; color: {{ theme_colors['text-secondary'] }}" x-text="claudeResponse.substring(0, 500) + (claudeResponse.length > 500 ? '...' : '')"></div>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="triggerStatus === 'failed'">
+                            <div>
+                                <span><i class="fas fa-exclamation-triangle mr-2"></i>Step failed.</span>
+                                <template x-if="triggerError">
+                                    <span class="ml-1 text-xs opacity-80" x-text="triggerError"></span>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Edit Form -->
+                <div x-show="editing" x-cloak class="p-5" style="border-top: 1px solid {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-tertiary'] }}33"
+                    x-data="{
+                        name: {{ step.name | tojson }},
+                        description: {{ step.description | tojson }},
+                        instructions: {{ step.instructions | tojson }},
+                        day_of_week: '{{ step.day_of_week }}',
+                        duration_minutes: {{ step.duration_minutes }},
+                        step_type: '{{ step.step_type or 'manual' }}',
+                        trigger_type: '{{ step.trigger_type or 'none' }}',
+                        linked_folder: '{{ step.linked_folder or '' }}',
+                        upload_folder: '{{ step.upload_folder or '' }}'
+                    }">
+                    <h4 class="text-sm font-medium mb-3" style="color: {{ theme_colors['text-primary'] }}">Edit Step</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <input x-model="name" class="col-span-2 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Step name">
+                        <textarea x-model="description" rows="2" class="col-span-2 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50 resize-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Description"></textarea>
+                        <textarea x-model="instructions" rows="4" class="col-span-2 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50 resize-y" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Detailed instructions"></textarea>
+                        <input x-model="day_of_week" class="rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Day(s) e.g. Monday">
+                        <input x-model="duration_minutes" type="number" class="rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Duration (min)">
+                        <select x-model="step_type" class="rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="manual">Manual</option>
+                            <option value="automated">Automated</option>
+                            <option value="semi-auto">Semi-Auto</option>
+                        </select>
+                        <select x-model="trigger_type" class="rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="none">No Trigger</option>
+                            <option value="claude">Claude AI</option>
+                            <option value="apify_claude">Apify + Claude</option>
+                            <option value="gemini">Gemini (In-App)</option>
+                        </select>
+                        <input x-model="linked_folder" class="rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Linked folder path">
+                        <input x-model="upload_folder" class="rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Upload folder path">
+                    </div>
+                    <div class="flex gap-2 mt-3">
+                        <button @click="saveStepFull({{ step.id }}, { name, description, instructions, day_of_week, duration_minutes: parseInt(duration_minutes), step_type, trigger_type, linked_folder, upload_folder })"
+                            class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Save Changes</button>
+                        <button @click="editing = false" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="rounded-xl p-12 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-project-diagram text-4xl mb-4" style="color: {{ theme_colors['border-hover'] }}"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">No workflow steps configured</h3>
+        {% if template %}
+        <button onclick="addStep()" class="mt-4 px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+            <i class="fas fa-plus mr-1"></i>Add First Step
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Folder Mapping -->
+    {% if folder_mappings %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-sitemap mr-2 text-dm-accent"></i>Folder Mapping</h2>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="text-xs uppercase" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <tr>
+                    <th class="px-4 py-2 text-left">Folder</th>
+                    <th class="px-4 py-2 text-left">Purpose</th>
+                    <th class="px-4 py-2 text-left">Linked Step</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y" style="--tw-divide-opacity: 1; border-color: {{ theme_colors['border-primary'] }}">
+                {% for fm in folder_mappings %}
+                <tr class="cursor-pointer" onclick="openFolder('{{ fm.folder_path }}')" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}4D'" onmouseleave="this.style.background='transparent'" style="border-color: {{ theme_colors['border-primary'] }}" title="Click to open in Finder">
+                    <td class="px-4 py-3 text-yellow-500"><i class="fas fa-folder-open mr-2"></i>{{ fm.folder_path }} <i class="fas fa-external-link-alt text-[10px] ml-1 opacity-50"></i></td>
+                    <td class="px-4 py-3" style="color: {{ theme_colors['text-secondary'] }}">{{ fm.purpose }}</td>
+                    <td class="px-4 py-3" style="color: {{ theme_colors['text-secondary'] }}">{{ fm.step_name or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+var _stepData = {
+    {% for step in steps %}
+    {{ step.id }}: {
+        tools: {{ step.tools | default('[]', true) | safe }},
+        checklist: {{ step.checklist | default('[]', true) | safe }},
+        instructions: {{ step.instructions | tojson | safe }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+};
+
+// Build step order for reordering
+var _stepOrder = [{% for step in steps %}{{ step.id }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+function workflowApp() {
+    return {
+        downloadBrief(stepId, stepName) {
+            fetch(`/api/workflow-steps/${stepId}/brief`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.brief_template) {
+                        const blob = new Blob([`BRIEF: ${stepName}\n${'='.repeat(40)}\n\n${data.brief_template}`], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `brief_${stepName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}.txt`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    } else {
+                        toast('No brief template configured for this step.', 'warning');
+                    }
+                });
+        },
+
+        async uploadFiles(stepId, uploadFolder) {
+            const input = document.getElementById(`upload-${stepId}`);
+            if (!input.files.length) return toast('Select files first', 'warning');
+            for (const file of input.files) {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch(`/api/upload/{{ brand.id }}/${uploadFolder}`, { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!data.ok) { toast(`Failed to upload ${file.name}: ${data.error}`, 'error'); return; }
+            }
+            toast(`${input.files.length} file(s) uploaded to ${uploadFolder}`, 'success');
+            input.value = '';
+        },
+
+        saveStepFull(stepId, data) {
+            var sd = _stepData[stepId] || {};
+            fetch('/api/workflow-steps/' + stepId, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: data.name,
+                    description: data.description,
+                    instructions: data.instructions || sd.instructions || '',
+                    day_of_week: data.day_of_week,
+                    duration_minutes: data.duration_minutes,
+                    tools: sd.tools || [],
+                    checklist: sd.checklist || []
+                })
+            }).then(() => location.reload());
+        },
+
+        async triggerStep(stepId, triggerType, stepName) {
+            this.triggerStatus = 'running';
+            try {
+                let res;
+                if (triggerType === 'apps_script' || triggerType === 'gemini') {
+                    // Run in-app Gemini image generation pipeline
+                    res = await fetch('/api/apps-script/run-local', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, step_id: stepId })
+                    });
+                } else if (triggerType === 'apify_claude') {
+                    const scrapeRes = await fetch('/api/apify/scrape', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, url: 'https://www.linkedin.com/company/diqit/', scraper_type: 'linkedin_posts' })
+                    });
+                    const scrapeData = await scrapeRes.json();
+                    const scrapeResults = scrapeData.ok ? JSON.stringify(scrapeData.results || scrapeData, null, 2).substring(0, 3000) : 'Scrape returned no results';
+                    const prompt = `Analyzing LinkedIn performance for "${stepName}" — brand "{{ brand.name }}".\n\nScrape results:\n${scrapeResults}\n\nAnalyze: 1. Best posts 2. Engagement trends 3. Content types 4. Recommendations`;
+                    res = await fetch('/api/claude/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, step_id: stepId, step_name: stepName, prompt: prompt })
+                    });
+                } else if (triggerType === 'claude') {
+                    const briefRes = await fetch(`/api/workflow-steps/${stepId}/brief`);
+                    const briefData = await briefRes.json();
+                    const instructions = briefData.instructions || briefData.brief_template || '';
+                    const prompt = `Working on "${stepName}" for brand "{{ brand.name }}".\n\nBrand voice: {{ brand.voice_summary or "Professional yet approachable" }}\n\nInstructions:\n${instructions}\n\nComplete this step.`;
+                    res = await fetch('/api/claude/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, step_id: stepId, step_name: stepName, prompt: prompt })
+                    });
+                } else {
+                    res = await fetch('/api/pipeline/trigger', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, step_id: stepId, trigger_type: triggerType, step_name: stepName })
+                    });
+                }
+
+                const data = await res.json();
+                if (data.ok) {
+                    this.triggerStatus = 'completed';
+                    this.claudeResponse = data.response || (data.processed ? `Processed ${data.processed.length} brief(s)` : null);
+                    setTimeout(() => { this.triggerStatus = null; this.claudeResponse = null; }, 10000);
+                } else {
+                    this.triggerStatus = 'failed';
+                    this.triggerError = data.error || 'Unknown error';
+                }
+            } catch (err) {
+                this.triggerStatus = 'failed';
+                this.triggerError = err.message;
+            }
+        }
+    };
+}
+
+function addStep() {
+    const name = prompt('Step name:');
+    if (!name) return;
+    fetch('/api/workflow-steps', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ template_id: {{ template.id if template else 0 }}, name: name })
+    }).then(() => location.reload());
+}
+
+function deleteStep(stepId, stepName) {
+    if (!confirm(`Delete step "${stepName}"? This cannot be undone.`)) return;
+    fetch('/api/workflow-steps/' + stepId, { method: 'DELETE' })
+        .then(() => location.reload());
+}
+
+function moveStep(stepId, direction) {
+    const idx = _stepOrder.indexOf(stepId);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= _stepOrder.length) return;
+
+    // Swap and send new order
+    [_stepOrder[idx], _stepOrder[swapIdx]] = [_stepOrder[swapIdx], _stepOrder[idx]];
+    const order = _stepOrder.map((id, i) => ({ id: id, sort_order: i + 1 }));
+    fetch('/api/workflow-steps/reorder', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ order: order })
+    }).then(() => location.reload());
+}
+
+async function runLocalPipeline() {
+    const btn = event.target.closest('button');
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Running...';
+    try {
+        const res = await fetch('/api/apps-script/run-local', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ brand_id: {{ brand.id }} })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            toast(`Pipeline complete: ${data.processed.length} image(s) generated, ${data.errors.length} error(s)`, data.errors.length ? 'warning' : 'success');
+        } else {
+            toast('Pipeline failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+    btn.innerHTML = origHTML;
+    btn.disabled = false;
+}
+
+function openFolder(relativePath) {
+    fetch('/api/open-folder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ brand_folder: '{{ brand.folder_path }}', path: relativePath })
+    }).then(r => r.json()).then(data => {
+        if (!data.ok) toast('Could not open folder: ' + (data.error || 'Unknown error'), 'error');
+    }).catch(() => toast('Failed to connect to server', 'error'));
+}
+
+async function scheduleStep(stepId, frequency, brandId) {
+    try {
+        const res = await fetch('/api/schedule/job-spec', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ step_id: stepId, frequency: frequency, brand_id: brandId })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const spec = data.job_spec;
+            const msg = `Schedule ready: "${spec.step_name}" (${spec.frequency}, cron: ${spec.cron})\n\nAsk Claude Code to execute this via MCP Scheduled Tasks.`;
+            toast(msg, 'info');
+            await navigator.clipboard.writeText(JSON.stringify(spec, null, 2));
+            toast('Job spec copied to clipboard!', 'success');
+        } else {
+            toast(data.error, 'error');
+        }
+    } catch(e) { toast(e.message, 'error'); }
+}
+</script>
+{% endblock %}

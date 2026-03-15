@@ -1,0 +1,113 @@
+{% extends "brands/detail.html" %}
+{% block title %}Feedback Forms — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Feedback Forms{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                Feedback Forms
+                <span class="help-tip ml-1" data-tip="Create public forms to collect feedback from clients, customers, or stakeholders. Share via link or QR code.">
+                    <i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                </span>
+            </h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Collect structured feedback with shareable forms</p>
+        </div>
+        <a href="/brands/{{ brand.id }}/feedback-forms/new" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+            <i class="fas fa-plus"></i> New Form
+        </a>
+    </div>
+
+    {% if forms %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for form in forms %}
+        <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-semibold text-sm truncate" style="color: {{ theme_colors['text-primary'] }}">{{ form.title }}</h3>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full capitalize
+                        {% if form.is_active %}bg-green-500/20 text-green-400{% else %}bg-red-500/20 text-red-400{% endif %}">
+                        {{ 'active' if form.is_active else 'closed' }}
+                    </span>
+                </div>
+                {% if form.description %}
+                <p class="text-xs mb-3 line-clamp-2" style="color: {{ theme_colors['text-muted'] }}">{{ form.description }}</p>
+                {% endif %}
+                <div class="flex items-center gap-3 text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                    <span class="px-2 py-0.5 rounded capitalize" style="background: {{ theme_colors['bg-tertiary'] }}">{{ form.form_type }}</span>
+                    <span><i class="fas fa-inbox mr-1"></i>{{ form.response_count }} responses</span>
+                    {% set field_count = (form.fields | from_json) | length %}
+                    <span><i class="fas fa-list mr-1"></i>{{ field_count }} fields</span>
+                </div>
+            </div>
+            <div class="px-4 py-3 flex items-center justify-between" style="border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="flex gap-2">
+                    <a href="/brands/{{ brand.id }}/feedback-forms/{{ form.id }}" class="text-[10px] px-2.5 py-1 rounded-lg bg-dm-primary hover:bg-dm-secondary text-white transition-colors">
+                        <i class="fas fa-chart-bar mr-1"></i>Responses
+                    </a>
+                    <a href="/brands/{{ brand.id }}/feedback-forms/{{ form.id }}/edit" class="text-[10px] px-2.5 py-1 rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </a>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="copyFormLink('{{ form.share_token }}')" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:bg-gray-700/50" style="color: {{ theme_colors['text-muted'] }}" title="Copy link">
+                        <i class="fas fa-link"></i>
+                    </button>
+                    <button onclick="showFormQR('{{ form.share_token }}', '{{ form.title }}')" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:bg-gray-700/50" style="color: {{ theme_colors['text-muted'] }}" title="QR code">
+                        <i class="fas fa-qrcode"></i>
+                    </button>
+                    <button onclick="if(confirm('Delete this form?')) deleteForm({{ form.id }})" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:bg-red-500/20" style="color: {{ theme_colors['text-muted'] }}" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="rounded-xl p-12 text-center border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-poll text-4xl mb-4" style="color: {{ theme_colors['text-disabled'] }}"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">No feedback forms yet</h3>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">Create a form to collect feedback from clients, customers, or your team.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- QR Modal -->
+<div id="qrModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-[360px] text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+        <h3 class="text-sm font-bold mb-3" style="color: {{ theme_colors['text-primary'] }}" id="qrTitle"></h3>
+        <img id="qrImage" class="mx-auto mb-3 rounded-lg" style="background: white; padding: 12px;">
+        <p class="text-xs mb-3 break-all" style="color: {{ theme_colors['text-muted'] }}" id="qrUrl"></p>
+        <button onclick="document.getElementById('qrModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Close</button>
+    </div>
+</div>
+
+<script>
+function getFormUrl(token) {
+    return window.location.origin + '/f/' + token + '?qr=1';
+}
+
+function copyFormLink(token) {
+    navigator.clipboard.writeText(getFormUrl(token));
+    toast('Form link copied!', 'success');
+}
+
+async function showFormQR(token, title) {
+    const url = getFormUrl(token);
+    const res = await fetch('/api/qr?url=' + encodeURIComponent(url) + '&size=250');
+    const data = await res.json();
+    document.getElementById('qrTitle').textContent = title;
+    document.getElementById('qrImage').src = data.qr_url;
+    document.getElementById('qrUrl').textContent = url;
+    document.getElementById('qrModal').classList.remove('hidden');
+}
+
+async function deleteForm(formId) {
+    await fetch('/api/feedback-forms/' + formId, { method: 'DELETE' });
+    toast('Form deleted', 'success');
+    location.reload();
+}
+</script>
+{% endblock %}

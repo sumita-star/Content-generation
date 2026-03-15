@@ -1,0 +1,338 @@
+{% extends "brands/detail.html" %}
+{% block title %}Brand Voice — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Brand Voice{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4" x-data="voiceApp()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Brand Voice Intelligence</h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Define your brand's tone, capture reference samples, and score content for consistency</p>
+        </div>
+    </div>
+
+    <!-- Voice Health Score -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ grouped_refs.get('tone_keyword', [])|length }}</div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Tone Keywords</div>
+        </div>
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ grouped_refs.get('text_sample', [])|length }}</div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Text Samples</div>
+        </div>
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold text-green-400">{{ grouped_refs.get('do', [])|length }}</div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Do's</div>
+        </div>
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold text-red-400">{{ grouped_refs.get('dont', [])|length }}</div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Don'ts</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+        <!-- Voice References -->
+        <div class="space-y-4">
+            <!-- Tone Keywords -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-tags text-purple-400"></i> Tone Keywords
+                    </h3>
+                    <button @click="refType='tone_keyword'; showAddRef=true" class="text-xs text-dm-accent hover:underline"><i class="fas fa-plus mr-1"></i>Add</button>
+                </div>
+                <div class="p-3 flex flex-wrap gap-2">
+                    {% for ref in grouped_refs.get('tone_keyword', []) %}
+                    <span class="group px-3 py-1.5 rounded-full text-sm flex items-center gap-2" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-primary'] }}">
+                        {{ ref.content }}
+                        <button onclick="deleteRef({{ ref.id }})" class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 text-xs transition-opacity"><i class="fas fa-times"></i></button>
+                    </span>
+                    {% endfor %}
+                    {% if not grouped_refs.get('tone_keyword') %}
+                    <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">Add keywords like "professional", "empathetic", "direct"...</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Do's -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-check-circle text-green-400"></i> Do's
+                    </h3>
+                    <button @click="refType='do'; showAddRef=true" class="text-xs text-dm-accent hover:underline"><i class="fas fa-plus mr-1"></i>Add</button>
+                </div>
+                <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+                    {% for ref in grouped_refs.get('do', []) %}
+                    <div class="p-3 flex items-center gap-3 group">
+                        <i class="fas fa-check text-green-400 text-xs flex-shrink-0"></i>
+                        <span class="text-sm flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ ref.content }}</span>
+                        {% if ref.source %}<span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ ref.source }}</span>{% endif %}
+                        <button onclick="deleteRef({{ ref.id }})" class="opacity-0 group-hover:opacity-100 text-red-400 text-xs"><i class="fas fa-trash"></i></button>
+                    </div>
+                    {% endfor %}
+                    {% if not grouped_refs.get('do') %}
+                    <div class="p-3 text-center text-xs" style="color: {{ theme_colors['text-muted'] }}">Add writing guidelines the brand should follow</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Don'ts -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-times-circle text-red-400"></i> Don'ts
+                    </h3>
+                    <button @click="refType='dont'; showAddRef=true" class="text-xs text-dm-accent hover:underline"><i class="fas fa-plus mr-1"></i>Add</button>
+                </div>
+                <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+                    {% for ref in grouped_refs.get('dont', []) %}
+                    <div class="p-3 flex items-center gap-3 group">
+                        <i class="fas fa-ban text-red-400 text-xs flex-shrink-0"></i>
+                        <span class="text-sm flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ ref.content }}</span>
+                        {% if ref.source %}<span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ ref.source }}</span>{% endif %}
+                        <button onclick="deleteRef({{ ref.id }})" class="opacity-0 group-hover:opacity-100 text-red-400 text-xs"><i class="fas fa-trash"></i></button>
+                    </div>
+                    {% endfor %}
+                    {% if not grouped_refs.get('dont') %}
+                    <div class="p-3 text-center text-xs" style="color: {{ theme_colors['text-muted'] }}">Add things the brand should avoid in its writing</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Text Samples -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-file-alt text-blue-400"></i> Reference Samples
+                    </h3>
+                    <button @click="refType='text_sample'; showAddRef=true" class="text-xs text-dm-accent hover:underline"><i class="fas fa-plus mr-1"></i>Add</button>
+                </div>
+                <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+                    {% for ref in grouped_refs.get('text_sample', []) %}
+                    <div class="p-3 group">
+                        <div class="flex items-start justify-between gap-2">
+                            <p class="text-sm leading-relaxed" style="color: {{ theme_colors['text-primary'] }}">{{ ref.content[:300] }}{% if ref.content|length > 300 %}...{% endif %}</p>
+                            <button onclick="deleteRef({{ ref.id }})" class="opacity-0 group-hover:opacity-100 text-red-400 text-xs flex-shrink-0 mt-1"><i class="fas fa-trash"></i></button>
+                        </div>
+                        {% if ref.source %}
+                        <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">Source: {{ ref.source }}</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% if not grouped_refs.get('text_sample') %}
+                    <div class="p-4 text-center text-xs" style="color: {{ theme_colors['text-muted'] }}">Paste example posts, emails, or paragraphs that represent the brand's ideal voice</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Voice Scoring & Audits -->
+        <div class="space-y-4">
+            <!-- Score Content -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-robot text-purple-400"></i> Voice Scoring
+                    </h3>
+                </div>
+                <div class="p-4 space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Select content item to score</label>
+                        <select x-model="scoreItemId" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="">— or paste text below —</option>
+                            {% for item in content_items %}
+                            <option value="{{ item.id }}">{{ item.title[:60] }} ({{ item.content_type }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Or paste content to score</label>
+                        <textarea x-model="scoreText" rows="4" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none resize-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Paste any text to check against brand voice..."></textarea>
+                    </div>
+                    <button @click="runScoring($event.currentTarget)" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors">
+                        <i class="fas fa-bolt mr-1"></i>Score with AI
+                    </button>
+
+                    <!-- Score Result -->
+                    <template x-if="scoreResult">
+                        <div class="rounded-xl border p-4 space-y-3" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold" style="color: {{ theme_colors['text-primary'] }}">Overall Score</span>
+                                <span class="text-2xl font-bold" :class="scoreResult.overall_score >= 80 ? 'text-green-400' : scoreResult.overall_score >= 60 ? 'text-yellow-400' : 'text-red-400'" x-text="scoreResult.overall_score"></span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <template x-for="[key, label] in [['tone_alignment','Tone'], ['dos_compliance','Do\\'s'], ['donts_compliance','Don\\'ts'], ['consistency','Consistency']]">
+                                    <div class="text-center p-2 rounded-lg" style="background: {{ theme_colors['bg-secondary'] }}">
+                                        <div class="text-sm font-bold" :class="scoreResult[key] >= 80 ? 'text-green-400' : scoreResult[key] >= 60 ? 'text-yellow-400' : 'text-red-400'" x-text="scoreResult[key]"></div>
+                                        <div class="text-[10px] uppercase" style="color: {{ theme_colors['text-muted'] }}" x-text="label"></div>
+                                    </div>
+                                </template>
+                            </div>
+                            <template x-if="scoreResult.strengths && scoreResult.strengths.length">
+                                <div>
+                                    <p class="text-xs font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Strengths</p>
+                                    <template x-for="s in scoreResult.strengths">
+                                        <div class="flex items-center gap-2 text-xs mb-1">
+                                            <i class="fas fa-check text-green-400"></i>
+                                            <span style="color: {{ theme_colors['text-primary'] }}" x-text="s"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="scoreResult.improvements && scoreResult.improvements.length">
+                                <div>
+                                    <p class="text-xs font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">Improvements</p>
+                                    <template x-for="imp in scoreResult.improvements">
+                                        <div class="flex items-center gap-2 text-xs mb-1">
+                                            <i class="fas fa-arrow-up text-yellow-400"></i>
+                                            <span style="color: {{ theme_colors['text-primary'] }}" x-text="imp"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="scoreResult.rewrite_suggestion">
+                                <div class="mt-2 p-3 rounded-lg border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+                                    <p class="text-[10px] uppercase tracking-wider mb-1" style="color: {{ theme_colors['text-muted'] }}">Suggested Rewrite</p>
+                                    <p class="text-sm italic" style="color: {{ theme_colors['text-primary'] }}" x-text="scoreResult.rewrite_suggestion"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Audit History -->
+            <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="p-3" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-clipboard-check text-blue-400"></i> Audit History
+                    </h3>
+                </div>
+                {% if audits %}
+                <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+                    {% for audit in audits %}
+                    <div class="p-3 flex items-center gap-3 group" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background='transparent'">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold
+                            {% if audit.score >= 80 %}bg-green-500/20 text-green-400
+                            {% elif audit.score >= 60 %}bg-yellow-500/20 text-yellow-400
+                            {% else %}bg-red-500/20 text-red-400{% endif %}">
+                            {{ audit.score|int }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm truncate" style="color: {{ theme_colors['text-primary'] }}">{{ audit.content_title or 'Manual text' }}</p>
+                            <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ audit.audited_at[:16] }} &middot; {{ audit.audit_type }}</p>
+                        </div>
+                        <button onclick="deleteAudit({{ audit.id }})" class="opacity-0 group-hover:opacity-100 text-red-400 text-xs"><i class="fas fa-trash"></i></button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-6 text-center" style="color: {{ theme_colors['text-muted'] }}">
+                    <i class="fas fa-clipboard text-2xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                    <p class="text-sm">No audits yet. Score some content to see results here.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Reference Modal -->
+    <div x-show="showAddRef" x-cloak class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="showAddRef = false">
+        <div class="border rounded-xl p-6 w-[480px]" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+            <h3 class="text-lg font-bold mb-4" style="color: {{ theme_colors['text-primary'] }}">
+                Add <span x-text="refTypeLabel()" class="capitalize"></span>
+            </h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}" x-text="refType === 'text_sample' ? 'Paste reference text' : refType === 'tone_keyword' ? 'Keyword' : 'Guideline'"></label>
+                    <template x-if="refType === 'text_sample'">
+                        <textarea x-model="refContent" rows="5" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none resize-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Paste an example LinkedIn post, email, or paragraph..."></textarea>
+                    </template>
+                    <template x-if="refType !== 'text_sample'">
+                        <input x-model="refContent" type="text" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" :placeholder="refType === 'tone_keyword' ? 'e.g. professional, empathetic' : refType === 'do' ? 'e.g. Lead with data and real outcomes' : 'e.g. Never use passive voice'">
+                    </template>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2" style="color: {{ theme_colors['text-secondary'] }}">Source (optional)</label>
+                    <input x-model="refSource" type="text" class="w-full border rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="e.g. LinkedIn post Jan 2026, CEO interview">
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button @click="addReference()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">Add</button>
+                    <button @click="showAddRef = false" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function voiceApp() {
+    return {
+        showAddRef: false,
+        refType: 'tone_keyword',
+        refContent: '',
+        refSource: '',
+        scoreItemId: '',
+        scoreText: '',
+        scoreResult: null,
+
+        refTypeLabel() {
+            const labels = { tone_keyword: 'Tone Keyword', do: 'Do', dont: "Don't", text_sample: 'Text Sample', competitor_example: 'Competitor Example' };
+            return labels[this.refType] || this.refType;
+        },
+
+        async addReference() {
+            if (!this.refContent.trim()) return toast('Enter content', 'warning');
+            await fetch('/api/voice-references', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    brand_id: {{ brand.id }},
+                    ref_type: this.refType,
+                    content: this.refContent.trim(),
+                    source: this.refSource.trim()
+                })
+            });
+            toast('Reference added', 'success');
+            location.reload();
+        },
+
+        async runScoring(btn) {
+            if (!this.scoreItemId && !this.scoreText.trim()) return toast('Select content or paste text', 'warning');
+            withLoading(btn, async () => {
+                const res = await fetch('/api/voice-score', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        brand_id: {{ brand.id }},
+                        content_item_id: this.scoreItemId || null,
+                        content_text: this.scoreText.trim()
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.scoreResult = data.score;
+                    toast(`Score: ${data.score.overall_score}/100`, data.score.overall_score >= 70 ? 'success' : 'warning');
+                } else {
+                    toast('Scoring failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            });
+        }
+    };
+}
+
+async function deleteRef(refId) {
+    await fetch(`/api/voice-references/${refId}`, { method: 'DELETE' });
+    toast('Reference removed', 'info');
+    location.reload();
+}
+
+async function deleteAudit(auditId) {
+    await fetch(`/api/brand-audits/${auditId}`, { method: 'DELETE' });
+    toast('Audit removed', 'info');
+    location.reload();
+}
+</script>
+{% endblock %}

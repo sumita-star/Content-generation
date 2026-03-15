@@ -1,0 +1,391 @@
+{% extends "brands/detail.html" %}
+{% block title %}Onboarding — {{ brand.name }}{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Onboarding{% endblock %}
+
+{% block content %}
+<div x-data="onboardingApp()" x-cloak class="max-w-5xl mx-auto space-y-6">
+
+    <!-- Score Banner -->
+    <div class="rounded-xl p-6 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h2 class="text-lg font-bold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-rocket" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                    Brand Onboarding
+                </h2>
+                <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">
+                    Set up {{ brand.name }} with AI-powered analysis and recommendations
+                </p>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold" style="color: {% if score >= 80 %}{{ theme_colors['status-success'] }}{% elif score >= 50 %}{{ theme_colors['status-warning'] }}{% else %}{{ theme_colors['accent-primary'] }}{% endif %}">
+                    {{ score }}%
+                </div>
+                <div class="text-xs" style="color: {{ theme_colors['text-muted'] }}">Ready Score</div>
+            </div>
+        </div>
+        <!-- Progress Bar -->
+        <div class="w-full h-3 rounded-full" style="background: {{ theme_colors['bg-tertiary'] }}">
+            <div class="h-3 rounded-full transition-all duration-500" style="width: {{ score }}%;
+                background: {% if score >= 80 %}{{ theme_colors['status-success'] }}{% elif score >= 50 %}{{ theme_colors['status-warning'] }}{% else %}{{ theme_colors['accent-primary'] }}{% endif %}"></div>
+        </div>
+        <!-- Step Indicators -->
+        <div class="flex flex-wrap gap-2 mt-4">
+            {% for key, step in steps.items() %}
+            <span class="text-xs px-2.5 py-1 rounded-full border flex items-center gap-1
+                {% if step.done %}border-green-600/30 bg-green-600/10 text-green-400
+                {% else %}text-gray-500{% endif %}"
+                {% if not step.done %}style="border-color: {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-tertiary'] }}"{% endif %}>
+                <i class="fas {% if step.done %}fa-check-circle{% else %}fa-circle{% endif %} text-[10px]"></i>
+                {{ step.label }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Step 1: Folder Structure -->
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 1 ? 0 : 1"
+            style="background: {{ theme_colors['bg-tertiary'] }}">
+            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+                    {% if steps.folder.done %}bg-green-600/20 text-green-400{% else %}text-white{% endif %}"
+                    style="{% if not steps.folder.done %}background: {{ theme_colors['accent-primary'] }}{% endif %}">1</span>
+                <i class="fas fa-folder-open" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                Folder Structure
+                {% if steps.folder.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
+            </h3>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 1 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </div>
+        <div x-show="openStep === 1" x-collapse class="px-5 py-4 space-y-3">
+            {% if folder_exists %}
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-check text-green-400 mr-1"></i> Folder exists: <code style="color: {{ theme_colors['accent-primary'] }}">{{ brand.folder_path }}</code>
+            </p>
+            <button onclick="scanFolder(this)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                <i class="fas fa-search mr-1"></i> Scan & Categorize Files
+            </button>
+            <!-- Scan Results -->
+            <div id="scanResults" class="hidden mt-3 space-y-2">
+                <div id="scanSummary" class="text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"></div>
+                <div id="unorganizedList" class="space-y-1 max-h-64 overflow-y-auto"></div>
+                <button id="organizeBtn" onclick="organizeFiles(this)" class="hidden px-4 py-2 text-sm rounded-lg transition-colors bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/20">
+                    <i class="fas fa-folder-tree mr-1"></i> Organize Files into Standard Folders
+                </button>
+            </div>
+            {% else %}
+            <p class="text-sm" style="color: {{ theme_colors['status-warning'] }}">
+                <i class="fas fa-exclamation-triangle mr-1"></i> No folder path configured. <a href="/brands/{{ brand.id }}" class="underline">Set it in brand settings.</a>
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Step 2: AI Analysis -->
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 2 ? 0 : 2"
+            style="background: {{ theme_colors['bg-tertiary'] }}">
+            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background: {{ theme_colors['accent-primary'] }}">2</span>
+                <i class="fas fa-brain" style="color: {{ theme_colors['accent-secondary'] }}"></i>
+                AI Brand Analysis
+                {% if steps.brand_voice.done and steps.pillars.done and steps.cadence.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
+            </h3>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 2 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </div>
+        <div x-show="openStep === 2" x-collapse class="px-5 py-4 space-y-4">
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                Claude will analyze your brand documents and generate recommendations for brand voice, content pillars, and publishing cadence.
+            </p>
+            <button @click="runAnalysis()" :disabled="analyzing" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                <template x-if="analyzing"><span><i class="fas fa-spinner fa-spin mr-1"></i>Analyzing (this takes ~30s)...</span></template>
+                <template x-if="!analyzing"><span><i class="fas fa-magic mr-1"></i>Run AI Analysis</span></template>
+            </button>
+
+            <!-- Recommendations appear here -->
+            <template x-if="recommendations">
+                <div class="space-y-4 mt-2">
+
+                    <!-- Brand Voice -->
+                    <template x-if="recommendations.voice && !recommendations.voice.error">
+                        <div class="rounded-lg p-4 border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                                    <i class="fas fa-microphone" style="color: {{ theme_colors['accent-primary'] }}"></i> Brand Voice
+                                </h4>
+                                <button @click="applyRecommendation('voice')" class="px-3 py-1 text-xs rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/20">
+                                    <i class="fas fa-check mr-1"></i>Accept
+                                </button>
+                            </div>
+                            <p class="text-sm mb-2" style="color: {{ theme_colors['text-secondary'] }}" x-text="recommendations.voice.voice_summary"></p>
+                            <div class="flex flex-wrap gap-1 mb-2">
+                                <template x-for="kw in recommendations.voice.tone_keywords || []">
+                                    <span class="text-xs px-2 py-0.5 rounded-full" style="background: {{ theme_colors['accent-primary'] }}20; color: {{ theme_colors['accent-primary'] }}" x-text="kw"></span>
+                                </template>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                                <div>
+                                    <p class="font-medium text-green-400 mb-1">Do:</p>
+                                    <template x-for="d in recommendations.voice.dos || []">
+                                        <p class="mb-0.5" x-text="'• ' + d"></p>
+                                    </template>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-red-400 mb-1">Don't:</p>
+                                    <template x-for="d in recommendations.voice.donts || []">
+                                        <p class="mb-0.5" x-text="'• ' + d"></p>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Content Pillars -->
+                    <template x-if="recommendations.pillars && !recommendations.pillars.error">
+                        <div class="rounded-lg p-4 border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                                    <i class="fas fa-layer-group" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                                    Content Pillars
+                                    <span class="text-xs font-normal" style="color: {{ theme_colors['text-muted'] }}" x-text="'(' + recommendations.pillars.length + ' suggested)'"></span>
+                                </h4>
+                                <button @click="applyRecommendation('pillars')" class="px-3 py-1 text-xs rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/20">
+                                    <i class="fas fa-check mr-1"></i>Accept All
+                                </button>
+                            </div>
+                            <div class="space-y-2">
+                                <template x-for="(p, i) in recommendations.pillars">
+                                    <div class="flex items-center gap-3 text-sm p-2 rounded-lg" style="background: {{ theme_colors['bg-primary'] }}">
+                                        <span class="w-3 h-3 rounded-full flex-shrink-0" :style="'background:' + p.color"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="p.name"></span>
+                                            <span class="text-xs ml-2" style="color: {{ theme_colors['text-muted'] }}" x-text="p.description"></span>
+                                        </div>
+                                        <button @click="recommendations.pillars.splice(i, 1)" class="text-xs text-red-400 hover:text-red-300 flex-shrink-0">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Cadence -->
+                    <template x-if="recommendations.cadence && !recommendations.cadence.error">
+                        <div class="rounded-lg p-4 border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                                    <i class="fas fa-clock" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                                    Publishing Cadence
+                                </h4>
+                                <button @click="applyRecommendation('cadence')" class="px-3 py-1 text-xs rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/20">
+                                    <i class="fas fa-check mr-1"></i>Accept All
+                                </button>
+                            </div>
+                            <div class="space-y-2">
+                                <template x-for="(c, i) in recommendations.cadence">
+                                    <div class="flex items-center justify-between text-sm p-2 rounded-lg" style="background: {{ theme_colors['bg-primary'] }}">
+                                        <div>
+                                            <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="c.name"></span>
+                                            <span class="text-xs ml-2 px-1.5 py-0.5 rounded" style="background: {{ theme_colors['accent-primary'] }}20; color: {{ theme_colors['accent-primary'] }}" x-text="c.posts_per_week + 'x/week'"></span>
+                                            <span class="text-xs ml-1" style="color: {{ theme_colors['text-muted'] }}" x-text="c.notes"></span>
+                                        </div>
+                                        <button @click="recommendations.cadence.splice(i, 1)" class="text-xs text-red-400 hover:text-red-300">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Accept All -->
+                    <div class="flex gap-2">
+                        <button @click="applyAll()" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                            <i class="fas fa-check-double mr-1"></i> Accept All Recommendations
+                        </button>
+                        <button @click="runAnalysis()" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                            <i class="fas fa-redo mr-1"></i> Re-analyze
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Step 3: Cowork Sync -->
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 3 ? 0 : 3"
+            style="background: {{ theme_colors['bg-tertiary'] }}">
+            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background: {{ theme_colors['accent-primary'] }}">3</span>
+                <i class="fas fa-sync" style="color: {{ theme_colors['accent-secondary'] }}"></i>
+                Cowork / External Sync
+            </h3>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 3 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </div>
+        <div x-show="openStep === 3" x-collapse class="px-5 py-4 space-y-3">
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                Use Claude Cowork or any external tool to edit files in the brand folder. Then sync changes back into the app.
+            </p>
+            <div class="rounded-lg p-3 text-xs space-y-1.5" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                <p class="font-medium" style="color: {{ theme_colors['text-secondary'] }}">Files the app watches for:</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">01_Brand/brand_voice.md</code> → Updates brand voice summary</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">03_Strategy/content_pillars.md</code> → Replaces content pillars (use <code># Heading</code> per pillar)</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">03_Strategy/cadence.md</code> → Flagged for review</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">04_Content/*.md</code> → Imported as new content items</p>
+            </div>
+            <button onclick="syncFromFolders(this)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                <i class="fas fa-sync mr-1"></i> Sync Changes from Folders
+            </button>
+            <div id="syncResults" class="hidden mt-2 text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"></div>
+        </div>
+    </div>
+
+    <!-- What's Next -->
+    <div class="rounded-xl p-5 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <h3 class="font-semibold text-sm mb-3 flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+            <i class="fas fa-list-check" style="color: {{ theme_colors['accent-primary'] }}"></i> What's Next
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {% for key, step in steps.items() %}
+            {% if not step.done %}
+            <div class="flex items-center gap-2 text-sm p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-circle text-[8px]" style="color: {{ theme_colors['status-warning'] }}"></i>
+                {{ step.label }} <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">({{ step.weight }}% weight)</span>
+            </div>
+            {% endif %}
+            {% endfor %}
+            {% if score >= 100 %}
+            <p class="text-sm col-span-2" style="color: {{ theme_colors['status-success'] }}">
+                <i class="fas fa-party-horn mr-1"></i> All set! Your brand is fully onboarded.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function onboardingApp() {
+    return {
+        openStep: {{ 1 if not steps.folder.done else (2 if not (steps.brand_voice.done and steps.pillars.done) else 3) }},
+        analyzing: false,
+        recommendations: null,
+
+        async runAnalysis() {
+            this.analyzing = true;
+            try {
+                const res = await fetch('/api/brands/{{ brand.id }}/onboard/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'all' })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.recommendations = data.recommendations;
+                    toast('Analysis complete — review recommendations below', 'success');
+                } else {
+                    toast(data.error || 'Analysis failed', 'error');
+                }
+            } catch (e) {
+                toast('Analysis failed: ' + e.message, 'error');
+            }
+            this.analyzing = false;
+        },
+
+        async applyRecommendation(type) {
+            const payload = {};
+            payload[type] = this.recommendations[type];
+            const res = await fetch('/api/brands/{{ brand.id }}/onboard/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast(`Applied: ${data.applied.join(', ')}`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            }
+        },
+
+        async applyAll() {
+            const payload = {};
+            if (this.recommendations.voice && !this.recommendations.voice.error) payload.voice = this.recommendations.voice;
+            if (this.recommendations.pillars && !this.recommendations.pillars.error) payload.pillars = this.recommendations.pillars;
+            if (this.recommendations.cadence && !this.recommendations.cadence.error) payload.cadence = this.recommendations.cadence;
+            const res = await fetch('/api/brands/{{ brand.id }}/onboard/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast(`Applied all: ${data.applied.join(', ')}`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            }
+        }
+    };
+}
+
+async function scanFolder(btn) {
+    await withLoading(btn, async () => {
+        const res = await fetch('/api/brands/{{ brand.id }}/onboard/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await res.json();
+        document.getElementById('scanResults').classList.remove('hidden');
+        document.getElementById('scanSummary').innerHTML = `
+            <i class="fas fa-chart-bar mr-1"></i>
+            <strong>${data.total_files}</strong> files found &middot;
+            <strong>${data.organized}</strong> already organized &middot;
+            <strong>${data.unorganized}</strong> can be auto-organized
+        `;
+        const list = document.getElementById('unorganizedList');
+        list.innerHTML = '';
+        if (data.unorganized_files && data.unorganized_files.length > 0) {
+            data.unorganized_files.forEach(f => {
+                list.innerHTML += `<div class="text-xs px-3 py-1.5 rounded flex items-center justify-between" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                    <span><i class="fas fa-file text-xs mr-1" style="color: {{ theme_colors['text-muted'] }}"></i>${f.path}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px]" style="background: {{ theme_colors['accent-primary'] }}20; color: {{ theme_colors['accent-primary'] }}">→ ${f.suggested_folder}</span>
+                </div>`;
+            });
+            document.getElementById('organizeBtn').classList.remove('hidden');
+            document.getElementById('organizeBtn').dataset.files = JSON.stringify(data.unorganized_files);
+        }
+    });
+}
+
+async function organizeFiles(btn) {
+    const files = JSON.parse(btn.dataset.files).map(f => ({ path: f.path, name: f.name, target_folder: f.suggested_folder }));
+    await withLoading(btn, async () => {
+        const res = await fetch('/api/brands/{{ brand.id }}/onboard/organize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            toast(`Organized ${data.moved} files. ${data.errors} errors.`, data.errors ? 'warning' : 'success');
+            setTimeout(() => location.reload(), 1500);
+        }
+    });
+}
+
+async function syncFromFolders(btn) {
+    await withLoading(btn, async () => {
+        const res = await fetch('/api/brands/{{ brand.id }}/onboard/sync-from-folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        const el = document.getElementById('syncResults');
+        el.classList.remove('hidden');
+        if (data.synced && data.synced.length > 0) {
+            el.innerHTML = '<p class="font-medium mb-1" style="color: {{ theme_colors["status-success"] }}"><i class="fas fa-check mr-1"></i>Synced:</p>' +
+                data.synced.map(s => `<p class="text-xs ml-3">• ${s}</p>`).join('');
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            el.innerHTML = '<p><i class="fas fa-info-circle mr-1" style="color: {{ theme_colors["accent-primary"] }}"></i>No new changes found in folders.</p>';
+        }
+    });
+}
+</script>
+{% endblock %}

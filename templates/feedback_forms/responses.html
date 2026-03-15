@@ -1,0 +1,234 @@
+{% extends "brands/detail.html" %}
+{% block title %}{{ form.title }} — Responses — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Feedback Forms &rsaquo; {{ form.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4" x-data="responsesApp()">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ form.title }}</h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">{{ form.description or form.form_type | capitalize }} — {{ form.response_count }} responses</p>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+            <a href="/brands/{{ brand.id }}/feedback-forms" class="px-3 py-1.5 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-arrow-left mr-1"></i>Back
+            </a>
+            <button onclick="copyFormLink('{{ form.share_token }}')" class="px-3 py-1.5 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                <i class="fas fa-link mr-1"></i>Copy Link
+            </button>
+            <button onclick="showFormQR('{{ form.share_token }}')" class="px-3 py-1.5 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                <i class="fas fa-qrcode mr-1"></i>QR Code
+            </button>
+            {% if responses %}
+            <button @click="withLoading($el, () => analyzeResponses())" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors">
+                <i class="fas fa-robot mr-1"></i>Analyze with AI
+            </button>
+            <button @click="exportCSV()" class="px-3 py-1.5 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                <i class="fas fa-download mr-1"></i>CSV
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    {% if responses %}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ responses | length }}</div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Responses</div>
+        </div>
+        {% set fields = form.fields | from_json %}
+        {% for field in fields %}
+        {% if field.type == 'rating' %}
+        {% set ns = namespace(total=0, count=0) %}
+        {% for resp in responses %}
+        {% set rd = resp.response_data | from_json %}
+        {% if rd[field.id] is defined and rd[field.id] %}
+        {% set ns.total = ns.total + rd[field.id] %}
+        {% set ns.count = ns.count + 1 %}
+        {% endif %}
+        {% endfor %}
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                {% if ns.count > 0 %}{{ '%.1f' | format(ns.total / ns.count) }}{% else %}—{% endif %}
+                <i class="fas fa-star text-yellow-400 text-sm"></i>
+            </div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Avg {{ field.label[:15] }}</div>
+        </div>
+        {% elif field.type == 'nps' %}
+        {% set ns = namespace(promoters=0, detractors=0, total=0) %}
+        {% for resp in responses %}
+        {% set rd = resp.response_data | from_json %}
+        {% if rd[field.id] is defined and rd[field.id] is not none %}
+        {% set ns.total = ns.total + 1 %}
+        {% if rd[field.id] >= 9 %}{% set ns.promoters = ns.promoters + 1 %}{% endif %}
+        {% if rd[field.id] <= 6 %}{% set ns.detractors = ns.detractors + 1 %}{% endif %}
+        {% endif %}
+        {% endfor %}
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                {% if ns.total > 0 %}{{ ((ns.promoters - ns.detractors) / ns.total * 100) | int }}{% else %}—{% endif %}
+            </div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">NPS Score</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        <div class="rounded-xl p-3 border text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">
+                {% if responses %}{{ responses[0].created_at[:10] }}{% else %}—{% endif %}
+            </div>
+            <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Latest</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- AI Insights -->
+    {% if insights %}
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" x-data="{ showInsights: true }">
+        <button @click="showInsights = !showInsights" class="w-full p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <span class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-brain mr-2 text-purple-400"></i>AI Insights ({{ insights | length }})</span>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="!showInsights && '-rotate-90'" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </button>
+        <div x-show="showInsights" class="p-4 space-y-3 max-h-60 overflow-y-auto scrollbar-thin">
+            {% for insight in insights %}
+            <div class="rounded-lg p-3" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ insight.created_at[:16] }} — {{ insight.response_count_at_analysis }} responses analyzed</span>
+                </div>
+                <div class="text-sm prose prose-invert max-w-none" style="color: {{ theme_colors['text-secondary'] }}">{{ insight.insight_text | replace('\n', '<br>') | safe }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- New insight result -->
+    <div x-show="newInsight" x-cloak class="rounded-xl border p-4" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['accent-primary'] }}40">
+        <h3 class="text-sm font-medium mb-2" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-sparkles mr-1 text-purple-400"></i>New Analysis</h3>
+        <div class="text-sm" style="color: {{ theme_colors['text-secondary'] }}" x-html="newInsight.replace(/\n/g, '<br>')"></div>
+    </div>
+
+    <!-- Responses List -->
+    {% if responses %}
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-3" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">Individual Responses</h3>
+        </div>
+        <div class="divide-y max-h-[50vh] overflow-y-auto scrollbar-thin" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% set fields = form.fields | from_json %}
+            {% for resp in responses %}
+            {% set rd = resp.response_data | from_json %}
+            <div class="p-3" x-data="{ expanded: false }">
+                <div @click="expanded = !expanded" class="flex items-center justify-between cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ resp.created_at[:16] }}</span>
+                        {% if resp.respondent_name %}
+                        <span class="text-xs" style="color: {{ theme_colors['text-primary'] }}">{{ resp.respondent_name }}</span>
+                        {% endif %}
+                        <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">{{ resp.source }}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        {% for field in fields %}
+                        {% if field.type == 'rating' and rd[field.id] is defined %}
+                        <span class="text-xs text-yellow-400"><i class="fas fa-star mr-0.5"></i>{{ rd[field.id] }}</span>
+                        {% elif field.type == 'nps' and rd[field.id] is defined %}
+                        <span class="text-xs {% if rd[field.id] >= 9 %}text-green-400{% elif rd[field.id] <= 6 %}text-red-400{% else %}text-yellow-400{% endif %}">NPS: {{ rd[field.id] }}</span>
+                        {% endif %}
+                        {% endfor %}
+                        <i class="fas fa-chevron-down text-[10px] transition-transform" :class="expanded && 'rotate-180'" style="color: {{ theme_colors['text-muted'] }}"></i>
+                    </div>
+                </div>
+                <div x-show="expanded" x-cloak class="mt-2 space-y-2 pl-4" style="border-left: 2px solid {{ theme_colors['border-hover'] }}">
+                    {% for field in fields %}
+                    <div>
+                        <span class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">{{ field.label }}</span>
+                        <div class="text-sm" style="color: {{ theme_colors['text-primary'] }}">
+                            {% if rd[field.id] is defined %}
+                                {% if field.type == 'rating' %}
+                                    {% for i in range(1, 6) %}<i class="fas fa-star {% if i <= rd[field.id] %}text-yellow-400{% else %}text-gray-600{% endif %}"></i>{% endfor %}
+                                {% elif field.type == 'nps' %}
+                                    {{ rd[field.id] }}/10
+                                {% elif field.type == 'multi_select' and rd[field.id] is iterable and rd[field.id] is not string %}
+                                    {{ rd[field.id] | join(', ') }}
+                                {% else %}
+                                    {{ rd[field.id] }}
+                                {% endif %}
+                            {% else %}
+                                <span style="color: {{ theme_colors['text-disabled'] }}">—</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="rounded-xl p-12 text-center border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-inbox text-4xl mb-4" style="color: {{ theme_colors['text-disabled'] }}"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">No responses yet</h3>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">Share the form link or QR code to start collecting feedback.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- QR Modal -->
+<div id="qrModal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="border rounded-xl p-6 w-[360px] text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-hover'] }}">
+        <h3 class="text-sm font-bold mb-3" style="color: {{ theme_colors['text-primary'] }}">{{ form.title }}</h3>
+        <img id="qrImage" class="mx-auto mb-3 rounded-lg" style="background: white; padding: 12px;">
+        <p class="text-xs mb-3 break-all" style="color: {{ theme_colors['text-muted'] }}" id="qrUrl"></p>
+        <button onclick="document.getElementById('qrModal').classList.add('hidden')" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">Close</button>
+    </div>
+</div>
+
+<script>
+function responsesApp() {
+    return {
+        newInsight: '',
+        async analyzeResponses() {
+            const res = await fetch('/api/feedback-forms/{{ form.id }}/analyze', { method: 'POST' });
+            const data = await res.json();
+            if (data.ok) {
+                this.newInsight = data.insight;
+                toast('AI analysis complete', 'success');
+            } else {
+                toast('Analysis failed: ' + (data.error || 'Unknown'), 'error');
+            }
+        },
+        exportCSV() {
+            const fields = {{ form.fields | safe }};
+            const responses = {{ responses | tojson }};
+            let csv = 'Timestamp,Name,Email,Source,' + fields.map(f => '"' + f.label + '"').join(',') + '\n';
+            responses.forEach(r => {
+                const rd = JSON.parse(r.response_data);
+                csv += `"${r.created_at}","${r.respondent_name || ''}","${r.respondent_email || ''}","${r.source}",`;
+                csv += fields.map(f => {
+                    const v = rd[f.id];
+                    if (Array.isArray(v)) return '"' + v.join('; ') + '"';
+                    return '"' + (v || '') + '"';
+                }).join(',');
+                csv += '\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = '{{ form.title | replace(" ", "_") }}_responses.csv';
+            a.click();
+        }
+    };
+}
+
+function getFormUrl(token) { return window.location.origin + '/f/' + token; }
+function copyFormLink(token) { navigator.clipboard.writeText(getFormUrl(token)); toast('Link copied!', 'success'); }
+async function showFormQR(token) {
+    const url = getFormUrl(token);
+    const res = await fetch('/api/qr?url=' + encodeURIComponent(url) + '&size=250');
+    const data = await res.json();
+    document.getElementById('qrImage').src = data.qr_url;
+    document.getElementById('qrUrl').textContent = url;
+    document.getElementById('qrModal').classList.remove('hidden');
+}
+</script>
+{% endblock %}

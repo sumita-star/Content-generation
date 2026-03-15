@@ -1,0 +1,284 @@
+{% extends "brands/detail.html" %}
+{% block title %}{{ 'Edit' if form else 'New' }} Form — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Feedback Forms &rsaquo; {{ 'Edit' if form else 'New' }}{% endblock %}
+
+{% block content %}
+<div class="max-w-full mx-auto space-y-4" x-data="formBuilder()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ 'Edit' if form else 'Create' }} Feedback Form</h1>
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Design your form fields and settings</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="/brands/{{ brand.id }}/feedback-forms" class="px-3 py-1.5 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <i class="fas fa-arrow-left mr-1"></i>Back
+            </a>
+            <button @click="saveForm()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                <i class="fas fa-save mr-1"></i>Save Form
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4" style="min-height: 500px;">
+        <!-- Left: Form settings + fields -->
+        <div class="lg:col-span-7 space-y-4">
+            <!-- Form Info -->
+            <div class="rounded-xl p-4 space-y-3" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div>
+                    <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Form Title</label>
+                    <input x-model="title" type="text" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="e.g. Content Review - March 2026">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Type</label>
+                        <select x-model="formType" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                            <option value="general">General</option>
+                            <option value="content_review">Content Review</option>
+                            <option value="nps">NPS Survey</option>
+                            <option value="campaign">Campaign Feedback</option>
+                            <option value="stakeholder">Stakeholder Poll</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Description</label>
+                        <input x-model="description" type="text" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Brief description...">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Thank You Message</label>
+                        <input x-model="thankYou" type="text" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Thank you for your feedback!">
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Expires</label>
+                        <input x-model="expiresAt" type="date" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    </div>
+                    <div class="flex items-end pb-1">
+                        <label class="flex items-center gap-2 cursor-pointer text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                            <input type="checkbox" x-model="allowMultiple" class="accent-dm-primary w-4 h-4">
+                            Allow multiple responses
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Field Type Palette -->
+            <div class="rounded-xl p-4" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <label class="text-[10px] uppercase tracking-wider mb-2 block" style="color: {{ theme_colors['text-muted'] }}">Add Field</label>
+                <div class="grid grid-cols-6 gap-2">
+                    <button @click="addField('rating')" class="p-3 rounded-lg text-center transition-colors hover:bg-yellow-500/10" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <i class="fas fa-star text-yellow-400 text-lg mb-1"></i>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-secondary'] }}">Rating</div>
+                    </button>
+                    <button @click="addField('nps')" class="p-3 rounded-lg text-center transition-colors hover:bg-blue-500/10" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <i class="fas fa-tachometer-alt text-blue-400 text-lg mb-1"></i>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-secondary'] }}">NPS</div>
+                    </button>
+                    <button @click="addField('text')" class="p-3 rounded-lg text-center transition-colors hover:bg-green-500/10" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <i class="fas fa-font text-green-400 text-lg mb-1"></i>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-secondary'] }}">Text</div>
+                    </button>
+                    <button @click="addField('textarea')" class="p-3 rounded-lg text-center transition-colors hover:bg-purple-500/10" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <i class="fas fa-align-left text-purple-400 text-lg mb-1"></i>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-secondary'] }}">Long Text</div>
+                    </button>
+                    <button @click="addField('select')" class="p-3 rounded-lg text-center transition-colors hover:bg-pink-500/10" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <i class="fas fa-list-ul text-pink-400 text-lg mb-1"></i>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-secondary'] }}">Choice</div>
+                    </button>
+                    <button @click="addField('multi_select')" class="p-3 rounded-lg text-center transition-colors hover:bg-teal-500/10" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <i class="fas fa-check-square text-teal-400 text-lg mb-1"></i>
+                        <div class="text-[10px]" style="color: {{ theme_colors['text-secondary'] }}">Multi</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Field List -->
+            <div class="space-y-2">
+                <template x-for="(field, idx) in fields" :key="field.id">
+                    <div class="rounded-xl p-4" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-[10px] px-2 py-0.5 rounded-full capitalize"
+                                :class="{
+                                    'bg-yellow-500/20 text-yellow-400': field.type === 'rating',
+                                    'bg-blue-500/20 text-blue-400': field.type === 'nps',
+                                    'bg-green-500/20 text-green-400': field.type === 'text',
+                                    'bg-purple-500/20 text-purple-400': field.type === 'textarea',
+                                    'bg-pink-500/20 text-pink-400': field.type === 'select',
+                                    'bg-teal-500/20 text-teal-400': field.type === 'multi_select'
+                                }" x-text="field.type.replace('_', ' ')"></span>
+                            <input x-model="field.label" type="text" class="flex-1 bg-transparent outline-none text-sm" style="color: {{ theme_colors['text-primary'] }}" placeholder="Field label...">
+                            <label class="flex items-center gap-1 text-[10px] cursor-pointer" style="color: {{ theme_colors['text-muted'] }}">
+                                <input type="checkbox" x-model="field.required" class="accent-dm-primary w-3 h-3"> Required
+                            </label>
+                            <button @click="moveField(idx, -1)" class="text-xs px-1" style="color: {{ theme_colors['text-muted'] }}" :disabled="idx === 0"><i class="fas fa-chevron-up"></i></button>
+                            <button @click="moveField(idx, 1)" class="text-xs px-1" style="color: {{ theme_colors['text-muted'] }}" :disabled="idx === fields.length - 1"><i class="fas fa-chevron-down"></i></button>
+                            <button @click="fields.splice(idx, 1)" class="text-xs px-1 text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                        </div>
+                        <!-- Type-specific options -->
+                        <template x-if="field.type === 'text' || field.type === 'textarea'">
+                            <input x-model="field.options.placeholder" type="text" class="w-full rounded-lg px-3 py-1.5 text-xs outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}" placeholder="Placeholder text...">
+                        </template>
+                        <template x-if="field.type === 'select' || field.type === 'multi_select'">
+                            <div class="space-y-1">
+                                <template x-for="(choice, ci) in field.options.choices" :key="ci">
+                                    <div class="flex items-center gap-2">
+                                        <input x-model="field.options.choices[ci]" type="text" class="flex-1 rounded-lg px-3 py-1 text-xs outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}" placeholder="Option...">
+                                        <button @click="field.options.choices.splice(ci, 1)" class="text-xs text-red-400"><i class="fas fa-times"></i></button>
+                                    </div>
+                                </template>
+                                <button @click="field.options.choices.push('')" class="text-[10px] text-dm-accent hover:underline"><i class="fas fa-plus mr-1"></i>Add option</button>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <template x-if="fields.length === 0">
+                    <div class="rounded-xl p-8 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                        <i class="fas fa-plus-circle text-3xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                        <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">Click a field type above to start building your form</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Right: Live Preview -->
+        <div class="lg:col-span-5">
+            <div class="rounded-xl overflow-hidden sticky top-4" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="p-3 text-center" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                    <span class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-mobile-alt mr-1"></i>Live Preview</span>
+                </div>
+                <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin" style="background: linear-gradient(135deg, #f8fafc, #e2e8f0)">
+                    <div class="text-center mb-4">
+                        <h2 class="text-lg font-bold text-gray-800" x-text="title || 'Untitled Form'"></h2>
+                        <p class="text-sm text-gray-500" x-text="description || ''"></p>
+                    </div>
+                    <template x-for="field in fields" :key="field.id">
+                        <div class="space-y-1">
+                            <label class="text-sm font-medium text-gray-700">
+                                <span x-text="field.label || 'Untitled'"></span>
+                                <span x-show="field.required" class="text-red-500">*</span>
+                            </label>
+                            <!-- Rating preview -->
+                            <template x-if="field.type === 'rating'">
+                                <div class="flex gap-1">
+                                    <template x-for="i in 5" :key="i">
+                                        <i class="fas fa-star text-xl text-gray-300 cursor-pointer hover:text-yellow-400"></i>
+                                    </template>
+                                </div>
+                            </template>
+                            <!-- NPS preview -->
+                            <template x-if="field.type === 'nps'">
+                                <div class="flex gap-1 flex-wrap">
+                                    <template x-for="i in 11" :key="i">
+                                        <button class="w-8 h-8 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:bg-blue-50" x-text="i - 1"></button>
+                                    </template>
+                                    <div class="w-full flex justify-between text-[10px] text-gray-400 mt-1">
+                                        <span>Not likely</span><span>Very likely</span>
+                                    </div>
+                                </div>
+                            </template>
+                            <!-- Text preview -->
+                            <template x-if="field.type === 'text'">
+                                <input type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" :placeholder="field.options.placeholder || 'Your answer'" disabled>
+                            </template>
+                            <!-- Textarea preview -->
+                            <template x-if="field.type === 'textarea'">
+                                <textarea class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white resize-none" rows="3" :placeholder="field.options.placeholder || 'Your answer'" disabled></textarea>
+                            </template>
+                            <!-- Select preview -->
+                            <template x-if="field.type === 'select'">
+                                <div class="space-y-1">
+                                    <template x-for="(opt, oi) in field.options.choices" :key="oi">
+                                        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                                            <input type="radio" disabled class="accent-blue-500"> <span x-text="opt || 'Option ' + (oi+1)"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </template>
+                            <!-- Multi select preview -->
+                            <template x-if="field.type === 'multi_select'">
+                                <div class="space-y-1">
+                                    <template x-for="(opt, oi) in field.options.choices" :key="oi">
+                                        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                                            <input type="checkbox" disabled class="accent-blue-500"> <span x-text="opt || 'Option ' + (oi+1)"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <template x-if="fields.length > 0">
+                        <button class="w-full py-2.5 rounded-lg text-white text-sm font-medium" style="background: {{ brand.primary_color or '#000' }}">Submit Feedback</button>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function formBuilder() {
+    const existing = {{ (form | tojson) if form else 'null' }};
+    let fields = [];
+    let settings = {};
+    if (existing) {
+        try { fields = JSON.parse(existing.fields || '[]'); } catch(e) {}
+        try { settings = JSON.parse(existing.settings || '{}'); } catch(e) {}
+    }
+    let nextId = fields.length + 1;
+    return {
+        title: existing ? existing.title : '',
+        description: existing ? (existing.description || '') : '',
+        formType: existing ? existing.form_type : 'general',
+        thankYou: settings.thank_you_message || 'Thank you for your feedback!',
+        expiresAt: settings.expires_at || '',
+        allowMultiple: settings.allow_multiple !== false,
+        fields: fields,
+
+        addField(type) {
+            const field = { id: 'f' + (nextId++), type, label: '', required: false, options: {} };
+            if (type === 'text' || type === 'textarea') field.options = { placeholder: '' };
+            if (type === 'select' || type === 'multi_select') field.options = { choices: ['', ''] };
+            if (type === 'rating') field.options = { max: 5 };
+            this.fields.push(field);
+        },
+
+        moveField(idx, dir) {
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= this.fields.length) return;
+            const temp = this.fields[idx];
+            this.fields[idx] = this.fields[newIdx];
+            this.fields[newIdx] = temp;
+            this.fields = [...this.fields];
+        },
+
+        async saveForm() {
+            if (!this.title.trim()) return toast('Enter a form title', 'warning');
+            if (this.fields.length === 0) return toast('Add at least one field', 'warning');
+            const payload = {
+                brand_id: {{ brand.id }},
+                title: this.title,
+                description: this.description,
+                form_type: this.formType,
+                fields: this.fields,
+                settings: {
+                    thank_you_message: this.thankYou,
+                    expires_at: this.expiresAt || null,
+                    allow_multiple: this.allowMultiple
+                }
+            };
+            const url = existing ? '/api/feedback-forms/' + existing.id : '/api/feedback-forms';
+            const method = existing ? 'PUT' : 'POST';
+            const res = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            const data = await res.json();
+            if (data.ok) {
+                toast('Form saved!', 'success');
+                window.location.href = '/brands/{{ brand.id }}/feedback-forms';
+            } else {
+                toast('Error: ' + (data.error || 'Unknown'), 'error');
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

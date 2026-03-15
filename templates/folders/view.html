@@ -1,0 +1,108 @@
+{% extends "brands/detail.html" %}
+{% block title %}Folders — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Folders{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Folder Explorer</h1>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-secondary'] }}">Browse {{ brand.name }}'s local folder structure and see which folders map to workflow steps</p>
+    </div>
+
+    <!-- Folder Mappings -->
+    {% if folder_mappings %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-sitemap mr-2 text-dm-accent"></i>Folder → Workflow Mapping</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-px" style="background: {{ theme_colors['bg-tertiary'] }}">
+            {% for fm in folder_mappings %}
+            <div class="p-3 flex items-start gap-3 cursor-pointer hover:bg-yellow-500/5 transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}" onclick="openFolder('{{ fm.folder_path }}')" title="Open {{ fm.folder_path }} in Finder">
+                <i class="fas fa-folder text-yellow-500 mt-0.5 group-hover:hidden"></i>
+                <i class="fas fa-folder-open text-yellow-500 mt-0.5 hidden group-hover:inline"></i>
+                <div class="flex-1">
+                    <div class="text-sm font-medium flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        {{ fm.folder_path }}
+                        <i class="fas fa-external-link-alt text-[10px] opacity-0 group-hover:opacity-50 transition-opacity" style="color: {{ theme_colors['text-muted'] }}"></i>
+                    </div>
+                    <div class="text-xs mt-0.5" style="color: {{ theme_colors['text-muted'] }}">{{ fm.purpose }}</div>
+                    {% if fm.step_name %}
+                    <div class="text-[10px] mt-1 px-2 py-0.5 rounded bg-dm-primary/10 text-dm-accent inline-block">
+                        <i class="fas fa-link mr-1"></i>{{ fm.step_name }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Folder Tree -->
+    {% if folder_tree %}
+    <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <div class="p-4 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-folder-tree mr-2 text-yellow-500"></i>File Explorer</h2>
+            <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ brand.folder_path }}</span>
+        </div>
+        <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for folder in folder_tree %}
+            <div x-data="{ open: false }">
+                <div class="p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-800/30 group" @click="open = !open">
+                    <i class="fas fa-chevron-right text-xs transition-transform w-3" :class="open && 'rotate-90'" style="color: {{ theme_colors['text-muted'] }}"></i>
+                    <i class="fas fa-folder text-yellow-500"></i>
+                    <span class="text-sm font-medium flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ folder.name }}</span>
+                    <span class="text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ folder.total_children }} items</span>
+                    <button onclick="event.stopPropagation(); openFolder('{{ folder.name }}')" class="text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-yellow-500/20 text-yellow-500 transition-all" title="Open in Finder">
+                        <i class="fas fa-external-link-alt mr-0.5"></i>Open
+                    </button>
+                </div>
+                <div x-show="open" x-cloak style="background: {{ theme_colors['bg-tertiary'] }}33; border-top: 1px solid {{ theme_colors['border-primary'] }}">
+                    {% for child in folder.children %}
+                    <div class="py-2 px-10 flex items-center gap-3 text-sm hover:bg-gray-800/30 group/child {% if child.type == 'dir' %}cursor-pointer{% endif %}"
+                         {% if child.type == 'dir' %}onclick="openFolder('{{ folder.name }}/{{ child.name }}')" title="Open {{ folder.name }}/{{ child.name }} in Finder"{% endif %}>
+                        {% if child.type == 'dir' %}
+                        <i class="fas fa-folder text-yellow-600/60 w-4 text-center group-hover/child:text-yellow-500 transition-colors"></i>
+                        <span style="color: {{ theme_colors['text-secondary'] }}">{{ child.name }}/</span>
+                        <i class="fas fa-external-link-alt text-[9px] opacity-0 group-hover/child:opacity-40 transition-opacity" style="color: {{ theme_colors['text-muted'] }}"></i>
+                        <span class="text-xs ml-auto" style="color: {{ theme_colors['text-muted'] }}">{{ child.count }} items</span>
+                        {% else %}
+                        <i class="fas fa-file w-4 text-center" style="color: {{ theme_colors['text-muted'] }}"></i>
+                        <span style="color: {{ theme_colors['text-secondary'] }}">{{ child.name }}</span>
+                        {% if child.size %}
+                        <span class="text-xs ml-auto" style="color: {{ theme_colors['text-muted'] }}">{{ (child.size / 1024) | round(1) }}KB</span>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% if folder.total_children > 20 %}
+                    <div class="py-2 px-10 text-xs italic" style="color: {{ theme_colors['text-muted'] }}">
+                        ... and {{ folder.total_children - 20 }} more items
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="rounded-xl p-12 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+        <i class="fas fa-folder-open text-4xl mb-4" style="color: {{ theme_colors['text-disabled'] }}"></i>
+        <h3 class="text-lg" style="color: {{ theme_colors['text-secondary'] }}">No folder path configured</h3>
+        <p class="text-sm mt-1" style="color: {{ theme_colors['text-muted'] }}">Set the brand's folder path in brand settings.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function openFolder(relativePath) {
+    fetch('/api/open-folder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ brand_folder: '{{ brand.folder_path }}', path: relativePath })
+    }).then(r => r.json()).then(data => {
+        if (!data.ok) toast('Could not open folder: ' + (data.error || 'Unknown error'), 'error');
+    }).catch(() => toast('Failed to connect to server', 'error'));
+}
+</script>
+{% endblock %}
