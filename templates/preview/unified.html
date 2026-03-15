@@ -855,6 +855,28 @@
                 <canvas id="chart-canvas" width="300" height="200" x-show="chartRendered" x-cloak class="rounded-lg"></canvas>
             </div>
 
+            <!-- Video Generation (Gemini Veo) -->
+            <div class="rounded-xl p-4 space-y-3" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <h3 class="text-sm font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-video text-rose-400"></i>Video Generation
+                </h3>
+                <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">Generate video clips from text prompts (Gemini Veo 2)</p>
+                <textarea x-model="videoPrompt" rows="2" placeholder="Describe the video you want to generate..."
+                    class="w-full rounded-lg px-3 py-2 text-xs outline-none resize-none"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"></textarea>
+                <button @click="generateVideo()" :disabled="!selectedItem || !videoPrompt.trim() || videoGenerating" class="w-full px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 text-xs rounded-lg transition-colors border border-rose-600/20 disabled:opacity-40">
+                    <template x-if="videoGenerating"><span><i class="fas fa-spinner fa-spin mr-1"></i>Generating (up to 5 min)...</span></template>
+                    <template x-if="!videoGenerating"><span><i class="fas fa-film mr-1"></i>Generate Video</span></template>
+                </button>
+                <div x-show="videoResult" x-cloak class="rounded-lg overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <video x-show="videoResult" :src="videoResult" controls class="w-full rounded-lg" style="max-height: 200px;"></video>
+                    <div class="px-3 py-1.5 flex items-center justify-between">
+                        <span class="text-[9px]" style="color: {{ theme_colors['text-muted'] }}" x-text="videoFilename"></span>
+                        <a x-show="videoResult" :href="videoResult" target="_blank" class="text-[9px] hover:underline" style="color: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-external-link-alt mr-0.5"></i>Full</a>
+                    </div>
+                </div>
+            </div>
+
             <!-- Text-to-Speech -->
             <div class="rounded-xl p-4 space-y-3" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
                 <h3 class="text-sm font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
@@ -994,6 +1016,7 @@ function studioApp() {
         ttsAudioUrl: null,
         translateTarget: 'ja', translateResult: '',
         qrUrl: '', qrImageUrl: '', shortUrl: '',
+        videoPrompt: '', videoGenerating: false, videoResult: '', videoFilename: '',
         mcpJobSpec: null,
 
         // Media preview
@@ -1585,6 +1608,28 @@ Please provide the revised content that addresses this feedback, maintaining the
             });
             this.chartRendered = true;
             toast('Chart generated', 'success');
+        },
+        async generateVideo() {
+            if (!this.selectedItem) return toast('Select a content item first', 'warning');
+            if (!this.videoPrompt.trim()) return toast('Enter a video prompt first', 'warning');
+            this.videoGenerating = true;
+            this.videoResult = '';
+            toast('Starting video generation (this may take up to 5 minutes)...', 'info', 10000);
+            try {
+                const res = await fetch('/api/gemini/generate-video', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ prompt: this.videoPrompt, brand_id: {{ brand.id }}, content_item_id: this.selectedItem })
+                });
+                const data = await res.json();
+                if (data.ok && data.files && data.files.length > 0) {
+                    this.videoFilename = data.files[0].name;
+                    this.videoResult = '/media/' + data.files[0].path.split('{{ brand.folder_path }}/')[1];
+                    toast(`Video generated! (${data.count} file${data.count > 1 ? 's' : ''})`, 'success');
+                } else {
+                    toast(data.error || 'Video generation failed', 'error', 8000);
+                }
+            } catch(e) { toast(e.message, 'error', 8000); }
+            this.videoGenerating = false;
         },
         async generateTTS() {
             if (!this.selectedItem) return toast('Select a content item first', 'warning');

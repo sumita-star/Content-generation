@@ -41,7 +41,8 @@ ENCRYPTION_KEY = _get_encryption_key()
 _fernet = Fernet(ENCRYPTION_KEY)
 
 # Keys that should be encrypted at rest
-ENCRYPTED_KEYS = {'anthropic_api_key', 'google_api_key', 'gemini_api_key', 'apify_api_key'}
+ENCRYPTED_KEYS = {'anthropic_api_key', 'google_api_key', 'gemini_api_key', 'apify_api_key',
+                  'unsplash_api_key', 'pexels_api_key', 'elevenlabs_api_key', 'removebg_api_key'}
 
 
 def encrypt_value(plaintext):
@@ -3964,6 +3965,10 @@ def settings_view():
         'google_api_key': get_setting(db, 'google_api_key'),
         'gemini_api_key': get_setting(db, 'gemini_api_key'),
         'apify_api_key': get_setting(db, 'apify_api_key'),
+        'unsplash_api_key': get_setting(db, 'unsplash_api_key'),
+        'pexels_api_key': get_setting(db, 'pexels_api_key'),
+        'elevenlabs_api_key': get_setting(db, 'elevenlabs_api_key'),
+        'removebg_api_key': get_setting(db, 'removebg_api_key'),
     }
     theme_mode = get_setting(db, 'theme_mode', 'dark')
 
@@ -4686,6 +4691,107 @@ def gemini_generate_image():
         db.commit()
 
         return jsonify({'ok': True, 'files': saved_files, 'count': len(saved_files)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/gemini/generate-video', methods=['POST'])
+def gemini_generate_video():
+    """Generate a video using Gemini Veo API."""
+    import urllib.request, urllib.error
+    import time as _time
+    db = get_db()
+    gemini_key = get_setting(db, 'gemini_api_key')
+    if not gemini_key:
+        return jsonify({'ok': False, 'error': 'Gemini API key not configured. Go to Settings.'}), 400
+
+    data = request.json
+    brand_id = data.get('brand_id')
+    prompt = data.get('prompt', '')
+    content_item_id = data.get('content_item_id')
+
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+    if not prompt:
+        return jsonify({'ok': False, 'error': 'Video prompt is required'}), 400
+
+    try:
+        # Step 1: Start video generation (async operation)
+        api_url = f'https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning?key={gemini_key}'
+        req_body = json.dumps({
+            'instances': [{'prompt': prompt}],
+            'parameters': {'sampleCount': 1}
+        })
+        req = urllib.request.Request(api_url, data=req_body.encode(),
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+
+        operation_name = result.get('name', '')
+        if not operation_name:
+            return jsonify({'ok': False, 'error': 'Failed to start video generation. The Veo API may not be available for your account.'}), 500
+
+        # Step 2: Poll for completion (up to 5 minutes)
+        poll_url = f'https://generativelanguage.googleapis.com/v1beta/{operation_name}?key={gemini_key}'
+        for attempt in range(30):  # 30 x 10s = 5 min max
+            _time.sleep(10)
+            poll_req = urllib.request.Request(poll_url)
+            with urllib.request.urlopen(poll_req, timeout=15) as poll_resp:
+                poll_result = json.loads(poll_resp.read().decode())
+
+            if poll_result.get('done'):
+                break
+        else:
+            return jsonify({'ok': False, 'error': 'Video generation timed out after 5 minutes. Try a simpler prompt.'}), 504
+
+        # Step 3: Extract and save video
+        saved_files = []
+        response = poll_result.get('response', {})
+        predictions = response.get('predictions', [])
+        for i, pred in enumerate(predictions):
+            video_data = pred.get('bytesBase64Encoded', '')
+            if video_data:
+                video_bytes = base64.b64decode(video_data)
+                output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Videos')
+                os.makedirs(output_dir, exist_ok=True)
+                filename = f"veo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}.mp4"
+                filepath = os.path.join(output_dir, filename)
+                with open(filepath, 'wb') as f:
+                    f.write(video_bytes)
+                saved_files.append({'name': filename, 'path': filepath, 'size': len(video_bytes)})
+
+        if not saved_files:
+            return jsonify({'ok': False, 'error': 'Video generation completed but no video data returned. The Veo model may not support this prompt.'}), 500
+
+        # Update content item if linked
+        if content_item_id:
+            item = db.execute('SELECT file_paths FROM content_items WHERE id=?', (content_item_id,)).fetchone()
+            paths = json.loads(item['file_paths'] or '[]') if item else []
+            paths.extend([f['path'] for f in saved_files])
+            db.execute('UPDATE content_items SET file_paths=? WHERE id=?', (json.dumps(paths), content_item_id))
+
+        # Notification
+        db.execute("""INSERT INTO notifications (brand_id, notification_type, title, message, due_date)
+            VALUES (?, 'system', ?, ?, ?)""",
+            (brand_id, 'Veo: Video Generated',
+             f'Generated {len(saved_files)} video(s) from prompt: {prompt[:100]}...',
+             datetime.now().strftime('%Y-%m-%d')))
+        db.commit()
+
+        return jsonify({'ok': True, 'files': saved_files, 'count': len(saved_files)})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            err = json.loads(body)
+            msg = err.get('error', {}).get('message', body)
+        except Exception:
+            msg = body
+        if e.code == 403:
+            return jsonify({'ok': False, 'error': f'Veo API access denied. You may need to enable the Vertex AI API or request Veo access. ({msg})'}), 403
+        if e.code == 404:
+            return jsonify({'ok': False, 'error': 'Veo model not available. The veo-2.0-generate-001 model may require a Vertex AI project with Veo access enabled.'}), 404
+        return jsonify({'ok': False, 'error': f'Gemini API error ({e.code}): {msg}'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -6077,6 +6183,7 @@ def update_media_tags(item_id):
 @app.route('/api/stock/search')
 def stock_search():
     """Search stock images from Unsplash or Pexels."""
+    import urllib.request, urllib.parse
     query = request.args.get('q', '')
     source = request.args.get('source', 'unsplash')
     page = request.args.get('page', '1')
@@ -6121,6 +6228,7 @@ def stock_search():
 @app.route('/api/stock/download', methods=['POST'])
 def stock_download():
     """Download a stock image to the brand's Generated_Images folder."""
+    import urllib.request
     data = request.json
     brand_id = data.get('brand_id')
     image_url = data.get('url')
@@ -6145,6 +6253,7 @@ def stock_download():
 @app.route('/api/tts/generate', methods=['POST'])
 def tts_generate():
     """Generate audio from text using ElevenLabs TTS API."""
+    import urllib.request
     data = request.json
     text = data.get('text', '')[:5000]
     voice_id = data.get('voice_id', '21m00Tcm4TlvDq8ikWAM')  # Default: Rachel
@@ -6182,6 +6291,7 @@ def tts_generate():
 @app.route('/api/translate', methods=['POST'])
 def translate_content():
     """Translate content using Google Cloud Translation API."""
+    import urllib.request, urllib.parse, urllib.error
     data = request.json
     text = data.get('text', '')[:5000]
     target_lang = data.get('target', 'ja')
@@ -6206,6 +6316,16 @@ def translate_content():
                 (brand_id, content_item_id, market, '', translated, target_lang))
             db.commit()
         return jsonify({'ok': True, 'translated': translated, 'target': target_lang})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            err = json.loads(body)
+            msg = err.get('error', {}).get('message', body)
+        except Exception:
+            msg = body
+        if e.code == 403:
+            return jsonify({'ok': False, 'error': f'Google Translation API access denied. Enable the Cloud Translation API in your Google Cloud Console. ({msg})'}), 403
+        return jsonify({'ok': False, 'error': f'Google API error ({e.code}): {msg}'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -6213,6 +6333,7 @@ def translate_content():
 @app.route('/api/remove-bg', methods=['POST'])
 def remove_background():
     """Remove background from an image using Remove.bg API."""
+    import urllib.request
     data = request.json
     image_path = data.get('image_path', '')
     brand_id = data.get('brand_id')
@@ -6246,6 +6367,7 @@ def remove_background():
 @app.route('/api/qr')
 def generate_qr():
     """Generate a QR code image for a URL."""
+    import urllib.parse
     url = request.args.get('url', '')
     size = request.args.get('size', '200')
     if not url:
@@ -6257,6 +6379,7 @@ def generate_qr():
 @app.route('/api/shorten-url', methods=['POST'])
 def shorten_url():
     """Shorten a URL using TinyURL (free, no API key needed)."""
+    import urllib.request, urllib.parse
     data = request.json
     long_url = data.get('url', '')
     content_item_id = data.get('content_item_id')
@@ -6439,6 +6562,7 @@ def submit_feedback_response(share_token):
 @app.route('/api/feedback-forms/<int:form_id>/analyze', methods=['POST'])
 def analyze_feedback_form(form_id):
     """Trigger Claude AI analysis of form responses."""
+    import urllib.request
     db = get_db()
     form = db.execute('SELECT f.*, b.name as brand_name FROM feedback_forms f JOIN brands b ON f.brand_id = b.id WHERE f.id = ?',
                       (form_id,)).fetchone()
