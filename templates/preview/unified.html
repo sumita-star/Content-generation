@@ -122,73 +122,95 @@
                                 </div>
                             </button>
                             <div x-show="showMediaPreview" class="px-3 pb-3">
-                                <!-- Media grid -->
-                                <div x-show="itemMediaFiles.length > 0" class="grid grid-cols-2 gap-2">
-                                    <template x-for="(media, idx) in itemMediaFiles" :key="media.rel_path">
-                                        <div class="rounded-lg overflow-hidden relative group" :class="media.type === 'video' ? 'col-span-2' : ''">
-                                            <!-- Image -->
-                                            <template x-if="media.type === 'image'">
-                                                <div>
-                                                    <img :src="'/media/' + media.rel_path" class="w-full object-cover rounded-lg cursor-pointer" style="max-height: 180px; min-height: 80px;" @click="previewImage('/media/' + media.rel_path, media.name)" loading="lazy">
-                                                    <div class="absolute bottom-0 left-0 right-0 px-2 py-1 text-[9px] truncate opacity-0 group-hover:opacity-100 transition-opacity" style="background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: #fff;" x-text="media.name"></div>
-                                                    <a :href="'/media/' + media.rel_path" target="_blank" @click.stop class="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.6); color: #fff;" title="View full resolution"><i class="fas fa-expand text-[9px]"></i></a>
-                                                </div>
-                                            </template>
-                                            <!-- Video -->
-                                            <template x-if="media.type === 'video'">
-                                                <div>
-                                                    <video :src="'/media/' + media.rel_path" class="w-full rounded-lg" style="max-height: 220px;" controls preload="metadata"></video>
-                                                    <div class="flex items-center justify-between mt-1 px-1">
-                                                        <span class="text-[9px] truncate" style="color: {{ theme_colors['text-muted'] }}" x-text="media.name"></span>
-                                                        <a :href="'/media/' + media.rel_path" target="_blank" @click.stop class="text-[9px] hover:underline flex-shrink-0 ml-2" style="color: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-external-link-alt mr-0.5"></i>Full</a>
-                                                    </div>
-                                                </div>
-                                            </template>
-                                            <!-- Audio -->
-                                            <template x-if="media.type === 'audio'">
-                                                <div class="p-2 rounded-lg" style="background: {{ theme_colors['bg-secondary'] }}">
-                                                    <div class="flex items-center gap-2 mb-1">
-                                                        <i class="fas fa-music text-xs" style="color: {{ theme_colors['text-muted'] }}"></i>
-                                                        <span class="text-[10px] truncate" style="color: {{ theme_colors['text-secondary'] }}" x-text="media.name"></span>
-                                                    </div>
-                                                    <audio :src="'/media/' + media.rel_path" controls class="w-full h-8" preload="metadata" style="filter: invert(1) hue-rotate(180deg);"></audio>
-                                                </div>
-                                            </template>
-                                            <!-- Document/PDF -->
-                                            <template x-if="media.type === 'document'">
-                                                <a :href="'/media/' + media.rel_path" target="_blank" class="flex items-center gap-2 p-2 rounded-lg hover:opacity-80" style="background: {{ theme_colors['bg-secondary'] }}">
-                                                    <i class="fas fa-file-pdf text-red-400"></i>
-                                                    <span class="text-[10px] truncate" style="color: {{ theme_colors['text-secondary'] }}" x-text="media.name"></span>
-                                                    <i class="fas fa-external-link-alt text-[9px] ml-auto" style="color: {{ theme_colors['text-disabled'] }}"></i>
-                                                </a>
-                                            </template>
-                                        </div>
-                                    </template>
-                                </div>
-                                <!-- Carousel grouping -->
-                                <div x-show="itemCarouselGroups.length > 0" class="mt-2">
-                                    <template x-for="(group, gi) in itemCarouselGroups" :key="gi">
-                                        <div class="mb-2">
-                                            <div class="text-[9px] uppercase tracking-wider mb-1 flex items-center gap-1" style="color: {{ theme_colors['text-muted'] }}">
-                                                <i class="fas fa-images"></i> <span x-text="'Carousel (' + group.length + ' slides)'"></span>
+                                <!-- Gallery Viewer -->
+                                <div x-show="itemMediaFiles.length > 0">
+                                    <!-- Main viewer area -->
+                                    <div class="relative rounded-lg overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; min-height: 120px;">
+                                        <template x-if="itemMediaFiles[galleryIndex]?.type === 'image'">
+                                            <div class="relative">
+                                                <img :src="'/media/' + itemMediaFiles[galleryIndex].rel_path" class="w-full object-contain rounded-lg cursor-pointer" style="max-height: 280px; min-height: 100px;" @click="previewImage('/media/' + itemMediaFiles[galleryIndex].rel_path, itemMediaFiles[galleryIndex].name)" loading="lazy">
+                                                <a :href="'/media/' + itemMediaFiles[galleryIndex].rel_path" target="_blank" @click.stop class="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center" style="background: rgba(0,0,0,0.6); color: #fff;" title="View full resolution"><i class="fas fa-external-link-alt text-[10px]"></i></a>
                                             </div>
-                                            <div class="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-                                                <template x-for="(slide, si) in group" :key="slide.rel_path">
-                                                    <div class="flex-shrink-0 rounded-lg overflow-hidden cursor-pointer relative group" style="width: 120px; height: 120px;" @click="previewImage('/media/' + slide.rel_path, slide.name)">
-                                                        <img :src="'/media/' + slide.rel_path" class="w-full h-full object-cover">
-                                                        <div class="absolute bottom-0 left-0 right-0 text-center text-[9px] py-0.5 opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.7); color: #fff;" x-text="'Slide ' + (si + 1)"></div>
-                                                        <a :href="'/media/' + slide.rel_path" target="_blank" @click.stop class="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.6); color: #fff;" title="Full resolution"><i class="fas fa-expand text-[8px]"></i></a>
-                                                    </div>
+                                        </template>
+                                        <template x-if="itemMediaFiles[galleryIndex]?.type === 'video'">
+                                            <div>
+                                                <video :src="'/media/' + itemMediaFiles[galleryIndex].rel_path" class="w-full rounded-lg" style="max-height: 280px;" controls preload="metadata"></video>
+                                            </div>
+                                        </template>
+                                        <template x-if="itemMediaFiles[galleryIndex]?.type === 'audio'">
+                                            <div class="p-4 flex flex-col items-center justify-center" style="min-height: 120px;">
+                                                <i class="fas fa-music text-3xl mb-3" style="color: {{ theme_colors['text-muted'] }}"></i>
+                                                <span class="text-[11px] mb-2 text-center" style="color: {{ theme_colors['text-secondary'] }}" x-text="itemMediaFiles[galleryIndex].name"></span>
+                                                <audio :src="'/media/' + itemMediaFiles[galleryIndex].rel_path" controls class="w-full h-8" preload="metadata" style="filter: invert(1) hue-rotate(180deg);"></audio>
+                                            </div>
+                                        </template>
+                                        <template x-if="itemMediaFiles[galleryIndex]?.type === 'document' && (itemMediaFiles[galleryIndex]?.ext === 'pdf' || itemMediaFiles[galleryIndex]?.ext === '.pdf')">
+                                            <iframe :src="'/media/' + itemMediaFiles[galleryIndex].rel_path" class="w-full rounded-lg" style="height: 350px; border: none;"></iframe>
+                                        </template>
+                                        <template x-if="itemMediaFiles[galleryIndex]?.type === 'document' && itemMediaFiles[galleryIndex]?.ext !== 'pdf' && itemMediaFiles[galleryIndex]?.ext !== '.pdf'">
+                                            <div class="p-4 flex flex-col items-center justify-center" style="min-height: 120px;">
+                                                <i class="fas fa-file-alt text-3xl mb-3" style="color: {{ theme_colors['text-muted'] }}"></i>
+                                                <span class="text-[11px] mb-2" style="color: {{ theme_colors['text-secondary'] }}" x-text="itemMediaFiles[galleryIndex].name"></span>
+                                                <div class="flex gap-2">
+                                                    <a :href="'/media/' + itemMediaFiles[galleryIndex].rel_path" download class="text-[10px] px-3 py-1 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-download mr-1"></i>Download</a>
+                                                    <a :href="'/media/' + itemMediaFiles[galleryIndex].rel_path" target="_blank" class="text-[10px] px-3 py-1 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-external-link-alt mr-1"></i>Open</a>
+                                                </div>
+                                            </div>
+                                        </template>
+
+                                        <!-- Prev/Next overlay buttons -->
+                                        <template x-if="itemMediaFiles.length > 1">
+                                            <div>
+                                                <button @click="galleryPrev()" class="absolute left-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-100" style="background: rgba(0,0,0,0.5); color: #fff; opacity: 0.7;"><i class="fas fa-chevron-left text-[10px]"></i></button>
+                                                <button @click="galleryNext()" class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-100" style="background: rgba(0,0,0,0.5); color: #fff; opacity: 0.7;"><i class="fas fa-chevron-right text-[10px]"></i></button>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Counter + filename -->
+                                    <div class="flex items-center justify-between mt-1.5 px-1">
+                                        <span class="text-[10px] truncate" style="color: {{ theme_colors['text-muted'] }}" x-text="itemMediaFiles[galleryIndex]?.name"></span>
+                                        <span class="text-[10px] flex-shrink-0 ml-2" style="color: {{ theme_colors['text-disabled'] }}" x-text="(galleryIndex + 1) + ' / ' + itemMediaFiles.length"></span>
+                                    </div>
+
+                                    <!-- Thumbnail strip -->
+                                    <div x-show="itemMediaFiles.length > 1" class="flex gap-1.5 overflow-x-auto mt-1.5 pb-1 scrollbar-thin">
+                                        <template x-for="(media, idx) in itemMediaFiles" :key="media.rel_path">
+                                            <div class="flex-shrink-0 rounded cursor-pointer overflow-hidden transition-all" :style="idx === galleryIndex ? 'border: 2px solid {{ theme_colors.get('dm-accent', '#60a5fa') }}; opacity: 1;' : 'border: 2px solid transparent; opacity: 0.5;'" style="width: 48px; height: 48px;" @click="galleryGoTo(idx)">
+                                                <template x-if="media.type === 'image'">
+                                                    <img :src="'/media/' + media.rel_path" class="w-full h-full object-cover" loading="lazy">
+                                                </template>
+                                                <template x-if="media.type === 'video'">
+                                                    <div class="w-full h-full flex items-center justify-center" style="background: {{ theme_colors['bg-tertiary'] }}"><i class="fas fa-video text-[10px]" style="color: {{ theme_colors['text-muted'] }}"></i></div>
+                                                </template>
+                                                <template x-if="media.type === 'audio'">
+                                                    <div class="w-full h-full flex items-center justify-center" style="background: {{ theme_colors['bg-tertiary'] }}"><i class="fas fa-music text-[10px]" style="color: {{ theme_colors['text-muted'] }}"></i></div>
+                                                </template>
+                                                <template x-if="media.type === 'document'">
+                                                    <div class="w-full h-full flex items-center justify-center" style="background: {{ theme_colors['bg-tertiary'] }}"><i class="fas fa-file-alt text-[10px]" style="color: {{ theme_colors['text-muted'] }}"></i></div>
                                                 </template>
                                             </div>
-                                        </div>
-                                    </template>
+                                        </template>
+                                    </div>
+
+                                    <!-- Attach / Remove controls -->
+                                    <div class="flex gap-2 mt-2">
+                                        <button @click="showMediaPicker = true" class="text-[10px] px-3 py-1 rounded-lg transition-colors hover:opacity-80" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors.get('dm-accent', '#60a5fa') }}">
+                                            <i class="fas fa-paperclip mr-1"></i>Attach Media
+                                        </button>
+                                        <button @click="detachCurrentMedia()" class="text-[10px] px-3 py-1 rounded-lg transition-colors hover:opacity-80" style="background: {{ theme_colors['bg-tertiary'] }}; color: #f87171;">
+                                            <i class="fas fa-times mr-1"></i>Remove Current
+                                        </button>
+                                    </div>
                                 </div>
+
                                 <!-- Empty state -->
-                                <div x-show="itemMediaFiles.length === 0 && itemCarouselGroups.length === 0" class="text-center py-4">
-                                    <i class="fas fa-photo-video text-2xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
-                                    <p class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}">No media files found for this item.</p>
-                                    <p class="text-[9px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Add images/videos to the brand's content folders, or generate assets with the Tools tab.</p>
+                                <div x-show="itemMediaFiles.length === 0" class="text-center py-6">
+                                    <i class="fas fa-paperclip text-2xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                                    <p class="text-[11px] mb-1" style="color: {{ theme_colors['text-disabled'] }}">No media attached to this item</p>
+                                    <button @click="showMediaPicker = true" class="text-[10px] px-3 py-1.5 rounded-lg mt-1 transition-colors hover:opacity-80" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors.get('dm-accent', '#60a5fa') }}">
+                                        <i class="fas fa-paperclip mr-1"></i>Attach Media
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -967,6 +989,62 @@
         </div>
     </div>
 
+    <!-- Media Picker Modal (inside studioApp scope) -->
+    <div x-show="showMediaPicker" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: {{ theme_colors['modal-overlay'] }}" @click.self="showMediaPicker = false" @keydown.escape.window="showMediaPicker = false">
+        <div class="relative w-full max-w-4xl max-h-[85vh] rounded-xl overflow-hidden flex flex-col" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                <h3 class="text-sm font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-paperclip mr-1"></i>Attach Media</h3>
+                <button @click="showMediaPicker = false" class="w-7 h-7 rounded-full flex items-center justify-center hover:opacity-80" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-times text-xs"></i></button>
+            </div>
+            <!-- Search -->
+            <div class="px-4 py-2" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                <input type="text" x-model="mediaPickerSearch" placeholder="Search by filename..." class="w-full text-sm px-3 py-1.5 rounded-lg outline-none" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-primary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+            </div>
+            <!-- Grid -->
+            <div class="flex-1 overflow-y-auto p-4">
+                <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2">
+                    <template x-for="media in getPickerMedia()" :key="media.rel_path">
+                        <div class="rounded-lg overflow-hidden relative group cursor-pointer" style="aspect-ratio: 1;" @click="!isMediaAttached(media.rel_path) && attachMedia(media.rel_path)">
+                            <template x-if="media.type === 'image'">
+                                <img :src="'/media/' + media.rel_path" class="w-full h-full object-cover" loading="lazy">
+                            </template>
+                            <template x-if="media.type === 'video'">
+                                <div class="w-full h-full flex flex-col items-center justify-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                                    <i class="fas fa-video text-lg mb-1" style="color: {{ theme_colors['text-muted'] }}"></i>
+                                    <span class="text-[8px] px-1 text-center truncate w-full" style="color: {{ theme_colors['text-disabled'] }}" x-text="media.name"></span>
+                                </div>
+                            </template>
+                            <template x-if="media.type === 'audio'">
+                                <div class="w-full h-full flex flex-col items-center justify-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                                    <i class="fas fa-music text-lg mb-1" style="color: {{ theme_colors['text-muted'] }}"></i>
+                                    <span class="text-[8px] px-1 text-center truncate w-full" style="color: {{ theme_colors['text-disabled'] }}" x-text="media.name"></span>
+                                </div>
+                            </template>
+                            <template x-if="media.type === 'document'">
+                                <div class="w-full h-full flex flex-col items-center justify-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                                    <i class="fas fa-file-alt text-lg mb-1" :class="(media.ext === 'pdf' || media.ext === '.pdf') ? 'text-red-400' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+                                    <span class="text-[8px] px-1 text-center truncate w-full" style="color: {{ theme_colors['text-disabled'] }}" x-text="media.name"></span>
+                                </div>
+                            </template>
+                            <div x-show="isMediaAttached(media.rel_path)" class="absolute inset-0 flex items-center justify-center" style="background: rgba(0,0,0,0.5);">
+                                <span class="text-[10px] px-2 py-1 rounded-full bg-green-600 text-white"><i class="fas fa-check mr-0.5"></i>Attached</span>
+                            </div>
+                            <div x-show="!isMediaAttached(media.rel_path)" class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.4);">
+                                <span class="text-[10px] px-2 py-1 rounded-full text-white" style="background: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-plus mr-0.5"></i>Attach</span>
+                            </div>
+                            <div class="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-[8px] truncate opacity-0 group-hover:opacity-100 transition-opacity" style="background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: #fff;" x-text="media.name"></div>
+                        </div>
+                    </template>
+                </div>
+                <div x-show="getPickerMedia().length === 0" class="text-center py-8">
+                    <i class="fas fa-search text-xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                    <p class="text-xs" style="color: {{ theme_colors['text-disabled'] }}">No media files match your search.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- Image Preview Modal -->
@@ -1019,10 +1097,13 @@ function studioApp() {
         videoPrompt: '', videoGenerating: false, videoResult: '', videoFilename: '',
         mcpJobSpec: null,
 
-        // Media preview
+        // Media preview & gallery
         showMediaPreview: true,
         itemMediaFiles: [],
         itemCarouselGroups: [],
+        galleryIndex: 0,
+        showMediaPicker: false,
+        mediaPickerSearch: '',
 
         // Media tags + tool executions
         mediaTagRegistry: {},
@@ -1117,62 +1198,104 @@ function studioApp() {
         loadItemMedia(itemId) {
             const item = itemsById[itemId];
             const allMedia = {{ media_files | tojson }};
-            const allCarouselGroups = {{ carousel_groups | tojson }};
 
+            // Parse file_paths from the content item (source of truth)
             const filePaths = item.file_paths ? (typeof item.file_paths === 'string' ? JSON.parse(item.file_paths || '[]') : item.file_paths) : [];
-            const titleWords = (item.title || '').toLowerCase().split(/[\s\-_:]+/).filter(w => w.length > 3);
-            const contentType = item.content_type || '';
 
-            // Map content type to relevant media folders
-            const typeFolders = {
-                'blog': ['blogs'],
-                'linkedin_post': ['linkedin', 'social media posts', 'social_media'],
-                'carousel': ['social media posts', 'linkedin', 'social_media'],
-                'video': ['reels', 'video'],
-                'reel': ['reels', 'video'],
-                'email': ['linkedin', 'social media posts'],
-            };
-            const relevantFolders = typeFolders[contentType] || [];
-
-            // Score each media file for relevance
-            const nonCarousel = allMedia.filter(m => !m.is_carousel);
-            const scored = nonCarousel.map(m => {
-                let score = 0;
-                const name = m.name.toLowerCase();
-                const path = (m.rel_path || '').toLowerCase();
-                // Explicit file_paths link = highest priority
-                if (filePaths.some(fp => path.includes(fp.toLowerCase()) || fp.toLowerCase().includes(path))) score += 100;
-                // Title keyword match in filename/path
-                const kwMatches = titleWords.filter(w => name.includes(w) || path.includes(w)).length;
-                score += kwMatches * 10;
-                // Generated/polished assets
-                if (path.includes('generated_images') || path.includes('polished_images')) score += 5;
-                // Content type folder match (show blog media for blog items, etc.)
-                if (relevantFolders.some(f => path.includes(f))) score += 3;
-                return { ...m, score };
-            }).sort((a, b) => b.score - a.score);
-
-            // Show matched files; content-type folder matches ensure something always shows
-            const matched = scored.filter(m => m.score > 0);
-            this.itemMediaFiles = matched.slice(0, 12);
-
-            // Match carousel groups by keyword or content type
-            this.itemCarouselGroups = [];
-            for (const [key, slides] of Object.entries(allCarouselGroups)) {
-                const groupName = key.toLowerCase();
-                const isMatch = titleWords.some(w => groupName.includes(w)) ||
-                    filePaths.some(fp => groupName.includes(fp.toLowerCase())) ||
-                    (contentType === 'carousel' && relevantFolders.some(f => groupName.includes(f)));
-                if (isMatch) {
-                    this.itemCarouselGroups.push(slides.sort((a, b) => a.name.localeCompare(b.name)));
+            // Map each path to its media object from scan results, or construct minimal object
+            const mediaList = [];
+            for (const fp of filePaths) {
+                const found = allMedia.find(m => m.rel_path === fp || fp.endsWith(m.rel_path) || m.rel_path.endsWith(fp));
+                if (found) {
+                    mediaList.push(found);
+                } else {
+                    // Construct minimal media object from path
+                    const ext = fp.split('.').pop().toLowerCase();
+                    const name = fp.split('/').pop();
+                    let type = 'document';
+                    if (['png','jpg','jpeg','gif','webp','svg','bmp'].includes(ext)) type = 'image';
+                    else if (['mp4','mov','avi','webm','mkv'].includes(ext)) type = 'video';
+                    else if (['mp3','wav','ogg','m4a','aac'].includes(ext)) type = 'audio';
+                    mediaList.push({ rel_path: fp, name, type, ext });
                 }
             }
 
-            // If carousel type with no carousel groups but multiple images, treat images as carousel
-            if (contentType === 'carousel' && this.itemCarouselGroups.length === 0 && this.itemMediaFiles.filter(m => m.type === 'image').length >= 2) {
-                this.itemCarouselGroups.push(this.itemMediaFiles.filter(m => m.type === 'image'));
-                this.itemMediaFiles = this.itemMediaFiles.filter(m => m.type !== 'image');
+            this.itemMediaFiles = mediaList;
+            this.galleryIndex = 0;
+
+            // For carousel content type with 2+ images, auto-group into carousel
+            this.itemCarouselGroups = [];
+            const contentType = item.content_type || '';
+            const images = mediaList.filter(m => m.type === 'image');
+            if (contentType === 'carousel' && images.length >= 2) {
+                this.itemCarouselGroups.push(images);
             }
+        },
+
+        // Gallery navigation
+        galleryPrev() {
+            if (this.itemMediaFiles.length === 0) return;
+            this.galleryIndex = (this.galleryIndex - 1 + this.itemMediaFiles.length) % this.itemMediaFiles.length;
+        },
+        galleryNext() {
+            if (this.itemMediaFiles.length === 0) return;
+            this.galleryIndex = (this.galleryIndex + 1) % this.itemMediaFiles.length;
+        },
+        galleryGoTo(idx) {
+            this.galleryIndex = idx;
+        },
+
+        // Attach media to current item
+        async attachMedia(relPath) {
+            if (!this.selectedItem) return;
+            const res = await fetch(`/api/content-items/${this.selectedItem}/attach-media`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ paths: [relPath] })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                itemsById[this.selectedItem].file_paths = JSON.stringify(data.file_paths);
+                this.currentItem.file_paths = JSON.stringify(data.file_paths);
+                this.loadItemMedia(this.selectedItem);
+                this.galleryIndex = this.itemMediaFiles.length - 1;
+                toast('Media attached', 'success');
+            }
+        },
+
+        // Detach currently viewed media
+        async detachCurrentMedia() {
+            if (!this.selectedItem || this.itemMediaFiles.length === 0) return;
+            const media = this.itemMediaFiles[this.galleryIndex];
+            const res = await fetch(`/api/content-items/${this.selectedItem}/detach-media`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ path: media.rel_path })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                itemsById[this.selectedItem].file_paths = JSON.stringify(data.file_paths);
+                this.currentItem.file_paths = JSON.stringify(data.file_paths);
+                this.loadItemMedia(this.selectedItem);
+                if (this.galleryIndex >= this.itemMediaFiles.length) {
+                    this.galleryIndex = Math.max(0, this.itemMediaFiles.length - 1);
+                }
+                toast('Media removed', 'success');
+            }
+        },
+
+        // Check if a media file is already attached
+        isMediaAttached(relPath) {
+            const filePaths = this.currentItem.file_paths ? (typeof this.currentItem.file_paths === 'string' ? JSON.parse(this.currentItem.file_paths || '[]') : this.currentItem.file_paths) : [];
+            return filePaths.some(fp => fp === relPath || relPath.endsWith(fp) || fp.endsWith(relPath));
+        },
+
+        // Get all brand media for the picker, filtered by search
+        getPickerMedia() {
+            const allMedia = {{ media_files | tojson }};
+            const q = this.mediaPickerSearch.toLowerCase().trim();
+            if (!q) return allMedia;
+            return allMedia.filter(m => m.name.toLowerCase().includes(q) || (m.rel_path || '').toLowerCase().includes(q));
         },
 
         async saveItem() {

@@ -1493,6 +1493,54 @@ def delete_content_item(item_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/content-items/<int:item_id>/attach-media', methods=['POST'])
+def attach_media(item_id):
+    """Append media file paths to a content item's file_paths."""
+    db = get_db()
+    data = request.get_json()
+    new_paths = data.get('paths', [])
+    item = db.execute('SELECT file_paths FROM content_items WHERE id=?', (item_id,)).fetchone()
+    if not item:
+        return jsonify({'ok': False, 'error': 'Content item not found'}), 404
+    existing = json.loads(item['file_paths'] or '[]')
+    for p in new_paths:
+        if p not in existing:
+            existing.append(p)
+    db.execute('UPDATE content_items SET file_paths=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+               (json.dumps(existing), item_id))
+    db.commit()
+    return jsonify({'ok': True, 'file_paths': existing})
+
+
+@app.route('/api/content-items/<int:item_id>/detach-media', methods=['POST'])
+def detach_media(item_id):
+    """Remove a media file path from a content item's file_paths."""
+    db = get_db()
+    data = request.get_json()
+    path_to_remove = data.get('path', '')
+    item = db.execute('SELECT file_paths FROM content_items WHERE id=?', (item_id,)).fetchone()
+    if not item:
+        return jsonify({'ok': False, 'error': 'Content item not found'}), 404
+    existing = json.loads(item['file_paths'] or '[]')
+    existing = [p for p in existing if p != path_to_remove]
+    db.execute('UPDATE content_items SET file_paths=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+               (json.dumps(existing), item_id))
+    db.commit()
+    return jsonify({'ok': True, 'file_paths': existing})
+
+
+@app.route('/api/content-items/<int:item_id>/file-paths', methods=['PUT'])
+def update_file_paths(item_id):
+    """Replace the full file_paths array (for reordering)."""
+    db = get_db()
+    data = request.get_json()
+    paths = data.get('file_paths', [])
+    db.execute('UPDATE content_items SET file_paths=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+               (json.dumps(paths), item_id))
+    db.commit()
+    return jsonify({'ok': True, 'file_paths': paths})
+
+
 # ─── Routes: Content Preview + Feedback (Unified) ─────────────────
 
 def scan_media_files(folder_path):
@@ -4644,6 +4692,7 @@ def gemini_generate_image():
     brand_id = data.get('brand_id')
     prompt = data.get('prompt', '')
     step_id = data.get('step_id')
+    content_item_id = data.get('content_item_id')
 
     brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
     if not brand:
@@ -4672,14 +4721,25 @@ def gemini_generate_image():
                 mime = pred.get('mimeType', 'image/png')
                 ext = '.png' if 'png' in mime else '.jpg'
 
-                # Save to pipeline folder
+                # Save to pipeline folder with naming convention
                 output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Images')
                 os.makedirs(output_dir, exist_ok=True)
-                filename = f"imagen3_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}{ext}"
+                if content_item_id:
+                    filename = f"item-{content_item_id}_{i+1:02d}{ext}"
+                else:
+                    filename = f"imagen3_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}{ext}"
                 filepath = os.path.join(output_dir, filename)
                 with open(filepath, 'wb') as f:
                     f.write(img_data)
-                saved_files.append({'name': filename, 'path': filepath})
+                rel_path = os.path.relpath(filepath, brand['folder_path'])
+                saved_files.append({'name': filename, 'path': filepath, 'rel_path': rel_path})
+
+        # Auto-attach to content item if linked
+        if content_item_id and saved_files:
+            item = db.execute('SELECT file_paths FROM content_items WHERE id=?', (content_item_id,)).fetchone()
+            paths = json.loads(item['file_paths'] or '[]') if item else []
+            paths.extend([f['rel_path'] for f in saved_files])
+            db.execute('UPDATE content_items SET file_paths=? WHERE id=?', (json.dumps(paths), content_item_id))
 
         # Create notification
         db.execute("""
@@ -4764,11 +4824,15 @@ def gemini_generate_video():
                 video_bytes = base64.b64decode(video_data)
                 output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Videos')
                 os.makedirs(output_dir, exist_ok=True)
-                filename = f"veo3_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}.mp4"
+                if content_item_id:
+                    filename = f"item-{content_item_id}_{i+1:02d}.mp4"
+                else:
+                    filename = f"veo3_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}.mp4"
                 filepath = os.path.join(output_dir, filename)
                 with open(filepath, 'wb') as f:
                     f.write(video_bytes)
-                saved_files.append({'name': filename, 'path': filepath, 'size': len(video_bytes)})
+                rel_path = os.path.relpath(filepath, brand['folder_path'])
+                saved_files.append({'name': filename, 'path': filepath, 'rel_path': rel_path, 'size': len(video_bytes)})
 
         if not saved_files:
             return jsonify({'ok': False, 'error': 'Video generation completed but no video data returned. The Veo model may not support this prompt.'}), 500
