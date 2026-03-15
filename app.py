@@ -1261,6 +1261,93 @@ def update_content_status(item_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/content-items/<int:item_id>/generate-draft', methods=['POST'])
+def generate_content_draft(item_id):
+    """Use Claude to generate the actual content draft for a content item."""
+    db = get_db()
+    api_key = get_setting(db, 'anthropic_api_key')
+    if not api_key:
+        return jsonify({'ok': False, 'error': 'Claude API key not configured. Go to Settings to add it.'}), 400
+
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        return jsonify({'ok': False, 'error': 'Content item not found'}), 404
+
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (item['brand_id'],)).fetchone()
+    pillar = db.execute("SELECT * FROM content_pillars WHERE id=?", (item['pillar_id'],)).fetchone() if item['pillar_id'] else None
+
+    # Get brand voice references
+    voice_refs = db.execute("SELECT * FROM brand_voice_references WHERE brand_id=?", (item['brand_id'],)).fetchall()
+    voice_info = '\n'.join([f"- {v['ref_type']}: {v['content'][:200]}" for v in voice_refs]) if voice_refs else ''
+
+    # Content type specific instructions
+    type_guides = {
+        'linkedin_post': 'Write a LinkedIn post (150-300 words). Use a strong hook in the first line. Include line breaks for readability. End with a clear CTA or question. Add 3-5 relevant hashtags.',
+        'carousel': 'Write a LinkedIn carousel (8-10 slides). Format as:\n\nSLIDE 1 (Cover): [Bold headline]\nSLIDE 2-8: [One key point per slide, 20-30 words each]\nSLIDE 9 (CTA): [Call to action]\n\nAlso write a caption (100-150 words) with hashtags.',
+        'blog': 'Write a blog post (800-1200 words). Include: compelling title, introduction with hook, 3-5 subheadings with content under each, conclusion with CTA. Use data points and examples.',
+        'video': 'Write a video script (60-90 seconds). Format as:\n\nHOOK (0-5s): [attention grabber]\nPROBLEM (5-20s): [pain point]\nSOLUTION (20-50s): [how it helps]\nPROOF (50-70s): [stats/example]\nCTA (70-90s): [what to do next]\n\nAlso write a short caption for posting.',
+        'email': 'Write a marketing email. Include: subject line, preview text, greeting, body (200-400 words), CTA button text, sign-off. Professional but warm tone.',
+        'reel': 'Write a short-form video script (15-30 seconds). Format as:\n\nHOOK (0-3s): [stop the scroll]\nCONTENT (3-25s): [3-4 quick points]\nCTA (25-30s): [what to do]\n\nAlso write a caption with hashtags.',
+    }
+    type_guide = type_guides.get(item['content_type'], type_guides['linkedin_post'])
+
+    prompt = f"""You are a content creator for "{brand['name']}".
+
+Brand voice: {brand['voice_summary'] or 'Professional yet approachable'}
+{f"Content pillar: {pillar['name']} — {pillar['description'] or ''}" if pillar else ''}
+Target market: {item['market']}
+
+{f"Brand voice references:{chr(10)}{voice_info}" if voice_info else ''}
+
+Content brief:
+- Title: {item['title']}
+- Type: {item['content_type']}
+- Notes: {item['notes'] or 'None'}
+
+{type_guide}
+
+Write the content now. Output ONLY the final content — no preamble, no "here's the content", just the content itself ready for publishing."""
+
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=json.dumps({
+                'model': 'claude-sonnet-4-20250514',
+                'max_tokens': 4096,
+                'messages': [{'role': 'user', 'content': prompt}]
+            }).encode(),
+            headers={
+                'Content-Type': 'application/json',
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode())
+            draft_text = result['content'][0]['text'].strip()
+
+        # Save the draft and advance status to 'drafting'
+        new_status = 'drafting' if item['status'] in ('backlog', 'research') else item['status']
+        db.execute("""
+            UPDATE content_items SET body_text=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+        """, (draft_text, new_status, item_id))
+        db.commit()
+
+        return jsonify({'ok': True, 'draft': draft_text, 'status': new_status})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            msg = json.loads(body).get('error', {}).get('message', body)
+        except Exception:
+            msg = body
+        if 'credit balance' in msg.lower() or 'billing' in msg.lower():
+            return jsonify({'ok': False, 'error': 'Anthropic API credit balance is too low. Go to console.anthropic.com → Plans & Billing to add credits.'}), 402
+        return jsonify({'ok': False, 'error': f'Claude API error: {msg}'}), 500
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/api/content-items/<int:item_id>/complete-step', methods=['POST'])
 def complete_step_and_chain(item_id):
     """Complete the current workflow step and auto-advance to the next one (step chaining)."""
@@ -2162,7 +2249,7 @@ def generate_plan_recommendations(plan_id):
         return jsonify({'ok': False, 'error': 'Plan not found'}), 404
 
     brand = db.execute("SELECT * FROM brands WHERE id=?", (plan['brand_id'],)).fetchone()
-    pillars = db.execute("SELECT name, description FROM content_pillars WHERE brand_id=?", (plan['brand_id'],)).fetchall()
+    pillars = db.execute("SELECT id, name, description FROM content_pillars WHERE brand_id=?", (plan['brand_id'],)).fetchall()
     pillar_info = ', '.join([f"{p['name']}: {p['description'] or ''}" for p in pillars])
 
     # Get recent performance data
@@ -2173,7 +2260,7 @@ def generate_plan_recommendations(plan_id):
     recent_content = '\n'.join([f"- {r['title']} ({r['content_type']}, {r['market']}, {r['status']})" for r in recent])
 
     cadences = db.execute("SELECT * FROM cadence_rules WHERE brand_id=?", (plan['brand_id'],)).fetchall()
-    cadence_info = ', '.join([f"{c['content_type']}x{c['posts_per_week']}/week" for c in cadences])
+    cadence_info = ', '.join([f"{c['name']} ({c['channel']})x{c['posts_per_week']}/week" for c in cadences])
 
     prompt = f"""You are a content strategist for "{brand['name']}".
 Brand voice: {brand['voice_summary'] or 'Professional yet approachable'}
@@ -2226,7 +2313,7 @@ Generate 8-12 items spread across the month, covering all pillars."""
         }
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read().decode())
             response_text = result['content'][0]['text'].strip()
             # Parse the JSON array from Claude's response
@@ -2269,6 +2356,22 @@ Generate 8-12 items spread across the month, covering all pillars."""
                        (response_text, plan_id))
             db.commit()
             return jsonify({'ok': True, 'count': len(items)})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            err_data = json.loads(body)
+            msg = err_data.get('error', {}).get('message', body)
+        except Exception:
+            msg = body
+        if 'credit balance' in msg.lower() or 'billing' in msg.lower():
+            return jsonify({'ok': False, 'error': 'Anthropic API credit balance is too low. Go to console.anthropic.com → Plans & Billing to add credits.'}), 402
+        if e.code == 401:
+            return jsonify({'ok': False, 'error': 'Invalid Claude API key. Check your key in Settings.'}), 401
+        if e.code == 429:
+            return jsonify({'ok': False, 'error': 'Claude API rate limit reached. Please wait a minute and try again.'}), 429
+        return jsonify({'ok': False, 'error': f'Claude API error ({e.code}): {msg}'}), 500
+    except urllib.error.URLError as e:
+        return jsonify({'ok': False, 'error': f'Could not reach Claude API. Check your internet connection. ({e.reason})'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 

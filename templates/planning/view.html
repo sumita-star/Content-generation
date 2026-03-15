@@ -206,7 +206,7 @@ async function generatePlan(planId) {
         toast(`Generated ${data.count} content recommendations`, 'success');
         location.reload();
     } else {
-        toast('AI generation failed: ' + (data.error || 'Unknown error'), 'error');
+        toast(data.error || 'AI generation failed', 'error', 8000);
     }
 }
 

@@ -113,18 +113,82 @@
                         <!-- Editable Title -->
                         <input type="text" x-model="currentItem.title" class="text-sm font-semibold w-full bg-transparent outline-none border-none" style="color: {{ theme_colors['text-primary'] }}">
                         <!-- Inline Media Preview (collapsible) -->
-                        <div class="mt-2 rounded-lg overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}" x-data="{ showMedia: true }">
-                            <button @click="showMedia = !showMedia" class="w-full flex items-center justify-between px-3 py-1.5 text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">
-                                <span><i class="fas fa-image mr-1"></i>Media Preview</span>
-                                <i class="fas fa-chevron-down text-[8px] transition-transform" :class="!showMedia && '-rotate-90'"></i>
-                            </button>
-                            <div x-show="showMedia" class="px-3 pb-3">
-                                <div class="grid grid-cols-3 gap-1.5" id="itemMediaGrid">
-                                    <!-- Populated by JS when item is selected -->
+                        <div class="mt-2 rounded-lg overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                            <button @click="showMediaPreview = !showMediaPreview" class="w-full flex items-center justify-between px-3 py-1.5 text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">
+                                <span><i class="fas fa-image mr-1"></i>Media Preview <span x-show="itemMediaFiles.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[9px]" style="background: {{ theme_colors['bg-secondary'] }}" x-text="itemMediaFiles.length"></span></span>
+                                <div class="flex items-center gap-2">
+                                    <a @click.stop="tab = 'media'" class="text-[9px] hover:underline cursor-pointer" style="color: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-images mr-0.5"></i>Media Gallery</a>
+                                    <i class="fas fa-chevron-down text-[8px] transition-transform" :class="!showMediaPreview && '-rotate-90'"></i>
                                 </div>
-                                <div id="itemMediaEmpty" class="text-center py-3">
-                                    <i class="fas fa-cloud-upload-alt text-lg" style="color: {{ theme_colors['text-disabled'] }}"></i>
-                                    <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">No media attached. Drop files in Asset Hub.</p>
+                            </button>
+                            <div x-show="showMediaPreview" class="px-3 pb-3">
+                                <!-- Media grid -->
+                                <div x-show="itemMediaFiles.length > 0" class="grid grid-cols-2 gap-2">
+                                    <template x-for="(media, idx) in itemMediaFiles" :key="media.rel_path">
+                                        <div class="rounded-lg overflow-hidden relative group" :class="media.type === 'video' ? 'col-span-2' : ''">
+                                            <!-- Image -->
+                                            <template x-if="media.type === 'image'">
+                                                <div>
+                                                    <img :src="'/media/' + media.rel_path" class="w-full object-cover rounded-lg cursor-pointer" style="max-height: 180px; min-height: 80px;" @click="previewImage('/media/' + media.rel_path, media.name)" loading="lazy">
+                                                    <div class="absolute bottom-0 left-0 right-0 px-2 py-1 text-[9px] truncate opacity-0 group-hover:opacity-100 transition-opacity" style="background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: #fff;" x-text="media.name"></div>
+                                                    <a :href="'/media/' + media.rel_path" target="_blank" @click.stop class="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.6); color: #fff;" title="View full resolution"><i class="fas fa-expand text-[9px]"></i></a>
+                                                </div>
+                                            </template>
+                                            <!-- Video -->
+                                            <template x-if="media.type === 'video'">
+                                                <div>
+                                                    <video :src="'/media/' + media.rel_path" class="w-full rounded-lg" style="max-height: 220px;" controls preload="metadata"></video>
+                                                    <div class="flex items-center justify-between mt-1 px-1">
+                                                        <span class="text-[9px] truncate" style="color: {{ theme_colors['text-muted'] }}" x-text="media.name"></span>
+                                                        <a :href="'/media/' + media.rel_path" target="_blank" @click.stop class="text-[9px] hover:underline flex-shrink-0 ml-2" style="color: {{ theme_colors.get('dm-accent', '#60a5fa') }}"><i class="fas fa-external-link-alt mr-0.5"></i>Full</a>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- Audio -->
+                                            <template x-if="media.type === 'audio'">
+                                                <div class="p-2 rounded-lg" style="background: {{ theme_colors['bg-secondary'] }}">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <i class="fas fa-music text-xs" style="color: {{ theme_colors['text-muted'] }}"></i>
+                                                        <span class="text-[10px] truncate" style="color: {{ theme_colors['text-secondary'] }}" x-text="media.name"></span>
+                                                    </div>
+                                                    <audio :src="'/media/' + media.rel_path" controls class="w-full h-8" preload="metadata" style="filter: invert(1) hue-rotate(180deg);"></audio>
+                                                </div>
+                                            </template>
+                                            <!-- Document/PDF -->
+                                            <template x-if="media.type === 'document'">
+                                                <a :href="'/media/' + media.rel_path" target="_blank" class="flex items-center gap-2 p-2 rounded-lg hover:opacity-80" style="background: {{ theme_colors['bg-secondary'] }}">
+                                                    <i class="fas fa-file-pdf text-red-400"></i>
+                                                    <span class="text-[10px] truncate" style="color: {{ theme_colors['text-secondary'] }}" x-text="media.name"></span>
+                                                    <i class="fas fa-external-link-alt text-[9px] ml-auto" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                                                </a>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                                <!-- Carousel grouping -->
+                                <div x-show="itemCarouselGroups.length > 0" class="mt-2">
+                                    <template x-for="(group, gi) in itemCarouselGroups" :key="gi">
+                                        <div class="mb-2">
+                                            <div class="text-[9px] uppercase tracking-wider mb-1 flex items-center gap-1" style="color: {{ theme_colors['text-muted'] }}">
+                                                <i class="fas fa-images"></i> <span x-text="'Carousel (' + group.length + ' slides)'"></span>
+                                            </div>
+                                            <div class="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                                                <template x-for="(slide, si) in group" :key="slide.rel_path">
+                                                    <div class="flex-shrink-0 rounded-lg overflow-hidden cursor-pointer relative group" style="width: 120px; height: 120px;" @click="previewImage('/media/' + slide.rel_path, slide.name)">
+                                                        <img :src="'/media/' + slide.rel_path" class="w-full h-full object-cover">
+                                                        <div class="absolute bottom-0 left-0 right-0 text-center text-[9px] py-0.5 opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.7); color: #fff;" x-text="'Slide ' + (si + 1)"></div>
+                                                        <a :href="'/media/' + slide.rel_path" target="_blank" @click.stop class="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(0,0,0,0.6); color: #fff;" title="Full resolution"><i class="fas fa-expand text-[8px]"></i></a>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <!-- Empty state -->
+                                <div x-show="itemMediaFiles.length === 0 && itemCarouselGroups.length === 0" class="text-center py-4">
+                                    <i class="fas fa-photo-video text-2xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                                    <p class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}">No media files found for this item.</p>
+                                    <p class="text-[9px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Add images/videos to the brand's content folders, or generate assets with the Tools tab.</p>
                                 </div>
                             </div>
                         </div>
@@ -300,10 +364,8 @@
                             </button>
                         </div>
                         <div class="max-h-40 overflow-y-auto scrollbar-thin">
-                            <template x-if="toolExecutions.length === 0">
-                                <div class="p-3 text-center text-[10px]" style="color: {{ theme_colors['text-muted'] }}">No tool runs yet</div>
-                            </template>
-                            <template x-for="exec in toolExecutions" :key="exec.id">
+                            <div x-show="toolExecutions.length === 0" class="p-3 text-center text-[10px]" style="color: {{ theme_colors['text-muted'] }}">No tool runs yet</div>
+                            <template x-for="exec in toolExecutions" :key="exec.id || $index">
                                 <div class="px-3 py-2 flex items-center gap-2 text-[10px]" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
                                     <i class="fas"
                                         :class="{
@@ -934,6 +996,11 @@ function studioApp() {
         qrUrl: '', qrImageUrl: '', shortUrl: '',
         mcpJobSpec: null,
 
+        // Media preview
+        showMediaPreview: true,
+        itemMediaFiles: [],
+        itemCarouselGroups: [],
+
         // Media tags + tool executions
         mediaTagRegistry: {},
         toolExecutions: [],
@@ -962,6 +1029,7 @@ function studioApp() {
                 const data = await res.json();
                 this.mediaTagRegistry = data.registry || data;
             } catch(e) { console.warn('Could not load media tag registry'); }
+            // URL auto-select handled by DOMContentLoaded below
         },
 
         selectItem(id) {
@@ -1025,31 +1093,44 @@ function studioApp() {
 
         loadItemMedia(itemId) {
             const item = itemsById[itemId];
-            const grid = document.getElementById('itemMediaGrid');
-            const empty = document.getElementById('itemMediaEmpty');
-            if (!grid || !empty) return;
-            // Find media files whose name partially matches the content title (keywords)
             const allMedia = {{ media_files | tojson }};
+            const allCarouselGroups = {{ carousel_groups | tojson }};
+
+            const filePaths = item.file_paths ? (typeof item.file_paths === 'string' ? JSON.parse(item.file_paths || '[]') : item.file_paths) : [];
             const titleWords = (item.title || '').toLowerCase().split(/[\s\-_:]+/).filter(w => w.length > 3);
-            const matched = allMedia.filter(m => {
+            const contentType = item.content_type || '';
+
+            // Score each media file for relevance
+            const nonCarousel = allMedia.filter(m => !m.is_carousel);
+            const scored = nonCarousel.map(m => {
+                let score = 0;
                 const name = m.name.toLowerCase();
-                return titleWords.some(w => name.includes(w));
-            });
-            if (matched.length > 0) {
-                grid.innerHTML = matched.slice(0, 6).map(m => {
-                    if (m.type === 'image') {
-                        return `<div class="aspect-square rounded-lg overflow-hidden cursor-pointer" onclick="previewImage('/media/${m.rel_path}','${m.name}')"><img src="/media/${m.rel_path}" class="w-full h-full object-cover" loading="lazy"></div>`;
-                    } else if (m.type === 'video') {
-                        return `<div class="aspect-square rounded-lg overflow-hidden cursor-pointer relative" onclick="playMediaFull('/media/${m.rel_path}','video')"><video src="/media/${m.rel_path}" class="w-full h-full object-cover" preload="metadata"></video><div class="absolute inset-0 flex items-center justify-center bg-black/30"><i class="fas fa-play text-white"></i></div></div>`;
-                    }
-                    return `<div class="aspect-square rounded-lg flex items-center justify-center" style="background:var(--dm-bg-primary)"><i class="fas fa-file text-lg" style="color:var(--dm-text-disabled)"></i></div>`;
-                }).join('');
-                grid.style.display = '';
-                empty.style.display = 'none';
-            } else {
-                grid.style.display = 'none';
-                grid.innerHTML = '';
-                empty.style.display = '';
+                const path = (m.rel_path || '').toLowerCase();
+                if (filePaths.some(fp => path.includes(fp.toLowerCase()) || fp.toLowerCase().includes(path))) score += 100;
+                const kwMatches = titleWords.filter(w => name.includes(w) || path.includes(w)).length;
+                score += kwMatches * 10;
+                if (path.includes('generated_images') || path.includes('polished_images')) score += 3;
+                return { ...m, score };
+            }).sort((a, b) => b.score - a.score);
+
+            // Show matched files first; if none matched, show all brand media
+            const matched = scored.filter(m => m.score > 0);
+            this.itemMediaFiles = (matched.length > 0 ? matched : scored).slice(0, 12);
+
+            // Match carousel groups
+            this.itemCarouselGroups = [];
+            for (const [key, slides] of Object.entries(allCarouselGroups)) {
+                const groupName = key.toLowerCase();
+                const isMatch = titleWords.some(w => groupName.includes(w));
+                if (isMatch || matched.length === 0) {
+                    this.itemCarouselGroups.push(slides.sort((a, b) => a.name.localeCompare(b.name)));
+                }
+            }
+
+            // If carousel type with no carousel groups but multiple images, treat images as carousel
+            if (contentType === 'carousel' && this.itemCarouselGroups.length === 0 && this.itemMediaFiles.filter(m => m.type === 'image').length >= 2) {
+                this.itemCarouselGroups.push(this.itemMediaFiles.filter(m => m.type === 'image'));
+                this.itemMediaFiles = this.itemMediaFiles.filter(m => m.type !== 'image');
             }
         },
 
@@ -1575,5 +1656,20 @@ Please provide the revised content that addresses this feedback, maintaining the
         }
     };
 }
+
+// Auto-select item from URL param (e.g. ?item=123)
+document.addEventListener('DOMContentLoaded', function() {
+    const urlItem = new URLSearchParams(window.location.search).get('item');
+    if (urlItem) {
+        const id = parseInt(urlItem);
+        // Wait for Alpine to initialize the component
+        setTimeout(function() {
+            const el = document.querySelector('[x-data*="studioApp"]');
+            if (el && el._x_dataStack) {
+                el._x_dataStack[0].selectItem(id);
+            }
+        }, 500);
+    }
+});
 </script>
 {% endblock %}

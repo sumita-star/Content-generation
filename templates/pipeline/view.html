@@ -13,6 +13,9 @@
         </h1>
         <div class="flex gap-2">
             <!-- Trigger Pipeline Button -->
+            <button onclick="withLoading(this, generateAllDrafts)" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm rounded-lg transition-colors flex items-center gap-2">
+                <i class="fas fa-robot"></i> Generate All Drafts
+            </button>
             <button onclick="withLoading(this, triggerPipeline)" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors flex items-center gap-2">
                 <i class="fas fa-play"></i> Trigger Generation
             </button>
@@ -111,6 +114,9 @@
                     {% endif %}
                     <!-- Actions -->
                     <div class="mt-2 flex gap-1 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
+                        {% if item.status in ['backlog', 'research'] %}
+                        <button onclick="withLoading(this, () => generateDraft({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-amber-300 hover:bg-amber-900" style="background: rgba(245,158,11,0.2)" title="Use AI to write the content draft"><i class="fas fa-robot mr-0.5"></i>Generate Draft</button>
+                        {% endif %}
                         {% if item.status not in ['published', 'analyzed', 'ready'] %}
                         <button onclick="withLoading(this, () => completeStep({{ item.id }}))" class="text-[10px] px-2 py-0.5 rounded text-green-300 hover:bg-green-900" style="background: rgba(34,197,94,0.2)" title="Complete current step and advance to next"><i class="fas fa-forward mr-0.5"></i>Next Step</button>
                         {% endif %}
@@ -267,7 +273,7 @@ async function deleteContent(itemId) {
 }
 
 function editContent(itemId) {
-    window.location.href = `/brands/{{ brand.id }}/feedback?edit=${itemId}`;
+    window.location.href = `/brands/{{ brand.id }}/preview?item=${itemId}`;
 }
 
 async function runFullPipeline(itemId) {
@@ -318,6 +324,47 @@ async function runTools(itemId) {
     } else {
         toast(data.error || 'Failed to run tools', 'error');
     }
+}
+
+async function generateDraft(itemId) {
+    const res = await fetch(`/api/content-items/${itemId}/generate-draft`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}'
+    });
+    const data = await res.json();
+    if (data.ok) {
+        toast('Draft generated! Opening in Content Studio...', 'success');
+        setTimeout(() => window.location.href = `/brands/{{ brand.id }}/preview?item=${itemId}`, 1000);
+    } else {
+        toast(data.error || 'Failed to generate draft', 'error', 8000);
+    }
+}
+
+async function generateAllDrafts() {
+    const backlogCards = document.querySelectorAll('.kanban-col');
+    const items = [];
+    // Get all items in backlog and research columns (first two)
+    document.querySelectorAll('[draggable="true"]').forEach(card => {
+        const btn = card.querySelector('button[onclick*="generateDraft"]');
+        if (btn) {
+            const match = btn.getAttribute('onclick').match(/generateDraft\((\d+)\)/);
+            if (match) items.push(parseInt(match[1]));
+        }
+    });
+    if (items.length === 0) return toast('No items in backlog/research to generate drafts for', 'info');
+
+    let completed = 0;
+    for (const id of items) {
+        const res = await fetch(`/api/content-items/${id}/generate-draft`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+        });
+        const data = await res.json();
+        if (data.ok) completed++;
+        else toast(`Failed for item ${id}: ${data.error}`, 'error', 5000);
+    }
+    toast(`Generated ${completed}/${items.length} drafts`, 'success');
+    location.reload();
 }
 
 async function triggerPipeline() {
