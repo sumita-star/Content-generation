@@ -1123,29 +1123,47 @@ function studioApp() {
             const titleWords = (item.title || '').toLowerCase().split(/[\s\-_:]+/).filter(w => w.length > 3);
             const contentType = item.content_type || '';
 
+            // Map content type to relevant media folders
+            const typeFolders = {
+                'blog': ['blogs'],
+                'linkedin_post': ['linkedin', 'social media posts', 'social_media'],
+                'carousel': ['social media posts', 'linkedin', 'social_media'],
+                'video': ['reels', 'video'],
+                'reel': ['reels', 'video'],
+                'email': ['linkedin', 'social media posts'],
+            };
+            const relevantFolders = typeFolders[contentType] || [];
+
             // Score each media file for relevance
             const nonCarousel = allMedia.filter(m => !m.is_carousel);
             const scored = nonCarousel.map(m => {
                 let score = 0;
                 const name = m.name.toLowerCase();
                 const path = (m.rel_path || '').toLowerCase();
+                // Explicit file_paths link = highest priority
                 if (filePaths.some(fp => path.includes(fp.toLowerCase()) || fp.toLowerCase().includes(path))) score += 100;
+                // Title keyword match in filename/path
                 const kwMatches = titleWords.filter(w => name.includes(w) || path.includes(w)).length;
                 score += kwMatches * 10;
-                if (path.includes('generated_images') || path.includes('polished_images')) score += 3;
+                // Generated/polished assets
+                if (path.includes('generated_images') || path.includes('polished_images')) score += 5;
+                // Content type folder match (show blog media for blog items, etc.)
+                if (relevantFolders.some(f => path.includes(f))) score += 3;
                 return { ...m, score };
             }).sort((a, b) => b.score - a.score);
 
-            // Show matched files first; if none matched, show all brand media
+            // Show matched files; content-type folder matches ensure something always shows
             const matched = scored.filter(m => m.score > 0);
-            this.itemMediaFiles = (matched.length > 0 ? matched : scored).slice(0, 12);
+            this.itemMediaFiles = matched.slice(0, 12);
 
-            // Match carousel groups
+            // Match carousel groups by keyword or content type
             this.itemCarouselGroups = [];
             for (const [key, slides] of Object.entries(allCarouselGroups)) {
                 const groupName = key.toLowerCase();
-                const isMatch = titleWords.some(w => groupName.includes(w));
-                if (isMatch || matched.length === 0) {
+                const isMatch = titleWords.some(w => groupName.includes(w)) ||
+                    filePaths.some(fp => groupName.includes(fp.toLowerCase())) ||
+                    (contentType === 'carousel' && relevantFolders.some(f => groupName.includes(f)));
+                if (isMatch) {
                     this.itemCarouselGroups.push(slides.sort((a, b) => a.name.localeCompare(b.name)));
                 }
             }

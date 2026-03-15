@@ -4650,47 +4650,56 @@ def gemini_generate_image():
         return jsonify({'ok': False, 'error': 'Brand not found'}), 404
 
     try:
-        import urllib.request
-        # Use Gemini 2.0 Flash for image generation
-        api_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={gemini_key}'
+        import urllib.request, urllib.error
+        # Use Imagen 3 for image generation
+        api_url = f'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={gemini_key}'
         req_body = json.dumps({
-            'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']}
+            'instances': [{'prompt': prompt}],
+            'parameters': {'sampleCount': 1, 'aspectRatio': '1:1'}
         })
         req = urllib.request.Request(api_url, data=req_body.encode(),
                                      headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read().decode())
 
-        # Extract image data from response
+        # Extract image data from Imagen 3 response
         saved_files = []
-        if result.get('candidates'):
-            parts = result['candidates'][0].get('content', {}).get('parts', [])
-            for i, part in enumerate(parts):
-                if part.get('inlineData'):
-                    img_data = base64.b64decode(part['inlineData']['data'])
-                    mime = part['inlineData'].get('mimeType', 'image/png')
-                    ext = '.png' if 'png' in mime else '.jpg'
+        predictions = result.get('predictions', [])
+        for i, pred in enumerate(predictions):
+            img_b64 = pred.get('bytesBase64Encoded', '')
+            if img_b64:
+                img_data = base64.b64decode(img_b64)
+                mime = pred.get('mimeType', 'image/png')
+                ext = '.png' if 'png' in mime else '.jpg'
 
-                    # Save to pipeline folder
-                    output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Images')
-                    os.makedirs(output_dir, exist_ok=True)
-                    filename = f"gemini_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}{ext}"
-                    filepath = os.path.join(output_dir, filename)
-                    with open(filepath, 'wb') as f:
-                        f.write(img_data)
-                    saved_files.append({'name': filename, 'path': filepath})
+                # Save to pipeline folder
+                output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Images')
+                os.makedirs(output_dir, exist_ok=True)
+                filename = f"imagen3_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}{ext}"
+                filepath = os.path.join(output_dir, filename)
+                with open(filepath, 'wb') as f:
+                    f.write(img_data)
+                saved_files.append({'name': filename, 'path': filepath})
 
         # Create notification
         db.execute("""
             INSERT INTO notifications (brand_id, notification_type, title, message, due_date)
             VALUES (?, 'system', ?, ?, ?)
-        """, (brand_id, 'Gemini: Image Generated',
+        """, (brand_id, 'Imagen 3: Image Generated',
               f'Generated {len(saved_files)} image(s) from prompt: {prompt[:100]}...',
               datetime.now().strftime('%Y-%m-%d')))
         db.commit()
 
         return jsonify({'ok': True, 'files': saved_files, 'count': len(saved_files)})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            msg = json.loads(body).get('error', {}).get('message', body)
+        except Exception:
+            msg = body
+        if e.code == 403:
+            return jsonify({'ok': False, 'error': f'Imagen 3 access denied. Ensure the Generative Language API is enabled. ({msg})'}), 403
+        return jsonify({'ok': False, 'error': f'Imagen 3 API error ({e.code}): {msg}'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -4717,8 +4726,8 @@ def gemini_generate_video():
         return jsonify({'ok': False, 'error': 'Video prompt is required'}), 400
 
     try:
-        # Step 1: Start video generation (async operation)
-        api_url = f'https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predictLongRunning?key={gemini_key}'
+        # Step 1: Start video generation (async operation) — Veo 3
+        api_url = f'https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-preview:predictLongRunning?key={gemini_key}'
         req_body = json.dumps({
             'instances': [{'prompt': prompt}],
             'parameters': {'sampleCount': 1}
@@ -4755,7 +4764,7 @@ def gemini_generate_video():
                 video_bytes = base64.b64decode(video_data)
                 output_dir = os.path.join(brand['folder_path'] or '', '10_Pipeline', 'Generated_Videos')
                 os.makedirs(output_dir, exist_ok=True)
-                filename = f"veo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}.mp4"
+                filename = f"veo3_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i}.mp4"
                 filepath = os.path.join(output_dir, filename)
                 with open(filepath, 'wb') as f:
                     f.write(video_bytes)
@@ -4774,7 +4783,7 @@ def gemini_generate_video():
         # Notification
         db.execute("""INSERT INTO notifications (brand_id, notification_type, title, message, due_date)
             VALUES (?, 'system', ?, ?, ?)""",
-            (brand_id, 'Veo: Video Generated',
+            (brand_id, 'Veo 3: Video Generated',
              f'Generated {len(saved_files)} video(s) from prompt: {prompt[:100]}...',
              datetime.now().strftime('%Y-%m-%d')))
         db.commit()
@@ -4788,10 +4797,10 @@ def gemini_generate_video():
         except Exception:
             msg = body
         if e.code == 403:
-            return jsonify({'ok': False, 'error': f'Veo API access denied. You may need to enable the Vertex AI API or request Veo access. ({msg})'}), 403
+            return jsonify({'ok': False, 'error': f'Veo 3 access denied. You may need to enable the Generative Language API or request Veo access. ({msg})'}), 403
         if e.code == 404:
-            return jsonify({'ok': False, 'error': 'Veo model not available. The veo-2.0-generate-001 model may require a Vertex AI project with Veo access enabled.'}), 404
-        return jsonify({'ok': False, 'error': f'Gemini API error ({e.code}): {msg}'}), 500
+            return jsonify({'ok': False, 'error': 'Veo 3 model not available. The veo-3.0-generate-preview model may require API access to be enabled.'}), 404
+        return jsonify({'ok': False, 'error': f'Veo 3 API error ({e.code}): {msg}'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -4863,27 +4872,28 @@ Post context: {post_text[:300]}"""
 
         try:
             import urllib.request
-            api_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={gemini_key}'
+            # Use Imagen 3 for batch image generation
+            api_url = f'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={gemini_key}'
             req_body = json.dumps({
-                'contents': [{'parts': [{'text': img_prompt}]}],
-                'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']}
+                'instances': [{'prompt': img_prompt}],
+                'parameters': {'sampleCount': 1, 'aspectRatio': '1:1'}
             })
             req = urllib.request.Request(api_url, data=req_body.encode(),
                                          headers={'Content-Type': 'application/json'})
             with urllib.request.urlopen(req, timeout=120) as resp:
                 result = json.loads(resp.read().decode())
 
-            if result.get('candidates'):
-                parts = result['candidates'][0].get('content', {}).get('parts', [])
-                for i, part in enumerate(parts):
-                    if part.get('inlineData'):
-                        img_data = base64.b64decode(part['inlineData']['data'])
-                        slug = topic.lower().replace(' ', '_')[:30]
-                        filename = f"{slug}_{datetime.now().strftime('%Y%m%d')}_{i}.png"
-                        filepath = os.path.join(output_folder, filename)
-                        with open(filepath, 'wb') as fh:
-                            fh.write(img_data)
-                        processed.append({'brief': brief['filename'], 'image': filename})
+            predictions = result.get('predictions', [])
+            for i, pred in enumerate(predictions):
+                img_b64 = pred.get('bytesBase64Encoded', '')
+                if img_b64:
+                    img_data = base64.b64decode(img_b64)
+                    slug = topic.lower().replace(' ', '_')[:30]
+                    filename = f"{slug}_{datetime.now().strftime('%Y%m%d')}_{i}.png"
+                    filepath = os.path.join(output_folder, filename)
+                    with open(filepath, 'wb') as fh:
+                        fh.write(img_data)
+                    processed.append({'brief': brief['filename'], 'image': filename})
         except Exception as e:
             errors.append({'brief': brief['filename'], 'error': str(e)})
 
