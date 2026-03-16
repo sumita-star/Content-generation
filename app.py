@@ -1390,7 +1390,15 @@ def create_content_item():
         data.get('body_text', ''), data.get('publish_date')
     ))
     db.commit()
-    return jsonify({'ok': True, 'id': db.execute("SELECT last_insert_rowid()").fetchone()[0]})
+    new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    # Auto-create item folder
+    brand = db.execute("SELECT folder_path FROM brands WHERE id=?", (data['brand_id'],)).fetchone()
+    if brand and brand['folder_path']:
+        folder_path = get_item_folder_path(brand['folder_path'], new_id, data.get('title', ''))
+        os.makedirs(os.path.join(folder_path, 'images'), exist_ok=True)
+        os.makedirs(os.path.join(folder_path, 'videos'), exist_ok=True)
+        os.makedirs(os.path.join(folder_path, 'documents'), exist_ok=True)
+    return jsonify({'ok': True, 'id': new_id})
 
 
 @app.route('/api/content-items/<int:item_id>/status', methods=['PUT'])
@@ -1632,17 +1640,31 @@ def delete_content_item(item_id):
 
 @app.route('/api/content-items/<int:item_id>/attach-media', methods=['POST'])
 def attach_media(item_id):
-    """Append media file paths to a content item's file_paths."""
+    """Append media file paths to a content item's file_paths and copy to item folder."""
     db = get_db()
     data = request.get_json()
     new_paths = data.get('paths', [])
-    item = db.execute('SELECT file_paths FROM content_items WHERE id=?', (item_id,)).fetchone()
+    item = db.execute('SELECT * FROM content_items WHERE id=?', (item_id,)).fetchone()
     if not item:
         return jsonify({'ok': False, 'error': 'Content item not found'}), 404
     existing = json.loads(item['file_paths'] or '[]')
+    brand = db.execute("SELECT folder_path FROM brands WHERE id=?", (item['brand_id'],)).fetchone()
+    brand_folder = (brand['folder_path'] if brand else None) or BRANDS_BASE
+    folder_path = get_item_folder_path(brand_folder, item_id, item['title'] or '')
+    import shutil
     for p in new_paths:
         if p not in existing:
             existing.append(p)
+        # Copy to item folder if it exists
+        if os.path.isdir(folder_path):
+            src = os.path.join(brand_folder, p)
+            if os.path.isfile(src):
+                ext = os.path.splitext(p)[1].lower()
+                subdir = 'images' if ext in ('.png','.jpg','.jpeg','.gif','.webp','.svg') else \
+                         'videos' if ext in ('.mp4','.mov','.webm','.avi') else 'documents'
+                dest = os.path.join(folder_path, subdir, os.path.basename(p))
+                if not os.path.exists(dest):
+                    shutil.copy2(src, dest)
     db.execute('UPDATE content_items SET file_paths=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
                (json.dumps(existing), item_id))
     db.commit()
@@ -1723,9 +1745,150 @@ def scan_media_files(folder_path):
     return media_files
 
 
+def get_item_folder_path(brand_folder_path, item_id, title):
+    """Compute the canonical folder path for a content item."""
+    import re as _re
+    sanitized = _re.sub(r'[^a-z0-9_\-]', '', title.lower().replace(' ', '_'))[:50]
+    folder_name = f"{item_id}_{sanitized}" if sanitized else str(item_id)
+    return os.path.join(brand_folder_path, '10_Pipeline', 'Content', folder_name)
+
+
+def _create_item_folder(db, item_id):
+    """Create a content item's folder and copy existing media into it. Returns (folder_path, files_list)."""
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        return None, []
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (item['brand_id'],)).fetchone()
+    brand_folder = brand['folder_path'] or BRANDS_BASE
+    folder_path = get_item_folder_path(brand_folder, item_id, item['title'] or '')
+    os.makedirs(os.path.join(folder_path, 'images'), exist_ok=True)
+    os.makedirs(os.path.join(folder_path, 'videos'), exist_ok=True)
+    os.makedirs(os.path.join(folder_path, 'documents'), exist_ok=True)
+
+    # Copy existing file_paths media into item folder
+    import shutil
+    existing_paths = json.loads(item['file_paths'] or '[]')
+    new_paths = []
+    for fp in existing_paths:
+        src = os.path.join(brand_folder, fp)
+        if not os.path.isfile(src):
+            new_paths.append(fp)
+            continue
+        ext = os.path.splitext(fp)[1].lower()
+        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'):
+            subdir = 'images'
+        elif ext in ('.mp4', '.mov', '.webm', '.avi'):
+            subdir = 'videos'
+        else:
+            subdir = 'documents'
+        dest = os.path.join(folder_path, subdir, os.path.basename(fp))
+        if not os.path.exists(dest):
+            shutil.copy2(src, dest)
+        new_paths.append(os.path.relpath(dest, brand_folder))
+
+    # Update file_paths to point to item folder
+    db.execute('UPDATE content_items SET file_paths=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+               (json.dumps(new_paths), item_id))
+
+    # Generate brief.md
+    brief_lines = [
+        f"# {item['title'] or 'Untitled'}",
+        f"",
+        f"**Type:** {item['content_type'] or 'linkedin_post'}",
+        f"**Market:** {item['market'] or 'APAC'}",
+        f"**Publish Date:** {item['publish_date'] or 'TBD'}",
+        f"**Status:** {item['status'] or 'backlog'}",
+    ]
+    if item['body_text']:
+        brief_lines += ['', '## Content', '', item['body_text']]
+    if item['visual_prompt']:
+        brief_lines += ['', '## Visual Prompt', '', item['visual_prompt']]
+    if item['notes']:
+        brief_lines += ['', '## Notes', '', item['notes']]
+    with open(os.path.join(folder_path, 'brief.md'), 'w') as f:
+        f.write('\n'.join(brief_lines))
+
+    db.commit()
+
+    # List folder files
+    files = _list_item_folder_files(folder_path, brand_folder)
+    return folder_path, files
+
+
+def _list_item_folder_files(folder_path, brand_folder):
+    """List all files in an item folder."""
+    files = []
+    if not os.path.isdir(folder_path):
+        return files
+    for root, dirs, filenames in os.walk(folder_path):
+        for fname in filenames:
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, folder_path)
+            subfolder = os.path.dirname(rel) or ''
+            ext = os.path.splitext(fname)[1].lower()
+            ftype = 'image' if ext in ('.png','.jpg','.jpeg','.gif','.webp','.svg') else \
+                    'video' if ext in ('.mp4','.mov','.webm','.avi') else \
+                    'audio' if ext in ('.mp3','.wav','.m4a') else 'document'
+            size_bytes = os.path.getsize(fpath)
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes // 1024} KB"
+            else:
+                size_str = f"{size_bytes // (1024*1024):.1f} MB"
+            files.append({
+                'name': fname, 'subfolder': subfolder, 'type': ftype,
+                'size': size_str, 'ext': ext,
+                'modified': datetime.fromtimestamp(os.path.getmtime(fpath)).strftime('%Y-%m-%d %H:%M'),
+            })
+    files.sort(key=lambda x: x['name'])
+    return files
+
+
+@app.route('/api/content-items/<int:item_id>/create-folder', methods=['POST'])
+def create_item_folder(item_id):
+    """Create a dedicated folder for a content item and copy existing media into it."""
+    db = get_db()
+    folder_path, files = _create_item_folder(db, item_id)
+    if folder_path is None:
+        return jsonify({'ok': False, 'error': 'Content item not found'}), 404
+    return jsonify({'ok': True, 'folder_path': folder_path, 'files': files, 'file_count': len(files)})
+
+
+@app.route('/api/content-items/<int:item_id>/open-folder', methods=['POST'])
+def open_item_folder(item_id):
+    """Open the content item's folder in Finder (macOS)."""
+    db = get_db()
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        return jsonify({'ok': False, 'error': 'Content item not found'}), 404
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (item['brand_id'],)).fetchone()
+    brand_folder = brand['folder_path'] or BRANDS_BASE
+    folder_path = get_item_folder_path(brand_folder, item_id, item['title'] or '')
+    if not os.path.isdir(folder_path):
+        _create_item_folder(db, item_id)
+    subprocess.Popen(['open', folder_path])
+    return jsonify({'ok': True, 'folder_path': folder_path})
+
+
+@app.route('/api/content-items/<int:item_id>/folder-files')
+def get_item_folder_files(item_id):
+    """List files in the content item's dedicated folder."""
+    db = get_db()
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        return jsonify({'ok': False, 'error': 'Content item not found'}), 404
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (item['brand_id'],)).fetchone()
+    brand_folder = brand['folder_path'] or BRANDS_BASE
+    folder_path = get_item_folder_path(brand_folder, item_id, item['title'] or '')
+    folder_exists = os.path.isdir(folder_path)
+    files = _list_item_folder_files(folder_path, brand_folder) if folder_exists else []
+    return jsonify({'ok': True, 'files': files, 'folder_exists': folder_exists, 'folder_path': folder_path})
+
+
 @app.route('/brands/<int:brand_id>/preview')
 def content_preview(brand_id):
-    """Unified content preview + feedback + edit view."""
+    """Content studio — folder-based review."""
     db = get_db()
     brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
     if not brand:
@@ -1748,36 +1911,21 @@ def content_preview(brand_id):
     """, (brand_id,)).fetchall()
 
     unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
-    media_files = scan_media_files(brand['folder_path'])
-    content_items_dicts = [dict(row) for row in content_items]
+    brand_folder = brand['folder_path'] or BRANDS_BASE
+    content_items_dicts = []
+    for row in content_items:
+        d = dict(row)
+        folder_path = get_item_folder_path(brand_folder, d['id'], d['title'] or '')
+        d['folder_exists'] = os.path.isdir(folder_path)
+        d['file_count'] = len(_list_item_folder_files(folder_path, brand_folder)) if d['folder_exists'] else 0
+        content_items_dicts.append(d)
+
     pillars_rows = db.execute("SELECT * FROM content_pillars WHERE brand_id=? ORDER BY sort_order", (brand_id,)).fetchall()
     pillars = [dict(row) for row in pillars_rows]
 
-    # Group carousel images by folder+base name
-    carousel_groups = {}
-    for mf in media_files:
-        if mf['is_carousel']:
-            import re
-            base = re.sub(r'[-_]?\d+$', '', os.path.splitext(mf['name'])[0])
-            key = mf['folder'] + '/' + base
-            if key not in carousel_groups:
-                carousel_groups[key] = []
-            carousel_groups[key].append(mf)
-
-    # Canva designs for the brand
-    canva_designs = [dict(row) for row in db.execute("""
-        SELECT cd.*, ci.title as content_title
-        FROM canva_designs cd
-        LEFT JOIN content_items ci ON cd.content_item_id = ci.id
-        WHERE cd.brand_id = ?
-        ORDER BY cd.created_at DESC
-    """, (brand_id,)).fetchall()]
-
     return render_template('preview/unified.html',
         brand=brand, content_items=content_items, content_items_dicts=content_items_dicts,
-        feedbacks=feedbacks, media_files=media_files, carousel_groups=carousel_groups,
-        pillars=pillars, unread_notifications=unread_notifications,
-        canva_designs=canva_designs)
+        feedbacks=feedbacks, pillars=pillars, unread_notifications=unread_notifications)
 
 
 @app.route('/brands/<int:brand_id>/feedback')
