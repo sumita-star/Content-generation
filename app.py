@@ -188,6 +188,10 @@ def _migrate_brands(db):
         db.execute("ALTER TABLE brands ADD COLUMN baseline_influence_level INTEGER DEFAULT 3")
     if 'baseline_confidence_level' not in cols:
         db.execute("ALTER TABLE brands ADD COLUMN baseline_confidence_level INTEGER DEFAULT 0")
+    if 'linkedin_company_url' not in cols:
+        db.execute("ALTER TABLE brands ADD COLUMN linkedin_company_url TEXT DEFAULT ''")
+    if 'linkedin_profile_url' not in cols:
+        db.execute("ALTER TABLE brands ADD COLUMN linkedin_profile_url TEXT DEFAULT ''")
     db.commit()
 
 
@@ -207,6 +211,8 @@ CREATE TABLE IF NOT EXISTS brands (
     canva_brand_kit_id TEXT,
     baseline_influence_level INTEGER DEFAULT 3,
     baseline_confidence_level INTEGER DEFAULT 0,
+    linkedin_company_url TEXT DEFAULT '',
+    linkedin_profile_url TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -1344,10 +1350,30 @@ def brand_new():
                     folders_created.append(folder_name)
 
         db.commit()
-        return redirect(url_for('brand_detail', brand_id=brand_id))
+        return redirect(url_for('brand_onboarding', brand_id=brand_id))
 
     unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
     return render_template('brands/new.html', unread_notifications=unread_notifications)
+
+
+@app.route('/api/brands/<int:brand_id>/profile', methods=['PUT'])
+def update_brand_profile(brand_id):
+    """Update brand profile fields (colors, website, LinkedIn URLs)."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+    data = request.json or {}
+    fields = {}
+    for col in ('primary_color', 'accent_color', 'website', 'linkedin_company_url', 'linkedin_profile_url'):
+        if col in data:
+            fields[col] = data[col].strip() if isinstance(data[col], str) else data[col]
+    if fields:
+        set_clause = ', '.join(f'{k}=?' for k in fields)
+        vals = list(fields.values()) + [brand_id]
+        db.execute(f"UPDATE brands SET {set_clause}, updated_at=CURRENT_TIMESTAMP WHERE id=?", vals)
+        db.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/brands/<int:brand_id>')
@@ -1356,6 +1382,11 @@ def brand_detail(brand_id):
     brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
     if not brand:
         return redirect(url_for('brands_list'))
+
+    # Redirect to onboarding if score < 70%
+    score, _ = _calculate_onboarding_score(brand_id, db)
+    if score < 70:
+        return redirect(url_for('brand_onboarding', brand_id=brand_id))
 
     pillars = db.execute("SELECT * FROM content_pillars WHERE brand_id=? ORDER BY sort_order", (brand_id,)).fetchall()
     recent_content = db.execute("SELECT * FROM content_items WHERE brand_id=? ORDER BY created_at DESC LIMIT 10", (brand_id,)).fetchall()
@@ -5285,7 +5316,13 @@ def settings_view():
         ORDER BY dsc.created_at DESC
     """).fetchall()
     drive_syncs_list = [dict(s) for s in drive_syncs]
-    brands = [dict(row) for row in db.execute("SELECT id, name FROM brands ORDER BY name").fetchall()]
+    brands_rows = db.execute("SELECT * FROM brands ORDER BY name").fetchall()
+    brands = []
+    for b in brands_rows:
+        bd = dict(b)
+        bd['onboarding_score'], _ = _calculate_onboarding_score(bd['id'], db)
+        bd['has_drive_sync'] = bool(db.execute("SELECT 1 FROM drive_sync_config WHERE brand_id=?", (bd['id'],)).fetchone())
+        brands.append(bd)
 
     default_text_model = get_setting(db, 'default_text_model', 'claude-sonnet-4-20250514')
 
@@ -5294,6 +5331,40 @@ def settings_view():
         theme_mode=theme_mode, locked=False, password_set=password_set,
         dynamic_keys=dynamic_keys, drive_syncs=drive_syncs_list, last_brand=last_brand,
         brands=brands, default_text_model=default_text_model)
+
+
+@app.route('/api/brands/quick-create', methods=['POST'])
+def brand_quick_create():
+    """Quick brand creation from Settings — name + folder_path minimum."""
+    db = get_db()
+    data = request.json
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'Brand name is required'})
+
+    folder_path = data.get('folder_path', '').strip()
+    website = data.get('website', '').strip()
+
+    db.execute("""
+        INSERT INTO brands (name, folder_path, website)
+        VALUES (?, ?, ?)
+    """, (name, folder_path, website))
+    brand_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # Create default workflow template
+    db.execute("""
+        INSERT INTO workflow_templates (brand_id, name, description, is_default)
+        VALUES (?, ?, ?, 1)
+    """, (brand_id, f'{name} Content Workflow', 'Default content workflow'))
+
+    # Auto-create folder structure if folder_path provided
+    if folder_path:
+        for folder_name, purpose in DIQIT_FOLDER_TEMPLATE:
+            full_path = os.path.join(folder_path, folder_name)
+            os.makedirs(full_path, exist_ok=True)
+
+    db.commit()
+    return jsonify({'ok': True, 'brand_id': brand_id, 'redirect': f'/brands/{brand_id}/onboarding'})
 
 
 @app.route('/api/settings/password', methods=['POST'])
@@ -8485,6 +8556,48 @@ FILE_CATEGORIES = {
 }
 
 
+def _calculate_onboarding_score(brand_id, db):
+    """Calculate onboarding completion score (0-100) for a brand."""
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return 0, {}
+    pillars = db.execute("SELECT COUNT(*) FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchone()[0]
+    cadences = db.execute("SELECT COUNT(*) FROM cadence_rules WHERE brand_id=?", (brand_id,)).fetchone()[0]
+    voice_refs = db.execute("SELECT COUNT(*) FROM brand_voice_references WHERE brand_id=?", (brand_id,)).fetchone()[0]
+    folder_exists = bool(brand['folder_path'] and os.path.isdir(brand['folder_path']))
+    has_workflow = bool(db.execute("SELECT 1 FROM workflow_templates WHERE brand_id=?", (brand_id,)).fetchone())
+    has_baseline = bool(db.execute(
+        "SELECT 1 FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0",
+        (brand_id,)).fetchone())
+
+    # Check files organization
+    files_organized = False
+    if folder_exists:
+        organized_count = 0
+        for cat_info in FILE_CATEGORIES.values():
+            cat_path = os.path.join(brand['folder_path'], cat_info['folder'])
+            if os.path.isdir(cat_path) and os.listdir(cat_path):
+                organized_count += 1
+        files_organized = organized_count >= 3
+
+    steps = {
+        'folder': {'done': folder_exists, 'weight': 15},
+        'files_organized': {'done': files_organized, 'weight': 15},
+        'brand_voice': {'done': voice_refs >= 3, 'weight': 20},
+        'pillars': {'done': pillars >= 3, 'weight': 15},
+        'cadence': {'done': cadences >= 1, 'weight': 10},
+        'voice_summary': {'done': bool(brand['voice_summary']), 'weight': 10},
+        'website': {'done': bool(brand['website']), 'weight': 5},
+        'colors': {'done': brand['primary_color'] != '#000000' or brand['accent_color'] != '#6366f1', 'weight': 5},
+        'workflow': {'done': has_workflow, 'weight': 5},
+        'baseline_scrape': {'done': has_baseline, 'weight': 10},
+    }
+    total_weight = sum(s['weight'] for s in steps.values())
+    earned_weight = sum(s['weight'] for s in steps.values() if s['done'])
+    score = int((earned_weight / total_weight) * 100) if total_weight else 0
+    return score, steps
+
+
 @app.route('/brands/<int:brand_id>/onboarding')
 def brand_onboarding(brand_id):
     """Onboarding wizard: scan, organize, analyze, recommend."""
@@ -8498,6 +8611,34 @@ def brand_onboarding(brand_id):
     cadences = db.execute("SELECT * FROM cadence_rules WHERE brand_id=?", (brand_id,)).fetchall()
     voice_refs = db.execute("SELECT * FROM brand_voice_references WHERE brand_id=?", (brand_id,)).fetchall()
     folder_exists = bool(brand['folder_path'] and os.path.isdir(brand['folder_path']))
+
+    # Auto-create DIQIT folder template if folder exists but subfolders are missing
+    if folder_exists:
+        if not os.path.isdir(os.path.join(brand['folder_path'], '01_Brand')):
+            for folder_name, purpose in DIQIT_FOLDER_TEMPLATE:
+                os.makedirs(os.path.join(brand['folder_path'], folder_name), exist_ok=True)
+
+    # Detect Cowork/external content in existing folder
+    folder_has_content = False
+    cowork_files_detected = []
+    if folder_exists:
+        watched_files = [
+            ('01_Brand/brand_voice.md', 'Brand Voice'),
+            ('03_Strategy/content_pillars.md', 'Content Pillars'),
+            ('03_Strategy/cadence.md', 'Publishing Cadence'),
+        ]
+        for rel_path, label in watched_files:
+            full = os.path.join(brand['folder_path'], rel_path)
+            if os.path.isfile(full):
+                cowork_files_detected.append({'path': rel_path, 'label': label})
+        content_dir = os.path.join(brand['folder_path'], '04_Content')
+        content_count = 0
+        if os.path.isdir(content_dir):
+            for root, _, files in os.walk(content_dir):
+                content_count += sum(1 for f in files if f.endswith(('.md', '.txt')))
+        if content_count:
+            cowork_files_detected.append({'path': '04_Content/', 'label': f'{content_count} content files'})
+        folder_has_content = len(cowork_files_detected) > 0
 
     # Calculate onboarding score
     steps = {
@@ -8539,7 +8680,9 @@ def brand_onboarding(brand_id):
     return render_template('brands/onboarding.html',
                            brand=brand, steps=steps, score=score,
                            pillars=pillars, cadences=cadences, voice_refs=voice_refs,
-                           folder_exists=folder_exists, unread_notifications=unread_notifications)
+                           folder_exists=folder_exists, folder_has_content=folder_has_content,
+                           cowork_files_detected=cowork_files_detected,
+                           unread_notifications=unread_notifications)
 
 
 @app.route('/api/brands/<int:brand_id>/onboard/scan', methods=['POST'])
@@ -8605,6 +8748,35 @@ def onboard_scan(brand_id):
         'unorganized': len(unorganized),
         'files': files,
         'unorganized_files': unorganized,
+    })
+
+
+@app.route('/api/brands/<int:brand_id>/onboard/set-folder-path', methods=['POST'])
+def onboard_set_folder_path(brand_id):
+    """Set or update the brand's folder path and create missing DIQIT folders."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'})
+    data = request.json
+    folder_path = data.get('folder_path', '').strip()
+    if not folder_path:
+        return jsonify({'ok': False, 'error': 'Folder path required'})
+
+    db.execute("UPDATE brands SET folder_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (folder_path, brand_id))
+
+    folders_created = []
+    for folder_name, purpose in DIQIT_FOLDER_TEMPLATE:
+        full_path = os.path.join(folder_path, folder_name)
+        if not os.path.exists(full_path):
+            os.makedirs(full_path, exist_ok=True)
+            folders_created.append(folder_name)
+
+    db.commit()
+    return jsonify({
+        'ok': True,
+        'folders_created': len(folders_created),
+        'folder_existed': os.path.isdir(folder_path) and not bool(folders_created)
     })
 
 
@@ -9043,12 +9215,17 @@ def onboard_baseline_scrape(brand_id):
     data = request.json or {}
     company_url = data.get('company_url', '')
     profile_url = data.get('profile_url', '')
-    api_key = get_setting('apify_api_key')
+    api_key = get_setting(db, 'apify_api_key')
     if not api_key:
         return jsonify({'ok': False, 'error': 'Apify API key not configured. Add it in Settings.'}), 400
 
     if not company_url and not profile_url:
         return jsonify({'ok': False, 'error': 'Provide at least one LinkedIn URL (company or personal).'}), 400
+
+    # Save LinkedIn URLs to brand for future reference
+    db.execute("UPDATE brands SET linkedin_company_url=?, linkedin_profile_url=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+               (company_url, profile_url, brand_id))
+    db.commit()
 
     runs_started = []
     db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
@@ -9142,6 +9319,39 @@ def onboard_baseline_scrape(brand_id):
     db.commit()
 
     return jsonify({'ok': True, 'runs': runs_started, 'message': f'Baseline scrape started for {len(runs_started)} LinkedIn account(s). This scrapes up to 100 recent posts per account. Results will appear in Data Enrichment in 3-5 minutes.'})
+
+
+@app.route('/api/brands/<int:brand_id>/onboard/baseline-status')
+def onboard_baseline_status(brand_id):
+    """Check baseline scrape status — poll this to show progress."""
+    db = get_db()
+    rows = db.execute("""
+        SELECT source_type, source_name, item_count, created_at, run_id
+        FROM scrape_results WHERE brand_id=? AND run_id LIKE 'baseline-%'
+        ORDER BY created_at DESC
+    """, (brand_id,)).fetchall()
+    results = []
+    for r in rows:
+        results.append({
+            'source_type': r['source_type'],
+            'source_name': r['source_name'],
+            'item_count': r['item_count'],
+            'created_at': r['created_at'],
+            'is_error': r['source_type'] == 'error' or r['run_id'].startswith('baseline-error'),
+        })
+    has_company = any(r['source_type'] == 'linkedin_company' and r['item_count'] > 0 for r in results)
+    has_profile = any(r['source_type'] == 'linkedin_profile' and r['item_count'] > 0 for r in results)
+    total_posts = sum(r['item_count'] for r in results if r['source_type'] in ('linkedin_company', 'linkedin_profile'))
+    errors = [r for r in results if r['is_error']]
+    return jsonify({
+        'ok': True,
+        'results': results,
+        'has_company': has_company,
+        'has_profile': has_profile,
+        'total_posts': total_posts,
+        'errors': errors,
+        'complete': bool(results) and not any(r['source_type'] == 'error' for r in results),
+    })
 
 
 # ─── Canva Integration ─────────────────────────────────────────────

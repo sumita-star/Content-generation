@@ -415,6 +415,82 @@
         </div>
     </div>
 
+    <!-- Brand Management -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <div>
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-layer-group mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Brands
+                </h2>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">
+                    {{ brands|length }} brand{{ 's' if brands|length != 1 else '' }} configured
+                </p>
+            </div>
+            <button @click="showQuickBrand = !showQuickBrand" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-plus mr-1"></i>Add Brand
+            </button>
+        </div>
+        <div class="p-4 space-y-3">
+            <!-- Quick Add Brand Form -->
+            <div x-show="showQuickBrand" x-transition class="rounded-lg p-4 space-y-3" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <input type="text" x-model="quickBrand.name" placeholder="Brand Name *"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <input type="text" x-model="quickBrand.folder_path" placeholder="/path/to/brand/folder"
+                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" x-model="quickBrand.website" placeholder="Website (optional)"
+                        class="rounded-lg px-3 py-2 text-sm outline-none flex-1"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <button @click="addQuickBrand()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
+                        <i class="fas fa-plus mr-1"></i>Create & Onboard
+                    </button>
+                </div>
+                <p class="text-xs" style="color: {{ theme_colors['text-disabled'] }}">
+                    <i class="fas fa-info-circle mr-1"></i>Existing folders are preserved. Missing DIQIT subfolders will be created automatically.
+                </p>
+            </div>
+
+            <!-- Existing Brands List -->
+            {% if brands %}
+            <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+                {% for b in brands %}
+                <div class="flex items-center gap-3 py-3">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style="background: {{ b.primary_color or '#000' }}">
+                        {{ b.name[:2]|upper }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <a href="/brands/{{ b.id }}" class="text-sm font-medium hover:underline" style="color: {{ theme_colors['text-primary'] }}">{{ b.name }}</a>
+                        <p class="text-xs truncate" style="color: {{ theme_colors['text-muted'] }}">
+                            {{ b.folder_path or 'No folder set' }}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <span class="text-xs px-2 py-0.5 rounded-full"
+                            style="background: {% if b.onboarding_score >= 80 %}{{ theme_colors['status-success'] }}20{% elif b.onboarding_score >= 50 %}{{ theme_colors['status-warning'] }}20{% else %}{{ theme_colors['accent-primary'] }}20{% endif %}; color: {% if b.onboarding_score >= 80 %}{{ theme_colors['status-success'] }}{% elif b.onboarding_score >= 50 %}{{ theme_colors['status-warning'] }}{% else %}{{ theme_colors['accent-primary'] }}{% endif %}">
+                            {{ b.onboarding_score }}%
+                        </span>
+                        {% if b.has_drive_sync %}
+                        <i class="fab fa-google-drive text-xs text-green-400" title="Drive connected"></i>
+                        {% endif %}
+                        <a href="/brands/{{ b.id }}/onboarding" class="text-xs px-2 py-1 rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}" title="Onboarding">
+                            <i class="fas fa-rocket"></i>
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No brands yet. Click "Add Brand" to get started.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Google Drive Sync -->
     <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
@@ -435,7 +511,7 @@
                         style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
                         <option value="">Select Brand</option>
                         {% for b in brands %}
-                        <option value="{{ b.id }}">{{ b.name }}</option>
+                        <option value="{{ b.id }}">{{ b.name }}{% if b.folder_path %} ({{ b.folder_path[-30:] }}){% endif %}</option>
                         {% endfor %}
                     </select>
                     <input type="text" x-model="driveForm.folder_id" placeholder="Paste Google Drive folder URL or ID"
@@ -457,8 +533,12 @@
                 <div class="flex items-center gap-3 py-3">
                     <i class="fab fa-google-drive text-lg" style="color: {% if sync.enabled %}#34A853{% else %}{{ theme_colors['text-disabled'] }}{% endif %}"></i>
                     <div class="flex-1">
-                        <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ sync.folder_name or sync.brand_name or sync.folder_id }}</p>
+                        <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">
+                            {{ sync.brand_name or 'Unknown Brand' }}
+                            <span class="text-xs font-normal" style="color: {{ theme_colors['text-muted'] }}">&middot; {{ sync.folder_id[:20] }}...</span>
+                        </p>
                         <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                            {% if sync.local_path %}Local: {{ sync.local_path }} &middot; {% endif %}
                             {% if sync.last_synced_at %}Last synced: {{ sync.last_synced_at[:16] }}{% else %}Never synced{% endif %}
                             &middot; {{ sync.sync_direction }}
                         </p>
@@ -511,7 +591,7 @@
                 </div>
                 <div>
                     <span style="color: {{ theme_colors['text-muted'] }}">Version</span>
-                    <p style="color: {{ theme_colors['text-primary'] }}">1.7.0 <span class="text-xs text-green-400">Sprint 6</span></p>
+                    <p style="color: {{ theme_colors['text-primary'] }}">2.9.0 <span class="text-xs text-green-400">Sprint 19b</span></p>
                 </div>
                 <div>
                     <span style="color: {{ theme_colors['text-muted'] }}">Database</span>
@@ -575,9 +655,27 @@ function settingsApp() {
         dynamicKeys: {{ dynamic_keys | default([], true) | tojson | safe }},
         dynamicSaveStatus: '',
         showDriveForm: false,
+        showQuickBrand: false,
+        quickBrand: { name: '', folder_path: '', website: '' },
         defaultTextModel: '{{ default_text_model | default("claude-sonnet-4-20250514") }}',
         modelStatus: '',
         driveForm: { brand_id: '', folder_id: '' },
+
+        async addQuickBrand() {
+            if (!this.quickBrand.name.trim()) return toast('Brand name is required', 'warning');
+            const res = await fetch('/api/brands/quick-create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.quickBrand)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast('Brand created — redirecting to onboarding...', 'success');
+                setTimeout(() => window.location.href = data.redirect, 800);
+            } else {
+                toast(data.error || 'Failed to create brand', 'error');
+            }
+        },
 
         setTheme(mode) {
             fetch('/api/settings/theme', {
@@ -724,6 +822,9 @@ function settingsApp() {
             // Get brand name for display
             const sel = this.$refs?.brandSelect || document.querySelector('[x-model="driveForm.brand_id"]');
             const brandName = sel?.selectedOptions?.[0]?.text || '';
+            // Look up the brand's folder_path from our brands data
+            const brandFolders = { {% for b in brands %}'{{ b.id }}': '{{ b.folder_path or "" }}'{% if not loop.last %}, {% endif %}{% endfor %} };
+            const localPath = brandFolders[this.driveForm.brand_id] || '';
             const res = await fetch('/api/drive-sync', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -732,7 +833,7 @@ function settingsApp() {
                     folder_id: folderId,
                     folder_name: brandName,
                     sync_direction: 'both',
-                    local_path: ''
+                    local_path: localPath
                 })
             });
             const data = await res.json();

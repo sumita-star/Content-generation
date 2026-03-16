@@ -43,6 +43,60 @@
         </div>
     </div>
 
+    <!-- Brand Profile (inline edit) -->
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="showProfile = !showProfile"
+            style="background: {{ theme_colors['bg-tertiary'] }}">
+            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fas fa-id-card" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                Brand Profile
+                {% if steps.colors.done and steps.website.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
+            </h3>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="showProfile ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </div>
+        <div x-show="showProfile" x-collapse class="px-5 py-4">
+            <p class="text-xs mb-3" style="color: {{ theme_colors['text-muted'] }}">Edit brand colors, website, and LinkedIn URLs. Changes save instantly.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Colors -->
+                <div class="flex items-center gap-3">
+                    <div>
+                        <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Primary Color</label>
+                        <input type="color" x-model="brandProfile.primary_color" @change="saveBrandProfile()"
+                            class="w-10 h-10 rounded cursor-pointer" style="border: 1px solid {{ theme_colors['border-hover'] }}; background: {{ theme_colors['bg-tertiary'] }}">
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Accent Color</label>
+                        <input type="color" x-model="brandProfile.accent_color" @change="saveBrandProfile()"
+                            class="w-10 h-10 rounded cursor-pointer" style="border: 1px solid {{ theme_colors['border-hover'] }}; background: {{ theme_colors['bg-tertiary'] }}">
+                    </div>
+                </div>
+                <!-- Website -->
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Website</label>
+                    <input type="url" x-model="brandProfile.website" @change="saveBrandProfile()"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                        placeholder="https://example.com">
+                </div>
+                <!-- LinkedIn URLs -->
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Company LinkedIn</label>
+                    <input type="url" x-model="brandProfile.linkedin_company_url" @change="saveBrandProfile()"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                        placeholder="https://www.linkedin.com/company/...">
+                </div>
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Personal LinkedIn</label>
+                    <input type="url" x-model="brandProfile.linkedin_profile_url" @change="saveBrandProfile()"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                        placeholder="https://www.linkedin.com/in/...">
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Step 1: Folder Structure -->
     <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 1 ? 0 : 1"
@@ -62,10 +116,44 @@
             <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
                 <i class="fas fa-check text-green-400 mr-1"></i> Folder exists: <code style="color: {{ theme_colors['accent-primary'] }}">{{ brand.folder_path }}</code>
             </p>
+
+            {% if folder_has_content %}
+            <!-- PATH A: Existing Cowork content detected -->
+            <div class="rounded-lg p-4 border" style="background: {{ theme_colors['accent-primary'] }}08; border-color: {{ theme_colors['accent-primary'] }}40">
+                <h4 class="text-sm font-semibold mb-2 flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-magic" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                    Existing Content Detected
+                </h4>
+                <p class="text-xs mb-3" style="color: {{ theme_colors['text-muted'] }}">
+                    We found files created via Cowork or externally that can be synced into the app:
+                </p>
+                <div class="space-y-1 mb-3">
+                    {% for cf in cowork_files_detected %}
+                    <div class="text-xs flex items-center gap-2 px-2 py-1 rounded" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                        <i class="fas fa-file-alt" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                        <code>{{ cf.path }}</code>
+                        <span style="color: {{ theme_colors['text-muted'] }}">{{ cf.label }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="syncFromFoldersStep1(this)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                        <i class="fas fa-sync mr-1"></i> Sync from Cowork / External
+                    </button>
+                    <button onclick="scanFolder(this)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                        <i class="fas fa-search mr-1"></i> Scan & Organize Instead
+                    </button>
+                </div>
+                <div id="syncResultsStep1" class="hidden mt-2 text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"></div>
+            </div>
+            {% else %}
+            <!-- PATH B: Folder exists but no Cowork content — standard scan -->
             <button onclick="scanFolder(this)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
                 <i class="fas fa-search mr-1"></i> Scan & Categorize Files
             </button>
-            <!-- Scan Results -->
+            {% endif %}
+
+            <!-- Scan Results (shared by both paths) -->
             <div id="scanResults" class="hidden mt-3 space-y-2">
                 <div id="scanSummary" class="text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"></div>
                 <div id="unorganizedList" class="space-y-1 max-h-64 overflow-y-auto"></div>
@@ -73,10 +161,32 @@
                     <i class="fas fa-folder-tree mr-1"></i> Organize Files into Standard Folders
                 </button>
             </div>
+
             {% else %}
-            <p class="text-sm" style="color: {{ theme_colors['status-warning'] }}">
-                <i class="fas fa-exclamation-triangle mr-1"></i> No folder path configured. <a href="/brands/{{ brand.id }}" class="underline">Set it in brand settings.</a>
-            </p>
+            <!-- No folder path configured — inline setter -->
+            <div x-data="{ showFolderInput: false }">
+                <p class="text-sm" style="color: {{ theme_colors['status-warning'] }}">
+                    <i class="fas fa-exclamation-triangle mr-1"></i> No folder path configured.
+                </p>
+                <div class="flex gap-2 mt-2">
+                    <button @click="showFolderInput = true" class="px-3 py-1.5 text-xs rounded-lg" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                        <i class="fas fa-folder-plus mr-1"></i> Set Folder Path
+                    </button>
+                    <a href="/brands/{{ brand.id }}" class="px-3 py-1.5 text-xs rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                        <i class="fas fa-cog mr-1"></i> Brand Settings
+                    </a>
+                </div>
+                <div x-show="showFolderInput" x-transition class="mt-3 space-y-2">
+                    <input type="text" id="newFolderPath" placeholder="/Users/you/Documents/BrandName" class="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                    <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">
+                        Existing folders will be preserved. Missing DIQIT subfolders (01_Brand, 10_Pipeline, etc.) will be created automatically.
+                    </p>
+                    <button onclick="setFolderPath(this)" class="px-4 py-2 text-sm rounded-lg" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                        <i class="fas fa-save mr-1"></i> Save & Create Structure
+                    </button>
+                </div>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -111,17 +221,48 @@
                         style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
                 </div>
                 <div>
-                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Personal LinkedIn URL (optional)</label>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Personal LinkedIn URL</label>
                     <input x-model="baselineProfileUrl" type="url" placeholder="https://www.linkedin.com/in/neerajkumar/"
                         class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
                         style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
                 </div>
             </div>
-            <button @click="runBaselineScrape($event.currentTarget)" class="px-4 py-2 text-sm rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
-                <i class="fab fa-linkedin mr-1"></i> Run Baseline Scrape
-            </button>
+            <div class="flex gap-2">
+                <button @click="saveLinkedInUrls($event.currentTarget)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
+                    <i class="fas fa-save mr-1"></i> Save LinkedIn URLs
+                </button>
+                <button @click="runBaselineScrape($event.currentTarget)" class="px-4 py-2 text-sm rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
+                    <i class="fab fa-linkedin mr-1"></i> Run Baseline Scrape
+                </button>
+            </div>
             <div x-show="baselineStatus" class="text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
                 <p x-text="baselineStatus"></p>
+            </div>
+
+            <!-- Scraping Progress / Results -->
+            <div x-show="scrapeResults.length > 0 || scrapePolling" class="mt-3 rounded-lg p-4 border space-y-2" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-semibold flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                        <i class="fas fa-database" style="color: {{ theme_colors['accent-primary'] }}"></i> Scrape Results
+                    </h4>
+                    <span x-show="scrapePolling" class="text-xs flex items-center gap-1" style="color: {{ theme_colors['status-warning'] }}">
+                        <i class="fas fa-spinner fa-spin"></i> Polling for results...
+                    </span>
+                </div>
+                <template x-for="r in scrapeResults" :key="r.source_name + r.created_at">
+                    <div class="flex items-center gap-3 text-xs p-2 rounded" style="background: {{ theme_colors['bg-primary'] }}">
+                        <i :class="r.is_error ? 'fas fa-exclamation-circle text-red-400' : (r.source_type === 'linkedin_company' ? 'fas fa-building text-blue-400' : 'fas fa-user text-green-400')"></i>
+                        <span class="flex-1" style="color: {{ theme_colors['text-secondary'] }}" x-text="r.source_name"></span>
+                        <span x-show="!r.is_error" class="font-medium" style="color: {{ theme_colors['accent-primary'] }}" x-text="r.item_count + ' posts'"></span>
+                        <span x-show="r.is_error" class="text-red-400">Error</span>
+                        <span style="color: {{ theme_colors['text-muted'] }}" x-text="r.created_at ? r.created_at.substring(0, 16) : ''"></span>
+                    </div>
+                </template>
+                <div x-show="scrapeTotalPosts > 0" class="text-xs pt-1" style="color: {{ theme_colors['text-muted'] }}">
+                    <i class="fas fa-info-circle mr-1"></i> Data stored in <code style="color: {{ theme_colors['accent-primary'] }}">scrape_results</code> table. View details at
+                    <a href="/brands/{{ brand.id }}/scraping" class="underline" style="color: {{ theme_colors['accent-primary'] }}">Data Enrichment</a>.
+                    Total: <strong x-text="scrapeTotalPosts"></strong> posts scraped.
+                </div>
             </div>
 
             <!-- Data Confidence Display (auto-calculated) -->
@@ -381,11 +522,22 @@
 function onboardingApp() {
     return {
         openStep: {{ 1 if not steps.folder.done else (2 if not steps.baseline_scrape.done else (3 if not (steps.brand_voice.done and steps.pillars.done) else 4)) }},
+        showProfile: false,
+        brandProfile: {
+            primary_color: '{{ brand.primary_color or "#000000" }}',
+            accent_color: '{{ brand.accent_color or "#6366f1" }}',
+            website: '{{ brand.website or "" }}',
+            linkedin_company_url: '{{ brand.linkedin_company_url or "" }}',
+            linkedin_profile_url: '{{ brand.linkedin_profile_url or "" }}'
+        },
         analyzing: false,
         recommendations: null,
-        baselineCompanyUrl: 'https://www.linkedin.com/company/diqit/',
-        baselineProfileUrl: '',
+        baselineCompanyUrl: '{{ brand.linkedin_company_url or "" }}',
+        baselineProfileUrl: '{{ brand.linkedin_profile_url or "" }}',
         baselineStatus: '',
+        scrapeResults: [],
+        scrapePolling: false,
+        scrapeTotalPosts: 0,
         skipBaseline: false,
         influenceLevel: {{ brand.baseline_influence_level or 3 }},
         influenceLevels: [
@@ -395,6 +547,72 @@ function onboardingApp() {
             { level: 4, label: "4 — Strong Influence", description: "Adopt most of the LinkedIn voice patterns. The voice was mostly on-target." },
             { level: 5, label: "5 — Full Adoption", description: "The historical LinkedIn voice IS the brand voice. It was well-managed and successful." }
         ],
+
+        init() {
+            // Load existing scrape results on page load
+            this.checkScrapeStatus();
+        },
+
+        async checkScrapeStatus() {
+            try {
+                const res = await fetch('/api/brands/{{ brand.id }}/onboard/baseline-status');
+                const data = await res.json();
+                if (data.ok) {
+                    this.scrapeResults = data.results;
+                    this.scrapeTotalPosts = data.total_posts;
+                }
+            } catch (e) {}
+        },
+
+        startScrapePolling() {
+            this.scrapePolling = true;
+            const poll = setInterval(async () => {
+                await this.checkScrapeStatus();
+                if (this.scrapeResults.length > 0) {
+                    clearInterval(poll);
+                    this.scrapePolling = false;
+                    if (this.scrapeTotalPosts > 0) {
+                        this.baselineStatus = `Scrape complete! ${this.scrapeTotalPosts} posts collected.`;
+                        toast('Baseline scrape completed!', 'success');
+                    }
+                }
+            }, 15000);
+            // Stop polling after 6 minutes max
+            setTimeout(() => { clearInterval(poll); this.scrapePolling = false; }, 360000);
+        },
+
+        async saveLinkedInUrls(btn) {
+            await withLoading(btn, async () => {
+                const res = await fetch('/api/brands/{{ brand.id }}/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        linkedin_company_url: this.baselineCompanyUrl,
+                        linkedin_profile_url: this.baselineProfileUrl
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    // Sync to brand profile section too
+                    this.brandProfile.linkedin_company_url = this.baselineCompanyUrl;
+                    this.brandProfile.linkedin_profile_url = this.baselineProfileUrl;
+                    toast('LinkedIn URLs saved', 'success');
+                }
+            });
+        },
+
+        async saveBrandProfile() {
+            // Also sync LinkedIn URLs to baseline fields
+            this.baselineCompanyUrl = this.brandProfile.linkedin_company_url;
+            this.baselineProfileUrl = this.brandProfile.linkedin_profile_url;
+            const res = await fetch('/api/brands/{{ brand.id }}/profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.brandProfile)
+            });
+            const data = await res.json();
+            if (data.ok) toast('Brand profile saved', 'success');
+        },
 
         async saveInfluenceLevel() {
             const res = await fetch('/api/brands/{{ brand.id }}/onboard/set-influence-level', {
@@ -482,7 +700,8 @@ async function runBaselineScrape(btn) {
         const data = await res.json();
         if (data.ok) {
             app.baselineStatus = data.message;
-            toast('Baseline scrape started — results in 3-5 minutes. Reload page to see influence level selector.', 'success');
+            app.startScrapePolling();
+            toast('Baseline scrape started — polling for results every 15s', 'success');
         } else {
             app.baselineStatus = 'Error: ' + (data.error || 'Unknown');
             toast(data.error || 'Baseline scrape failed', 'error');
@@ -528,6 +747,44 @@ async function organizeFiles(btn) {
         if (data.ok) {
             toast(`Organized ${data.moved} files. ${data.errors} errors.`, data.errors ? 'warning' : 'success');
             setTimeout(() => location.reload(), 1500);
+        }
+    });
+}
+
+async function setFolderPath(btn) {
+    const path = document.getElementById('newFolderPath').value.trim();
+    if (!path) return toast('Enter a folder path', 'warning');
+    await withLoading(btn, async () => {
+        const res = await fetch('/api/brands/{{ brand.id }}/onboard/set-folder-path', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_path: path })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            toast(data.folder_existed ? 'Folder linked — existing content detected' : `Folder created with ${data.folders_created} directories`, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            toast(data.error || 'Failed', 'error');
+        }
+    });
+}
+
+async function syncFromFoldersStep1(btn) {
+    await withLoading(btn, async () => {
+        const res = await fetch('/api/brands/{{ brand.id }}/onboard/sync-from-folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        const el = document.getElementById('syncResultsStep1');
+        el.classList.remove('hidden');
+        if (data.synced && data.synced.length > 0) {
+            el.innerHTML = '<p class="font-medium mb-1" style="color: {{ theme_colors["status-success"] }}"><i class="fas fa-check mr-1"></i>Synced:</p>' +
+                data.synced.map(s => `<p class="text-xs ml-3">• ${s}</p>`).join('');
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            el.innerHTML = '<p><i class="fas fa-info-circle mr-1" style="color: {{ theme_colors["accent-primary"] }}"></i>No new changes found in folders.</p>';
         }
     });
 }

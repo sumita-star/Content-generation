@@ -41,34 +41,27 @@
         .toast-enter { animation: toastIn 0.3s ease-out; }
         .toast-exit { animation: toastOut 0.25s ease-in forwards; }
 
-        /* Contextual Help Tooltips */
-        .help-tip { position: relative; display: inline-flex; cursor: help; }
-        .help-tip:hover::after {
-            content: attr(data-tip);
-            position: absolute;
-            bottom: calc(100% + 8px);
-            right: 0;
-            width: 240px;
-            padding: 8px 12px;
-            font-size: 12px;
-            line-height: 1.4;
+        /* Contextual Help Tooltips — JS-positioned, see helpTip script below */
+        .help-tip { display: inline-flex; cursor: help; }
+        #helpTipFloat {
+            position: fixed;
+            width: 220px;
+            max-width: 85vw;
+            padding: 8px 10px;
+            font-size: 11px;
+            line-height: 1.45;
             color: {{ theme_colors['text-primary'] }};
             background: {{ theme_colors['bg-tertiary'] }};
             border: 1px solid {{ theme_colors['border-hover'] }};
             border-radius: 8px;
-            z-index: 50;
+            z-index: 99999;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             pointer-events: none;
+            white-space: normal;
+            word-wrap: break-word;
+            display: none;
         }
-        .help-tip:hover::before {
-            content: '';
-            position: absolute;
-            bottom: calc(100% + 2px);
-            right: 8px;
-            border: 6px solid transparent;
-            border-top-color: {{ theme_colors['border-hover'] }};
-            z-index: 51;
-        }
+        #helpTipFloat.visible { display: block; }
     </style>
 </head>
 <body class="h-full" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}" x-data="{
@@ -179,7 +172,7 @@
                     <i class="fas fa-cog w-5 text-center"></i><span>Settings</span>
                 </a>
                 <div class="text-xs text-center mt-2" style="color: {{ theme_colors['text-disabled'] }}">
-                    DigitalAIzeme v2.1<br>
+                    DigitalAIzeme v2.9<br>
                     <span style="color: {{ theme_colors['text-disabled'] }}">Local deployment</span>
                 </div>
             </div>
@@ -322,6 +315,35 @@
             </div>
         </main>
     </div>
+
+    <!-- Floating Help Tooltip -->
+    <div id="helpTipFloat"></div>
+    <script>
+    (function() {
+        const tip = document.getElementById('helpTipFloat');
+        document.addEventListener('mouseover', function(e) {
+            const el = e.target.closest('.help-tip');
+            if (!el || !el.dataset.tip) { tip.classList.remove('visible'); return; }
+            tip.textContent = el.dataset.tip;
+            tip.classList.add('visible');
+            const r = el.getBoundingClientRect();
+            const tw = 220, gap = 8;
+            // Vertical: prefer below, flip above if near bottom
+            let top = r.bottom + gap;
+            if (top + 100 > window.innerHeight) top = r.top - gap - tip.offsetHeight;
+            if (top < 4) top = r.bottom + gap;
+            // Horizontal: center on icon, clamp to viewport
+            let left = r.left + r.width / 2 - tw / 2;
+            if (left < 8) left = 8;
+            if (left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+            tip.style.top = top + 'px';
+            tip.style.left = left + 'px';
+        });
+        document.addEventListener('mouseout', function(e) {
+            if (e.target.closest('.help-tip')) tip.classList.remove('visible');
+        });
+    })();
+    </script>
 
     <!-- Toast Notifications -->
     <div id="toastContainer" class="fixed top-4 right-4 z-[100] space-y-2 pointer-events-none" style="max-width: 380px;"></div>
