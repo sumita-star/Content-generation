@@ -54,8 +54,7 @@
                             {% if item.status == 'published' %}bg-green-400
                             {% elif item.status == 'review' %}bg-yellow-400
                             {% elif item.status == 'ready' %}bg-orange-400
-                            {% elif item.status in ['drafting','visuals'] %}bg-blue-400
-                            {% elif item.status == 'research' %}bg-purple-400
+                            {% elif item.status == 'drafting' %}bg-blue-400
                             {% else %}bg-gray-500{% endif %}"></span>
                         <h4 class="text-sm truncate flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ item.title }}</h4>
                     </div>

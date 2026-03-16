@@ -18,7 +18,7 @@
     <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Plan</p>
     <a href="/brands/{{ brand.id }}/scraping" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'scraping' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
        {% if 'scraping' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
-        <i class="fas fa-database w-5 text-center"></i><span>Data Enrichment</span>
+        <i class="fas fa-database w-5 text-center"></i><span>Sources & Scraping</span>
     </a>
     <a href="/brands/{{ brand.id }}/analytics" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'analytics' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
        {% if 'analytics' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
@@ -35,13 +35,13 @@
 
     <!-- Execute & Create -->
     <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Create</p>
-    <a href="/brands/{{ brand.id }}/workflow" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'workflow' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
-       {% if 'workflow' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
-        <i class="fas fa-project-diagram w-5 text-center"></i><span>Workflow</span>
-    </a>
-    <a href="/brands/{{ brand.id }}/pipeline" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'pipeline' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
-       {% if 'pipeline' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+    <a href="/brands/{{ brand.id }}/pipeline" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'pipeline' in request.path and 'workflow' not in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'pipeline' not in request.path or 'workflow' in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
         <i class="fas fa-columns w-5 text-center"></i><span>Pipeline</span>
+    </a>
+    <a href="/brands/{{ brand.id }}/workflow" class="flex items-center gap-3 pl-8 pr-3 py-1.5 rounded-lg text-xs {% if 'workflow' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
+       {% if 'workflow' not in request.path %}style="color: {{ theme_colors['text-muted'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
+        <i class="fas fa-cog w-4 text-center"></i><span>Workflow Config</span>
     </a>
     <a href="/brands/{{ brand.id }}/preview" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if 'preview' in request.path or 'feedback' in request.path %}bg-dm-primary/20 text-dm-accent{% else %}transition-all{% endif %}"
        {% if 'preview' not in request.path and 'feedback' not in request.path %}style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''"{% endif %}>
@@ -370,7 +370,7 @@
                 <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
                     <i class="fas fa-cloud-upload-alt mr-2 text-dm-accent"></i>Smart File Drop
                 </h2>
-                <span class="help-tip" data-tip="Drop any file here and it will be auto-routed to the correct DIQIT folder based on its name and type.">
+                <span class="help-tip" data-tip="Drop any file here and it will be auto-routed to the correct brand folder based on its name and type.">
                     <i class="fas fa-question-circle text-sm" style="color: {{ theme_colors['text-disabled'] }}"></i>
                 </span>
             </div>
@@ -396,7 +396,7 @@
                 <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
                     <i class="fas fa-sync-alt mr-2 text-dm-accent"></i>Folder Sync
                 </h2>
-                <span class="help-tip" data-tip="Scans your DIQIT folders for content files and imports them into the database. Use this to sync content created outside the app.">
+                <span class="help-tip" data-tip="Scans your brand folders for content files and imports them into the database. Use this to sync content created outside the app.">
                     <i class="fas fa-question-circle text-sm" style="color: {{ theme_colors['text-disabled'] }}"></i>
                 </span>
             </div>

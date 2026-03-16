@@ -1,13 +1,13 @@
 {% extends "brands/detail.html" %}
-{% block title %}Data Enrichment — {{ brand.name }} — DigitalAIzeme{% endblock %}
-{% block page_title %}{{ brand.name }} &rsaquo; Data Enrichment{% endblock %}
+{% block title %}Sources & Scraping — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Sources & Scraping{% endblock %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto space-y-6" x-data="scrapingApp()">
 
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
-            <i class="fas fa-database mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Data Enrichment
+            <i class="fas fa-database mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Sources & Scraping
         </h1>
         <button @click="showAddForm = !showAddForm" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
             <i class="fas fa-plus mr-1"></i>Add Target
@@ -20,7 +20,7 @@
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="text-[10px] uppercase tracking-wider block mb-1" style="color: {{ theme_colors['text-muted'] }}">Target Name</label>
-                <input type="text" x-model="newConfig.target_name" placeholder="e.g. DIQIT LinkedIn Posts"
+                <input type="text" x-model="newConfig.target_name" placeholder="e.g. {{ brand.name }} LinkedIn Posts"
                     class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
             </div>
             <div>
@@ -33,7 +33,7 @@
             </div>
             <div>
                 <label class="text-[10px] uppercase tracking-wider block mb-1" style="color: {{ theme_colors['text-muted'] }}">URL(s)</label>
-                <input type="text" x-model="newConfig.url" placeholder="https://www.linkedin.com/company/diqit/"
+                <input type="text" x-model="newConfig.url" placeholder="{{ brand.linkedin_company_url or 'https://www.linkedin.com/company/...' }}"
                     class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
             </div>
             <div>
@@ -60,16 +60,22 @@
         <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fab fa-linkedin text-2xl text-blue-400 mb-2"></i>
             <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Own LinkedIn</h4>
-            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">DIQIT profile <span class="text-blue-400">(Apify)</span></p>
+            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">{{ brand.name }} profile <span class="text-blue-400">(Apify)</span></p>
             {% if last_scrapes.get('linkedin_company') %}
             <p class="text-[9px] mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-clock mr-1"></i>{{ last_scrapes['linkedin_company']['at'][:16] }} ({{ last_scrapes['linkedin_company']['count'] }} items)</p>
             {% else %}
             <p class="text-[9px] mb-2 text-yellow-500"><i class="fas fa-exclamation-circle mr-1"></i>Never scraped</p>
             {% endif %}
-            <button @click="quickScrape('linkedin_company', 'https://www.linkedin.com/company/diqit/')"
+            {% if brand.linkedin_company_url %}
+            <button @click="quickScrape('linkedin_company', '{{ brand.linkedin_company_url }}')"
                 class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg w-full transition-colors">
                 <i class="fas fa-play mr-1"></i>Run Now
             </button>
+            {% else %}
+            <a href="/brands/{{ brand.id }}/onboarding" class="block px-3 py-1.5 text-yellow-600 text-[10px] text-center rounded-lg border border-yellow-600/30">
+                <i class="fas fa-link mr-1"></i>Set LinkedIn URL
+            </a>
+            {% endif %}
         </div>
         <!-- LOCAL: Competitor Intel -->
         <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
@@ -277,6 +283,387 @@
         </div>
     </div>
 
+    <!-- LinkedIn Post Intelligence Dashboard -->
+    <div x-data="{ deepTab: 'overview' }" class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fab fa-linkedin mr-2 text-blue-400"></i>LinkedIn Post Intelligence
+                {% if linkedin_analytics %}
+                <span class="text-xs font-normal ml-2" style="color: {{ theme_colors['text-muted'] }}">{{ linkedin_analytics.total_posts }} posts · {{ linkedin_analytics.earliest }} → {{ linkedin_analytics.latest }}</span>
+                {% endif %}
+            </h2>
+        </div>
+
+        {% if linkedin_analytics and linkedin_analytics.overview %}
+        {% set ov = linkedin_analytics.overview %}
+        {% set pm = linkedin_analytics.pillar_mapping %}
+        {% set fa = linkedin_analytics.format_analysis %}
+        {% set tp = linkedin_analytics.temporal %}
+        {% set st = linkedin_analytics.sentiment_tone %}
+        {% set vd = linkedin_analytics.viral_dna %}
+
+        <!-- Tab Navigation -->
+        <div class="flex overflow-x-auto border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for tab_id, tab_label, tab_icon in [('overview','Overview','fa-chart-line'),('pillars','Pillars','fa-columns'),('format','Format','fa-align-left'),('timing','Timing','fa-clock'),('viral','Viral DNA','fa-fire'),('posts','Top/Bottom','fa-list-ol')] %}
+            <button @click="deepTab='{{ tab_id }}'" :style="deepTab==='{{ tab_id }}' ? 'color: {{ theme_colors['accent-primary'] }}; border-bottom: 2px solid {{ theme_colors['accent-primary'] }}' : 'color: {{ theme_colors['text-muted'] }}; border-bottom: 2px solid transparent'"
+                class="px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-colors hover:opacity-80">
+                <i class="fas {{ tab_icon }} mr-1"></i>{{ tab_label }}
+            </button>
+            {% endfor %}
+        </div>
+
+        <div class="p-4">
+
+            <!-- ══ OVERVIEW TAB ══ -->
+            <div x-show="deepTab==='overview'" x-cloak>
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    {% for label, value, color in [
+                        ('Total Posts', ov.total_posts, theme_colors['accent-primary']),
+                        ('Median Engagement', ov.median_engagement, theme_colors['status-info']),
+                        ('Avg Engagement', ov.avg_engagement, theme_colors['status-success']),
+                        ('P90 Engagement', ov.p90_engagement, theme_colors['status-warning']),
+                        ('Virality Score', ov.avg_virality, theme_colors['accent-primary']),
+                        ('Conversation Rate', ov.avg_conversation_rate, theme_colors['status-info']),
+                        ('Posts/Week', ov.posting_freq_per_week, theme_colors['status-success']),
+                        ('Trend', ov.recency_trend|capitalize, theme_colors['status-warning']),
+                    ] %}
+                    <div class="text-center p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <div class="text-lg font-bold" style="color: {{ color }}">{{ value }}</div>
+                        <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">{{ label }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Sentiment Bar -->
+                {% set s_total = (st.sentiment_dist.get('positive', 0) + st.sentiment_dist.get('neutral', 0) + st.sentiment_dist.get('negative', 0)) or 1 %}
+                <div class="mb-4">
+                    <span class="text-[10px] uppercase tracking-wider block mb-1.5" style="color: {{ theme_colors['text-muted'] }}">Sentiment Distribution</span>
+                    <div class="flex h-6 rounded-full overflow-hidden">
+                        <div style="width: {{ (st.sentiment_dist.get('positive', 0) / s_total * 100)|round }}%; background: {{ theme_colors['status-success'] }}" class="flex items-center justify-center text-[10px] font-bold text-white">{{ (st.sentiment_dist.get('positive', 0) / s_total * 100)|round|int }}%</div>
+                        <div style="width: {{ (st.sentiment_dist.get('neutral', 0) / s_total * 100)|round }}%; background: {{ theme_colors['text-muted'] }}" class="flex items-center justify-center text-[10px] font-bold text-white">{{ (st.sentiment_dist.get('neutral', 0) / s_total * 100)|round|int }}%</div>
+                        <div style="width: {{ (st.sentiment_dist.get('negative', 0) / s_total * 100)|round }}%; background: {{ theme_colors['status-error'] }}" class="flex items-center justify-center text-[10px] font-bold text-white">{{ (st.sentiment_dist.get('negative', 0) / s_total * 100)|round|int }}%</div>
+                    </div>
+                    <div class="flex justify-between text-[10px] mt-1" style="color: {{ theme_colors['text-muted'] }}">
+                        <span><span style="color: {{ theme_colors['status-success'] }}">●</span> Positive</span>
+                        <span><span style="color: {{ theme_colors['text-muted'] }}">●</span> Neutral</span>
+                        <span><span style="color: {{ theme_colors['status-error'] }}">●</span> Negative</span>
+                    </div>
+                </div>
+
+                <!-- Tone Distribution -->
+                <div>
+                    <span class="text-[10px] uppercase tracking-wider block mb-1.5" style="color: {{ theme_colors['text-muted'] }}">Tone Performance</span>
+                    {% set max_tone_eng = st.tone_dist[0].avg_engagement if st.tone_dist else 1 %}
+                    {% for td in st.tone_dist %}
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="text-xs w-28 flex-shrink-0 capitalize" style="color: {{ theme_colors['text-secondary'] }}">{{ td.tone|replace('_', ' ') }}</span>
+                        <div class="flex-1 h-5 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                            <div class="h-full rounded-full flex items-center pl-2" style="width: {{ (td.avg_engagement / (max_tone_eng or 1) * 100)|round }}%; background: {{ theme_colors['accent-primary'] }}40; min-width: 20px">
+                                <span class="text-[10px] font-bold" style="color: {{ theme_colors['accent-primary'] }}">{{ td.avg_engagement }}</span>
+                            </div>
+                        </div>
+                        <span class="text-[10px] w-8 text-right" style="color: {{ theme_colors['text-muted'] }}">{{ td.count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- ══ PILLARS TAB ══ -->
+            <div x-show="deepTab==='pillars'" x-cloak>
+                {% if pm.mapped %}
+                <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Pillar Performance</span>
+                {% set max_pillar_eng = pm.mapped[0].avg_engagement if pm.mapped else 1 %}
+                {% for mp in pm.mapped %}
+                <div class="flex items-center gap-2 mb-2 p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <div class="w-3 h-3 rounded-full flex-shrink-0" style="background: {{ mp.pillar_color }}"></div>
+                    <span class="text-xs font-medium w-32 flex-shrink-0 truncate" style="color: {{ theme_colors['text-primary'] }}">{{ mp.pillar_name }}</span>
+                    <div class="flex-1 h-4 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-primary'] }}">
+                        <div class="h-full rounded-full" style="width: {{ (mp.avg_engagement / (max_pillar_eng or 1) * 100)|round }}%; background: {{ mp.pillar_color }}60; min-width: 10px"></div>
+                    </div>
+                    <span class="text-[10px] w-20 text-right flex-shrink-0" style="color: {{ theme_colors['text-muted'] }}">{{ mp.post_count }} posts · {{ mp.avg_engagement }}</span>
+                </div>
+                {% endfor %}
+                {% endif %}
+
+                {% if pm.gaps %}
+                <div class="mt-4">
+                    <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['status-error'] }}">⚠ Pillar Gaps (No Posts)</span>
+                    <div class="flex flex-wrap gap-2">
+                        {% for gp in pm.gaps %}
+                        <span class="px-2 py-1 rounded-lg text-xs border" style="border-color: {{ theme_colors['status-error'] }}40; color: {{ theme_colors['status-error'] }}">
+                            <span class="inline-block w-2 h-2 rounded-full mr-1" style="background: {{ gp.pillar_color }}"></span>{{ gp.pillar_name }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if pm.unlabeled_themes %}
+                <div class="mt-4">
+                    <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['status-warning'] }}">Emerging Themes (Not in Pillars)</span>
+                    <div class="flex flex-wrap gap-1">
+                        {% for ut in pm.unlabeled_themes %}
+                        <span class="px-2 py-0.5 rounded-full text-xs" style="background: {{ theme_colors['status-warning'] }}15; color: {{ theme_colors['status-warning'] }}">{{ ut.theme }} ({{ ut.count }})</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if not pm.mapped and not pm.gaps %}
+                <div class="text-center py-6">
+                    <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No content pillars defined — add pillars in Brand Voice or Onboarding</p>
+                </div>
+                {% endif %}
+
+                <div class="text-xs p-2 mt-4 rounded-lg" style="background: {{ theme_colors['accent-primary'] }}08; color: {{ theme_colors['text-muted'] }}; border: 1px solid {{ theme_colors['accent-primary'] }}20">
+                    <i class="fas fa-info-circle mr-1" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                    Pillar mapping feeds into Research Brief and Smart Discovery
+                </div>
+            </div>
+
+            <!-- ══ FORMAT TAB ══ -->
+            <div x-show="deepTab==='format'" x-cloak>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Post Length -->
+                    <div>
+                        <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Post Length</span>
+                        {% set max_len_eng = fa.length_buckets[0].avg_engagement if fa.length_buckets else 1 %}
+                        {% for lb in fa.length_buckets %}
+                        <div class="flex items-center gap-2 mb-1.5">
+                            <span class="text-[10px] w-28 flex-shrink-0" style="color: {{ theme_colors['text-secondary'] }}">{{ lb.label }}</span>
+                            <div class="flex-1 h-4 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                                <div class="h-full rounded-full" style="width: {{ (lb.avg_engagement / (max_len_eng or 1) * 100)|round }}%; background: {{ theme_colors['accent-primary'] }}50; min-width: 10px"></div>
+                            </div>
+                            <span class="text-[10px] w-16 text-right" style="color: {{ theme_colors['text-muted'] }}">{{ lb.count }}p · {{ lb.avg_engagement }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Hook Types -->
+                    <div>
+                        <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Hook Types</span>
+                        {% set max_hook_eng = fa.hook_types[0].avg_engagement if fa.hook_types else 1 %}
+                        {% for ht in fa.hook_types %}
+                        <div class="flex items-center gap-2 mb-1.5">
+                            <span class="text-[10px] w-20 flex-shrink-0 capitalize" style="color: {{ theme_colors['text-secondary'] }}">{{ ht.type|replace('_', ' ') }}</span>
+                            <div class="flex-1 h-4 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                                <div class="h-full rounded-full" style="width: {{ (ht.avg_engagement / (max_hook_eng or 1) * 100)|round }}%; background: {{ theme_colors['status-info'] }}50; min-width: 10px"></div>
+                            </div>
+                            <span class="text-[10px] w-16 text-right" style="color: {{ theme_colors['text-muted'] }}">{{ ht.count }}p · {{ ht.avg_engagement }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Binary Comparisons -->
+                <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {% for label, data in [('Emojis', fa.emoji_impact), ('Links', fa.link_impact), ('Lists', fa.list_impact), ('Hashtags', {'with': {'count': fa.hashtag_stats.avg_per_post|round|int, 'avg_eng': 0}, 'without': {'count': 0, 'avg_eng': 0}})] %}
+                    {% if label != 'Hashtags' %}
+                    <div class="p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <span class="text-[10px] uppercase tracking-wider block mb-1" style="color: {{ theme_colors['text-muted'] }}">{{ label }}</span>
+                        <div class="flex justify-between text-[10px]">
+                            <span style="color: {{ theme_colors['status-success'] }}">With: {{ data.with.count }} ({{ data.with.avg_eng }})</span>
+                            <span style="color: {{ theme_colors['text-muted'] }}">W/o: {{ data.without.count }} ({{ data.without.avg_eng }})</span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <span class="text-[10px] uppercase tracking-wider block mb-1" style="color: {{ theme_colors['text-muted'] }}">Avg Hashtags</span>
+                        <div class="text-sm font-bold" style="color: {{ theme_colors['accent-primary'] }}">{{ fa.hashtag_stats.avg_per_post }}/post</div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+
+                <!-- Top Hashtags -->
+                {% if fa.hashtag_stats.most_used %}
+                <div class="mt-3">
+                    <span class="text-[10px] uppercase tracking-wider block mb-1.5" style="color: {{ theme_colors['text-muted'] }}">Most Used Hashtags</span>
+                    <div class="flex flex-wrap gap-1">
+                        {% for h in fa.hashtag_stats.most_used[:10] %}
+                        <span class="px-2 py-0.5 rounded-full text-xs" style="background: {{ theme_colors['status-info'] }}15; color: {{ theme_colors['status-info'] }}">{{ h.tag }} ({{ h.count }})</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- CTA Types -->
+                {% if fa.cta_types %}
+                <div class="mt-4">
+                    <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">CTA Types</span>
+                    {% set max_cta_eng = fa.cta_types[0].avg_engagement if fa.cta_types else 1 %}
+                    {% for ct in fa.cta_types %}
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="text-[10px] w-24 flex-shrink-0 capitalize" style="color: {{ theme_colors['text-secondary'] }}">{{ ct.type|replace('_', ' ') }}</span>
+                        <div class="flex-1 h-4 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-tertiary'] }}">
+                            <div class="h-full rounded-full" style="width: {{ (ct.avg_engagement / (max_cta_eng or 1) * 100)|round }}%; background: {{ theme_colors['status-success'] }}50; min-width: 10px"></div>
+                        </div>
+                        <span class="text-[10px] w-16 text-right" style="color: {{ theme_colors['text-muted'] }}">{{ ct.count }}p · {{ ct.avg_engagement }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- ══ TIMING TAB ══ -->
+            <div x-show="deepTab==='timing'" x-cloak>
+                <!-- Day of Week Heatmap -->
+                <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Day of Week Performance</span>
+                {% set max_day_eng = tp.day_of_week|map(attribute='avg_engagement')|max if tp.day_of_week else 1 %}
+                <div class="grid grid-cols-7 gap-1 mb-4">
+                    {% for dow in tp.day_of_week %}
+                    {% set opacity = (dow.avg_engagement / max_day_eng * 0.8 + 0.1) if max_day_eng else 0.1 %}
+                    <div class="text-center p-2 rounded-lg" style="background: {{ theme_colors['accent-primary'] }}{{ '%02x'|format((opacity * 255)|int) }}">
+                        <div class="text-[10px] font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ dow.day }}</div>
+                        <div class="text-sm font-bold" style="color: {{ theme_colors['accent-primary'] }}">{{ dow.avg_engagement }}</div>
+                        <div class="text-[9px]" style="color: {{ theme_colors['text-muted'] }}">{{ dow.post_count }}p</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Best Windows -->
+                {% if tp.best_windows %}
+                <div class="mb-4">
+                    <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Best Posting Days</span>
+                    <div class="flex flex-wrap gap-2">
+                        {% for bw in tp.best_windows %}
+                        <div class="px-3 py-2 rounded-lg border" style="border-color: {{ theme_colors['status-success'] }}40; background: {{ theme_colors['status-success'] }}08">
+                            <span class="text-sm font-bold" style="color: {{ theme_colors['status-success'] }}">{{ bw.day }}</span>
+                            <span class="text-[10px] ml-1" style="color: {{ theme_colors['text-muted'] }}">avg {{ bw.avg_engagement }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Monthly Trend -->
+                {% if tp.monthly_trend %}
+                <div class="mb-4">
+                    <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Monthly Posting Volume</span>
+                    {% set max_month = tp.monthly_trend|map(attribute='post_count')|max if tp.monthly_trend else 1 %}
+                    <div class="flex items-end gap-1 h-16">
+                        {% for mt in tp.monthly_trend %}
+                        <div class="flex-1 flex flex-col items-center">
+                            <div class="w-full rounded-t" style="height: {{ (mt.post_count / max_month * 48)|round }}px; background: {{ theme_colors['accent-primary'] }}60; min-height: 4px"></div>
+                            <span class="text-[8px] mt-0.5" style="color: {{ theme_colors['text-muted'] }}">{{ mt.month[-2:] }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Recency Trend -->
+                <div class="p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                    <span class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Posting Frequency Trend</span>
+                    <div class="text-lg font-bold mt-1" style="color: {% if tp.recency_trend == 'increasing' %}{{ theme_colors['status-success'] }}{% elif tp.recency_trend == 'decreasing' %}{{ theme_colors['status-error'] }}{% else %}{{ theme_colors['status-info'] }}{% endif %}">
+                        {% if tp.recency_trend == 'increasing' %}↑ Increasing{% elif tp.recency_trend == 'decreasing' %}↓ Declining{% else %}→ Stable{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- ══ VIRAL DNA TAB ══ -->
+            <div x-show="deepTab==='viral'" x-cloak>
+                <!-- Viral Formula Card -->
+                <div class="p-4 rounded-xl mb-4 border-2" style="border-color: {{ theme_colors['status-warning'] }}40; background: {{ theme_colors['status-warning'] }}08">
+                    <span class="text-[10px] uppercase tracking-wider block mb-1" style="color: {{ theme_colors['status-warning'] }}">Your Viral Formula</span>
+                    <div class="text-lg font-bold" style="color: {{ theme_colors['text-primary'] }}">{{ vd.formula_text }}</div>
+                </div>
+
+                <!-- Trait Breakdown -->
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                    {% for label, value in [
+                        ('Avg Length', (vd.traits.avg_length|string) + ' words'),
+                        ('Best Hook', vd.traits.dominant_hook|replace('_',' ')|capitalize),
+                        ('Best Pillar', vd.traits.dominant_pillar),
+                        ('Best Tone', vd.traits.dominant_tone|replace('_',' ')|capitalize),
+                        ('Emoji %', (vd.traits.emoji_pct|string) + '%'),
+                        ('Avg Hashtags', vd.traits.avg_hashtags),
+                    ] %}
+                    <div class="p-2 rounded-lg text-center" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <div class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">{{ label }}</div>
+                        <div class="text-sm font-bold capitalize" style="color: {{ theme_colors['accent-primary'] }}">{{ value }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Top Viral Posts -->
+                {% if vd.top_viral_posts %}
+                <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['text-muted'] }}">Top Viral Posts</span>
+                <div class="space-y-2">
+                    {% for vp in vd.top_viral_posts[:3] %}
+                    <div class="p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <div class="text-xs mb-1.5 line-clamp-2" style="color: {{ theme_colors['text-secondary'] }}">{{ vp.text_preview }}</div>
+                        <div class="flex flex-wrap gap-2 text-[10px]">
+                            <span style="color: {{ theme_colors['status-success'] }}"><i class="fas fa-thumbs-up mr-0.5"></i>{{ vp.likes }}</span>
+                            <span style="color: {{ theme_colors['status-info'] }}"><i class="fas fa-comment mr-0.5"></i>{{ vp.comments }}</span>
+                            <span style="color: {{ theme_colors['accent-primary'] }}"><i class="fas fa-share mr-0.5"></i>{{ vp.shares }}</span>
+                            <span class="px-1.5 py-0.5 rounded capitalize" style="background: {{ theme_colors['accent-primary'] }}15; color: {{ theme_colors['accent-primary'] }}">{{ vp.hook|replace('_',' ') }}</span>
+                            <span class="px-1.5 py-0.5 rounded capitalize" style="background: {{ theme_colors['status-info'] }}15; color: {{ theme_colors['status-info'] }}">{{ vp.tone|replace('_',' ') }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- ══ TOP/BOTTOM POSTS TAB ══ -->
+            <div x-show="deepTab==='posts'" x-cloak>
+                <!-- Top Posts -->
+                {% if linkedin_analytics.top_posts %}
+                <span class="text-[10px] uppercase tracking-wider block mb-2" style="color: {{ theme_colors['status-success'] }}">Top Performing Posts</span>
+                <div class="space-y-2 mb-4">
+                    {% for tp_item in linkedin_analytics.top_posts %}
+                    <div class="p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}">
+                        <div class="text-xs mb-1.5 line-clamp-3" style="color: {{ theme_colors['text-secondary'] }}">{{ tp_item.text_preview }}</div>
+                        <div class="flex flex-wrap gap-2 text-[10px]">
+                            <span class="font-bold" style="color: {{ theme_colors['accent-primary'] }}">Eng: {{ tp_item.engagement }}</span>
+                            <span style="color: {{ theme_colors['status-success'] }}"><i class="fas fa-thumbs-up mr-0.5"></i>{{ tp_item.likes }}</span>
+                            <span style="color: {{ theme_colors['status-info'] }}"><i class="fas fa-comment mr-0.5"></i>{{ tp_item.comments }}</span>
+                            <span style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-share mr-0.5"></i>{{ tp_item.shares }}</span>
+                            <span class="px-1.5 py-0.5 rounded capitalize" style="background: {{ theme_colors['accent-primary'] }}15; color: {{ theme_colors['accent-primary'] }}">{{ tp_item.hook|replace('_',' ') }}</span>
+                            <span class="px-1.5 py-0.5 rounded capitalize" style="background: {{ theme_colors['status-info'] }}15; color: {{ theme_colors['status-info'] }}">{{ tp_item.tone|replace('_',' ') }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Bottom Posts -->
+                {% if linkedin_analytics.bottom_posts %}
+                <div x-data="{ showBottom: false }">
+                    <button @click="showBottom = !showBottom" class="text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1" style="color: {{ theme_colors['status-error'] }}">
+                        <i class="fas fa-chevron-right text-[8px] transition-transform" :class="showBottom && 'rotate-90'"></i>
+                        Lowest Performing Posts ({{ linkedin_analytics.bottom_posts|length }})
+                    </button>
+                    <div x-show="showBottom" x-cloak class="space-y-2">
+                        {% for bp in linkedin_analytics.bottom_posts %}
+                        <div class="p-2 rounded-lg text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['status-error'] }}15">
+                            <div class="line-clamp-2 mb-1" style="color: {{ theme_colors['text-secondary'] }}">{{ bp.text_preview }}</div>
+                            <div class="flex gap-2 text-[10px]" style="color: {{ theme_colors['text-muted'] }}">
+                                <span>Eng: {{ bp.engagement }}</span>
+                                <span class="capitalize">{{ bp.hook|replace('_',' ') }} hook</span>
+                                <span class="capitalize">{{ bp.tone|replace('_',' ') }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+        </div>
+
+        {% else %}
+        <!-- Empty state -->
+        <div class="text-center py-8">
+            <i class="fab fa-linkedin text-4xl mb-3" style="color: {{ theme_colors['text-disabled'] }}"></i>
+            <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No LinkedIn post data yet</p>
+            <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Run a baseline scrape in Onboarding or add a LinkedIn scrape target above</p>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Competitors -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
@@ -383,83 +770,6 @@
         </div>
     </div>
 
-    <!-- Research Brief Pipeline -->
-    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
-            <div>
-                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-flask mr-2 text-pink-400"></i>Research Brief Pipeline</h2>
-                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Opus 4.6 synthesizes scraping data into a deep research brief → Gemini Deep Research → Content angles</p>
-            </div>
-            <div class="flex gap-2">
-                <button @click="generateBrief($event.currentTarget)" class="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm rounded-lg transition-colors">
-                    <i class="fas fa-brain mr-1"></i>Generate Brief
-                </button>
-            </div>
-        </div>
-        <div class="p-4 space-y-3">
-            <!-- Brief generation status -->
-            <div x-show="briefStatus" x-transition class="rounded-lg p-4" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
-                <div class="flex items-center gap-2 mb-2">
-                    <i class="fas fa-check-circle text-green-400" x-show="briefStatus === 'ready'"></i>
-                    <i class="fas fa-spinner fa-spin text-pink-400" x-show="briefStatus === 'generating'"></i>
-                    <span class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="briefStatus === 'generating' ? 'Opus 4.6 is synthesizing the research brief... (2-3 minutes, please wait)' : 'Brief ready'"></span>
-                </div>
-                <!-- Data quality indicators -->
-                <div x-show="dataQuality" class="flex gap-3 text-[10px] mt-1 mb-2">
-                    <span :class="dataQuality?.competitors_scraped > 0 ? 'text-green-400' : 'text-yellow-400'">
-                        <i class="fas" :class="dataQuality?.competitors_scraped > 0 ? 'fa-check' : 'fa-exclamation-triangle'"></i>
-                        Competitors: <span x-text="(dataQuality?.competitors_scraped || 0) + ' profiles'"></span>
-                    </span>
-                    <span :class="dataQuality?.leaders_scraped > 0 ? 'text-green-400' : 'text-yellow-400'">
-                        <i class="fas" :class="dataQuality?.leaders_scraped > 0 ? 'fa-check' : 'fa-exclamation-triangle'"></i>
-                        Leaders: <span x-text="(dataQuality?.leaders_scraped || 0) + ' profiles'"></span>
-                    </span>
-                    <span :class="dataQuality?.forums_useful > 0 ? 'text-green-400' : 'text-yellow-400'">
-                        <i class="fas" :class="dataQuality?.forums_useful > 0 ? 'fa-check' : 'fa-exclamation-triangle'"></i>
-                        Forums: <span x-text="(dataQuality?.forums_useful || 0) + ' pages'"></span>
-                    </span>
-                    <span class="text-gray-400">(Opus uses its own knowledge to fill gaps)</span>
-                </div>
-                <div x-show="briefPreview" class="text-xs mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap" style="color: {{ theme_colors['text-secondary'] }}" x-text="briefPreview"></div>
-                <div x-show="geminiPromptPreview" class="mt-3">
-                    <p class="text-[10px] uppercase tracking-wider mb-1" style="color: {{ theme_colors['text-muted'] }}">Gemini Deep Research Prompt</p>
-                    <div class="text-xs max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg p-2" style="background: {{ theme_colors['input-bg'] }}; color: {{ theme_colors['text-secondary'] }}" x-text="geminiPromptPreview"></div>
-                    <div class="mt-2 flex gap-2">
-                        <button @click="copyGeminiPrompt()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">
-                            <i class="fas fa-copy mr-1"></i>Copy Prompt
-                        </button>
-                    </div>
-                </div>
-                <div x-show="briefId && briefStatus === 'ready'" class="mt-3 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
-                    <p class="text-xs mb-2" style="color: {{ theme_colors['text-muted'] }}">Paste the Gemini Deep Research report below:</p>
-                    <textarea x-model="geminiReport" rows="6" class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Paste the full Gemini Deep Research report here..."></textarea>
-                    <button @click="uploadReport($event.currentTarget)" class="mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
-                        <i class="fas fa-upload mr-1"></i>Upload & Generate Content Angles
-                    </button>
-                </div>
-                <div x-show="contentAngles.length" class="mt-3 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
-                    <p class="text-xs font-medium mb-2" style="color: {{ theme_colors['accent-primary'] }}"><i class="fas fa-lightbulb mr-1"></i>Content Angles (<span x-text="contentAngles.length"></span> generated, <span x-text="itemsCreated"></span> added to pipeline)</p>
-                    <div class="space-y-1 max-h-64 overflow-y-auto">
-                        <template x-for="(angle, idx) in contentAngles" :key="idx">
-                            <div class="rounded-lg p-2 text-xs" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
-                                <div class="flex items-center gap-2">
-                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold" :class="angle.urgency === 'high' ? 'bg-red-600 text-white' : angle.urgency === 'medium' ? 'bg-yellow-600 text-white' : 'bg-gray-600 text-white'" x-text="angle.urgency"></span>
-                                    <span class="px-1.5 py-0.5 rounded text-[9px]" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" x-text="angle.format"></span>
-                                    <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="angle.title"></span>
-                                </div>
-                                <p class="mt-1" style="color: {{ theme_colors['text-muted'] }}" x-text="angle.angle"></p>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-            </div>
-            <div x-show="!briefStatus" class="text-center py-3" style="color: {{ theme_colors['text-muted'] }}">
-                <p class="text-xs">Click "Generate Brief" to synthesize competitor, leader, and forum scraping data into content strategy.</p>
-                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Uses: Competitors (7d) + Leaders (14d) + Forums (7d) + Own posts (60d)</p>
-            </div>
-        </div>
-    </div>
-
     <!-- AI Discovery -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
@@ -546,15 +856,6 @@ function scrapingApp() {
         discoveryResults: [],
         discoveryType: '',
         aiAdjustment: '',
-        briefStatus: '',
-        briefId: null,
-        briefPreview: '',
-        dataQuality: null,
-        geminiPromptPreview: '',
-        geminiPromptFull: '',
-        geminiReport: '',
-        contentAngles: [],
-        itemsCreated: 0,
         newConfig: { target_name: '', target_type: 'linkedin_company', url: '', schedule: 'weekly' },
         newCompetitor: { name: '', linkedin_url: '' },
 
@@ -905,7 +1206,7 @@ function scrapingApp() {
         async setupDefaults(btn) {
             withLoading(btn, async () => {
                 const defaults = [
-                    { target_name: '{{ brand.name }} LinkedIn', target_type: 'linkedin_company', input_config: { profileUrls: ['https://www.linkedin.com/company/diqit/'] }, schedule: 'weekly' },
+                    { target_name: '{{ brand.name }} LinkedIn', target_type: 'linkedin_company', input_config: { profileUrls: ['{{ brand.linkedin_company_url }}'] }, schedule: 'weekly' },
                     { target_name: 'All Competitors', target_type: 'linkedin_company', input_config: { profileUrls: {{ competitors | map(attribute='linkedin_url') | select | list | tojson }} }, schedule: 'monthly' },
                 ];
                 let added = 0;
@@ -920,76 +1221,6 @@ function scrapingApp() {
                 }
                 toast(`Created ${added} default targets`, 'success');
                 location.reload();
-            });
-        },
-
-        async generateBrief(btn) {
-            this.briefStatus = 'generating';
-            this.briefPreview = '';
-            this.geminiPromptPreview = '';
-            this.contentAngles = [];
-            // Opus 4.6 makes 2 sequential API calls — takes 2-3 minutes total
-            toast('Generating research brief with Opus 4.6... This takes 2-3 minutes (2 AI calls). Please wait.', 'info');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Opus thinking... ~2-3 min';
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout
-                const res = await fetch('/api/brands/{{ brand.id }}/research-brief/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({}),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-                const data = await res.json();
-                if (data.ok) {
-                    this.briefId = data.brief_id;
-                    this.briefPreview = data.brief_preview;
-                    this.geminiPromptPreview = data.gemini_prompt_preview;
-                    this.dataQuality = data.data_quality || null;
-                    this.briefStatus = 'ready';
-                    toast('Research brief generated! Copy the Gemini prompt and run Deep Research.', 'success');
-                } else {
-                    this.briefStatus = '';
-                    toast(data.error || 'Brief generation failed', 'error');
-                }
-            } catch (e) {
-                this.briefStatus = '';
-                toast(e.name === 'AbortError' ? 'Request timed out. Try again.' : 'Brief generation failed: ' + e.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-brain mr-1"></i>Generate Brief';
-            }
-        },
-
-        async copyGeminiPrompt() {
-            if (!this.briefId) return;
-            const res = await fetch(`/api/brands/{{ brand.id }}/research-briefs/${this.briefId}`);
-            const data = await res.json();
-            if (data.ok) {
-                await navigator.clipboard.writeText(data.brief.gemini_prompt || this.geminiPromptPreview);
-                toast('Gemini prompt copied to clipboard!', 'success');
-            }
-        },
-
-        async uploadReport(btn) {
-            if (!this.geminiReport.trim()) return toast('Paste the Gemini report first', 'warning');
-            if (!this.briefId) return toast('No brief to upload to', 'warning');
-            withLoading(btn, async () => {
-                const res = await fetch(`/api/brands/{{ brand.id }}/research-brief/${this.briefId}/upload-report`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ report: this.geminiReport })
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    this.contentAngles = data.content_angles || [];
-                    this.itemsCreated = data.items_created || 0;
-                    toast(`${data.total_angles} content angles generated, ${data.items_created} added to pipeline!`, 'success');
-                } else {
-                    toast(data.error || 'Report processing failed', 'error');
-                }
             });
         },
 

@@ -461,6 +461,86 @@
                             <i class="fas fa-redo mr-1"></i> Re-analyze
                         </button>
                     </div>
+
+                    <!-- Auto-Discovery -->
+                    <div class="rounded-lg p-4 border mt-4" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                                <i class="fas fa-search-plus" style="color: {{ theme_colors['accent-secondary'] }}"></i>
+                                Auto-Discover Intelligence Sources
+                                <span class="help-tip" data-tip="AI discovers competitors, forums, and industry leaders relevant to your brand. Review and accept the ones you want to track.">
+                                    <i class="fas fa-question-circle text-xs font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                                </span>
+                            </h4>
+                        </div>
+                        <p class="text-xs mb-3" style="color: {{ theme_colors['text-muted'] }}">
+                            Discover competitors, forums, and industry leaders to monitor for your content strategy.
+                        </p>
+                        <button @click="runAutoDiscovery()" :disabled="discovering" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-secondary'] }}; color: white">
+                            <template x-if="discovering"><span><i class="fas fa-spinner fa-spin mr-1"></i>Discovering...</span></template>
+                            <template x-if="!discovering"><span><i class="fas fa-binoculars mr-1"></i>Discover Sources</span></template>
+                        </button>
+
+                        <template x-if="discoveryResults">
+                            <div class="mt-3 space-y-3">
+                                <!-- Competitors -->
+                                <template x-if="discoveryResults.competitors && discoveryResults.competitors.length > 0">
+                                    <div>
+                                        <div class="text-xs font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-building mr-1 text-red-400"></i>Competitors (<span x-text="discoveryResults.competitors.length"></span>)</div>
+                                        <div class="space-y-1">
+                                            <template x-for="(c, i) in discoveryResults.competitors">
+                                                <div class="flex items-center justify-between text-xs p-2 rounded-lg" style="background: {{ theme_colors['bg-primary'] }}">
+                                                    <div class="flex-1">
+                                                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="c.name"></span>
+                                                        <span class="ml-2" style="color: {{ theme_colors['text-muted'] }}" x-text="c.reason"></span>
+                                                    </div>
+                                                    <button @click="discoveryResults.competitors.splice(i, 1)" class="text-red-400 hover:text-red-300 ml-2"><i class="fas fa-times"></i></button>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Forums -->
+                                <template x-if="discoveryResults.forums && discoveryResults.forums.length > 0">
+                                    <div>
+                                        <div class="text-xs font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-comments mr-1 text-blue-400"></i>Forums & Communities (<span x-text="discoveryResults.forums.length"></span>)</div>
+                                        <div class="space-y-1">
+                                            <template x-for="(f, i) in discoveryResults.forums">
+                                                <div class="flex items-center justify-between text-xs p-2 rounded-lg" style="background: {{ theme_colors['bg-primary'] }}">
+                                                    <div class="flex-1">
+                                                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="f.name"></span>
+                                                        <span class="ml-2" style="color: {{ theme_colors['text-muted'] }}" x-text="f.platform + ' — ' + f.reason"></span>
+                                                    </div>
+                                                    <button @click="discoveryResults.forums.splice(i, 1)" class="text-red-400 hover:text-red-300 ml-2"><i class="fas fa-times"></i></button>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Leaders -->
+                                <template x-if="discoveryResults.leaders && discoveryResults.leaders.length > 0">
+                                    <div>
+                                        <div class="text-xs font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-user-tie mr-1 text-purple-400"></i>Industry Leaders (<span x-text="discoveryResults.leaders.length"></span>)</div>
+                                        <div class="space-y-1">
+                                            <template x-for="(l, i) in discoveryResults.leaders">
+                                                <div class="flex items-center justify-between text-xs p-2 rounded-lg" style="background: {{ theme_colors['bg-primary'] }}">
+                                                    <div class="flex-1">
+                                                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="l.name"></span>
+                                                        <span class="ml-2" style="color: {{ theme_colors['text-muted'] }}" x-text="(l.title || '') + (l.company ? ' @ ' + l.company : '') + ' — ' + (l.reason || '')"></span>
+                                                    </div>
+                                                    <button @click="discoveryResults.leaders.splice(i, 1)" class="text-red-400 hover:text-red-300 ml-2"><i class="fas fa-times"></i></button>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Accept All -->
+                                <button @click="acceptDiscoveries()" class="px-4 py-2 text-sm font-medium rounded-lg transition-colors bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/20">
+                                    <i class="fas fa-check-double mr-1"></i> Accept All Discovered Sources
+                                </button>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </template>
         </div>
@@ -487,6 +567,9 @@
                 <p><code style="color: {{ theme_colors['accent-primary'] }}">03_Strategy/content_pillars.md</code> → Replaces content pillars (use <code># Heading</code> per pillar)</p>
                 <p><code style="color: {{ theme_colors['accent-primary'] }}">03_Strategy/cadence.md</code> → Flagged for review</p>
                 <p><code style="color: {{ theme_colors['accent-primary'] }}">04_Content/*.md</code> → Imported as new content items</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">08_Research/competitor_registry.md</code> → Syncs competitors to DB</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">08_Research/forum_registry.md</code> → Syncs forums to DB</p>
+                <p><code style="color: {{ theme_colors['accent-primary'] }}">08_Research/leader_registry.md</code> → Syncs leaders to DB</p>
             </div>
             <button onclick="syncFromFolders(this)" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
                 <i class="fas fa-sync mr-1"></i> Sync Changes from Folders
@@ -532,6 +615,8 @@ function onboardingApp() {
         },
         analyzing: false,
         recommendations: null,
+        discovering: false,
+        discoveryResults: null,
         baselineCompanyUrl: '{{ brand.linkedin_company_url or "" }}',
         baselineProfileUrl: '{{ brand.linkedin_profile_url or "" }}',
         baselineStatus: '',
@@ -676,6 +761,47 @@ function onboardingApp() {
             if (data.ok) {
                 toast(`Applied all: ${data.applied.join(', ')}`, 'success');
                 setTimeout(() => location.reload(), 1500);
+            }
+        },
+
+        async runAutoDiscovery() {
+            this.discovering = true;
+            this.discoveryResults = null;
+            try {
+                const res = await fetch('/api/brands/{{ brand.id }}/onboard/auto-discover', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.discoveryResults = data.discovered;
+                    const total = (data.discovered.competitors || []).length + (data.discovered.forums || []).length + (data.discovered.leaders || []).length;
+                    toast(`Discovered ${total} intelligence sources`, 'success');
+                } else {
+                    toast(data.error || 'Discovery failed', 'error');
+                }
+            } catch (e) {
+                toast('Discovery error: ' + e.message, 'error');
+            } finally {
+                this.discovering = false;
+            }
+        },
+
+        async acceptDiscoveries() {
+            if (!this.discoveryResults) return;
+            const res = await fetch('/api/brands/{{ brand.id }}/onboard/accept-discoveries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.discoveryResults)
+            });
+            const data = await res.json();
+            if (data.ok) {
+                const total = data.added.competitors + data.added.forums + data.added.leaders;
+                toast(`Added ${total} sources (${data.added.competitors} competitors, ${data.added.forums} forums, ${data.added.leaders} leaders)`, 'success');
+                this.discoveryResults = null;
+            } else {
+                toast(data.error || 'Failed to accept', 'error');
             }
         }
     };

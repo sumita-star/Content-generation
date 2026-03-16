@@ -24,6 +24,197 @@
         </div>
     </div>
 
+    <!-- Research Intelligence -->
+    <div x-data="{ briefOpen: true }" class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between cursor-pointer" style="border-color: {{ theme_colors['border-primary'] }}" @click="briefOpen = !briefOpen">
+            <div>
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-flask mr-2 text-pink-400"></i>Research Intelligence</h2>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Generate AI-powered research briefs to discover content opportunities</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button @click.stop="generateBrief($event.currentTarget)"
+                    :disabled="['generating','synthesizing','prompting','researching','analyzing'].includes(briefStatus)"
+                    class="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50">
+                    <template x-if="!['generating','synthesizing','prompting','researching','analyzing'].includes(briefStatus)">
+                        <span><i class="fas fa-brain mr-1"></i>Generate Brief</span>
+                    </template>
+                    <template x-if="['generating','synthesizing','prompting','researching','analyzing'].includes(briefStatus)">
+                        <span><i class="fas fa-spinner fa-spin mr-1"></i>Running...</span>
+                    </template>
+                </button>
+                <i class="fas fa-chevron-down text-xs transition-transform" :class="briefOpen ? '' : '-rotate-90'" style="color: {{ theme_colors['text-muted'] }}"></i>
+            </div>
+        </div>
+        <div x-show="briefOpen" x-transition class="p-4 space-y-3">
+
+            <!-- Progress bar during pipeline -->
+            <div x-show="['generating','synthesizing','prompting','researching','analyzing'].includes(briefStatus)" x-transition class="rounded-lg p-4" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="flex items-center gap-2 text-sm mb-3">
+                    <i class="fas fa-spinner fa-spin text-pink-400"></i>
+                    <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="briefGeneratingStep"></span>
+                    <span x-show="briefStatusDetail" class="text-[10px] block mt-0.5" style="color: {{ theme_colors['text-disabled'] }}" x-text="briefStatusDetail"></span>
+                </div>
+                <div class="w-full h-2 rounded-full overflow-hidden" style="background: {{ theme_colors['bg-primary'] }}">
+                    <div class="h-full rounded-full transition-all duration-1000" style="background: {{ theme_colors['accent-primary'] }}"
+                         :style="'width:' + briefProgress + '%'"></div>
+                </div>
+                <div class="flex justify-between mt-1">
+                    <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}" x-text="'Elapsed: ' + Math.floor(briefElapsed/60) + 'm ' + (briefElapsed%60) + 's'"></span>
+                    <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}" x-text="'ETA: ' + (briefStatus === 'generating' ? '~30s' : briefStatus === 'synthesizing' ? '~2-3 min' : briefStatus === 'prompting' ? '~1-2 min' : briefStatus === 'researching' ? '~5-15 min' : briefStatus === 'analyzing' ? '~1-2 min' : '')"></span>
+                </div>
+                <div class="flex justify-between mt-1 text-[9px]" style="color: {{ theme_colors['text-disabled'] }}">
+                    <span>Data</span><span>Brief</span><span>Research</span><span>Angles</span>
+                </div>
+            </div>
+
+            <!-- Error state -->
+            <div x-show="briefStatus === 'error'" x-transition class="rounded-lg p-4 border border-red-500/30" style="background: {{ theme_colors['bg-tertiary'] }}">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-exclamation-circle text-red-400"></i>
+                    <span class="text-sm font-medium text-red-400">Pipeline error</span>
+                </div>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}" x-text="briefErrorMessage || 'Unknown error'"></p>
+                <button @click="briefStatus=''" class="mt-2 text-xs text-blue-400 hover:underline">Dismiss</button>
+            </div>
+
+            <!-- Results section (brief ready / complete) -->
+            <div x-show="briefStatus === 'ready' || briefStatus === 'complete' || briefStatus === 'awaiting_research'" x-transition class="rounded-lg p-4" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="flex items-center gap-2 mb-2">
+                    <i class="fas fa-check-circle text-green-400"></i>
+                    <span class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}"
+                          x-text="briefStatus === 'complete' ? 'Pipeline complete — review content angles below' : briefStatus === 'awaiting_research' ? 'Brief ready — manual research needed' : 'Brief ready'"></span>
+                </div>
+
+                <!-- Brief preview -->
+                <div x-show="briefPreview" class="text-xs mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg p-2" style="color: {{ theme_colors['text-secondary'] }}; background: {{ theme_colors['bg-primary'] }}" x-text="briefPreview"></div>
+
+                <!-- Gemini prompt (only show if manual fallback needed) -->
+                <div x-show="briefStatus === 'awaiting_research' && geminiPromptPreview" class="mt-3">
+                    <p class="text-xs text-yellow-600 mb-2"><i class="fas fa-exclamation-triangle mr-1"></i>Auto-research unavailable. Copy the prompt and run in Gemini Deep Research manually:</p>
+                    <div class="text-xs max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg p-2" style="background: {{ theme_colors['input-bg'] }}; color: {{ theme_colors['text-secondary'] }}" x-text="geminiPromptPreview"></div>
+                    <div class="mt-2 flex gap-2">
+                        <button @click="copyGeminiPrompt()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">
+                            <i class="fas fa-copy mr-1"></i>Copy Prompt
+                        </button>
+                    </div>
+                    <div class="mt-3 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                        <p class="text-xs mb-2" style="color: {{ theme_colors['text-muted'] }}">Paste the Gemini Deep Research report below:</p>
+                        <textarea x-model="geminiReport" rows="4" class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Paste the full Gemini Deep Research report here..."></textarea>
+                        <button @click="uploadReport($event.currentTarget)" class="mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
+                            <i class="fas fa-upload mr-1"></i>Upload & Generate Content Angles
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Content Angles with Accept/Reject/Edit -->
+                <div x-show="contentAngles.length" class="mt-3 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="text-xs font-medium" style="color: {{ theme_colors['accent-primary'] }}">
+                            <i class="fas fa-lightbulb mr-1"></i>Content Angles
+                            (<span x-text="contentAngles.length"></span> generated)
+                        </p>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">
+                                <span class="text-green-500" x-text="Object.values(angleDecisions).filter(d => d==='accepted').length"></span> accepted,
+                                <span class="text-red-400" x-text="Object.values(angleDecisions).filter(d => d==='rejected').length"></span> rejected
+                            </span>
+                            <button @click="acceptAllHighUrgency()" class="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-[10px] rounded transition-colors">
+                                <i class="fas fa-check-double mr-1"></i>Accept All High
+                            </button>
+                        </div>
+                    </div>
+                    <div class="space-y-2 max-h-96 overflow-y-auto">
+                        <template x-for="(angle, idx) in contentAngles" :key="idx">
+                            <div class="rounded-lg p-3 text-xs border-l-4 transition-all"
+                                 :style="angleDecisions[idx] === 'accepted' ? 'border-left-color: #22c55e; opacity: 0.7; background: {{ theme_colors['bg-secondary'] }}' :
+                                         angleDecisions[idx] === 'rejected' ? 'border-left-color: #ef4444; opacity: 0.5; background: {{ theme_colors['bg-secondary'] }}' :
+                                         'border-left-color: {{ theme_colors['accent-primary'] }}; background: {{ theme_colors['bg-secondary'] }}'"
+                                 style="border: 1px solid {{ theme_colors['border-primary'] }}">
+
+                                <!-- Header: urgency + format + title + action buttons -->
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0"
+                                              :class="angle.urgency==='high' ? 'bg-red-600 text-white' : angle.urgency==='medium' ? 'bg-yellow-600 text-white' : 'bg-gray-500 text-white'"
+                                              x-text="angle.urgency"></span>
+                                        <span class="px-1.5 py-0.5 rounded text-[9px] shrink-0" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" x-text="angle.format"></span>
+                                        <span class="font-semibold truncate" style="color: {{ theme_colors['text-primary'] }}" x-text="angle.title"></span>
+                                    </div>
+
+                                    <!-- Action buttons (only if not decided) -->
+                                    <div x-show="!angleDecisions[idx]" class="flex gap-1 shrink-0">
+                                        <button @click="acceptAngle(idx)" class="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-[10px] transition-colors" title="Accept">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        <button @click="editingAngle = editingAngle === idx ? null : idx" class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] transition-colors" title="Edit">
+                                            <i class="fas fa-pen"></i>
+                                        </button>
+                                        <button @click="rejectAngle(idx)" class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[10px] transition-colors" title="Reject">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Decision badge -->
+                                    <span x-show="angleDecisions[idx]" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded shrink-0"
+                                          :class="angleDecisions[idx]==='accepted' ? 'text-green-500 bg-green-500/10' : 'text-red-400 bg-red-400/10'"
+                                          x-text="angleDecisions[idx]"></span>
+                                </div>
+
+                                <!-- Angle description -->
+                                <p class="mt-1.5" style="color: {{ theme_colors['text-secondary'] }}" x-text="angle.angle"></p>
+
+                                <!-- Hook + CTA preview -->
+                                <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10px]" x-show="angle.hook || angle.cta" style="color: {{ theme_colors['text-muted'] }}">
+                                    <span x-show="angle.hook"><i class="fas fa-bolt text-yellow-500 mr-1"></i><span x-text="angle.hook"></span></span>
+                                    <span x-show="angle.cta"><i class="fas fa-arrow-right text-blue-400 mr-1"></i><span x-text="angle.cta"></span></span>
+                                </div>
+
+                                <!-- Inline edit form -->
+                                <div x-show="editingAngle === idx" x-transition class="mt-3 space-y-2 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                                    <input type="text" :value="angle.title" @input="angle.title = $event.target.value"
+                                           class="w-full text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="Title"
+                                           style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                                    <textarea :value="angle.angle" @input="angle.angle = $event.target.value" rows="2"
+                                              class="w-full text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="Angle/perspective"
+                                              style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"></textarea>
+                                    <input type="text" :value="angle.hook || ''" @input="angle.hook = $event.target.value"
+                                           class="w-full text-xs rounded-lg px-2 py-1.5 outline-none" placeholder="Hook (opening line)"
+                                           style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                                    <div class="flex gap-2 items-center">
+                                        <select @change="angle.format = $event.target.value"
+                                                class="text-xs rounded-lg px-2 py-1.5 outline-none"
+                                                style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                                            <template x-for="fmt in ['linkedin_post','carousel','blog','video','reel','email']">
+                                                <option :value="fmt" :selected="angle.format===fmt" x-text="fmt"></option>
+                                            </template>
+                                        </select>
+                                        <select @change="angle.urgency = $event.target.value"
+                                                class="text-xs rounded-lg px-2 py-1.5 outline-none"
+                                                style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                                            <template x-for="urg in ['high','medium','low']">
+                                                <option :value="urg" :selected="angle.urgency===urg" x-text="urg"></option>
+                                            </template>
+                                        </select>
+                                        <button @click="acceptAngle(idx, angle)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-[10px] transition-colors">
+                                            <i class="fas fa-check mr-1"></i>Save & Accept
+                                        </button>
+                                        <button @click="editingAngle = null" class="px-3 py-1.5 text-xs rounded-lg transition-colors" style="color: {{ theme_colors['text-muted'] }}">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="!briefStatus && !contentAngles.length" class="text-center py-3" style="color: {{ theme_colors['text-muted'] }}">
+                <p class="text-xs">Click "Generate Brief" — fully automated: Opus analysis → Gemini Deep Research → Content angles.</p>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Uses: Competitors (7d) + Leaders (14d) + Forums (7d) + Own LinkedIn analytics + Industry news</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Content Recommendation Results -->
     <div id="recResults" class="hidden rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="p-4 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
@@ -206,6 +397,33 @@ function planningApp() {
         newPlanMonth: nextMonth.toISOString().substring(0, 7),
         newPlanNotes: '',
 
+        // Research Brief Pipeline state
+        briefStatus: {{ (latest_brief.status if latest_brief and latest_brief.status else "") | tojson }},
+        briefId: {{ latest_brief.id | tojson if latest_brief else 'null' }},
+        briefPreview: {{ (latest_brief.brief_content[:800] if latest_brief and latest_brief.brief_content else "") | tojson }},
+        dataQuality: null,
+        geminiPromptPreview: {{ (latest_brief.gemini_prompt[:800] if latest_brief and latest_brief.gemini_prompt else "") | tojson }},
+        geminiPromptFull: '',
+        geminiReport: {{ (latest_brief.gemini_report or "") | tojson }},
+        contentAngles: {{ (latest_brief.parsed_angles if latest_brief and latest_brief.parsed_angles else []) | tojson }},
+        angleDecisions: (() => { const raw = {{ (latest_brief.parsed_decisions if latest_brief and latest_brief.parsed_decisions else {}) | tojson }}; const out = {}; for (const [k, v] of Object.entries(raw)) { out[k] = typeof v === 'object' ? (v.decision === 'accept' ? 'accepted' : v.decision === 'reject' ? 'rejected' : v.decision) : v; } return out; })(),
+        editingAngle: null,
+        briefGeneratingStep: '',
+        briefProgress: 0,
+        briefPolling: null,
+        briefElapsed: 0,
+        briefTimer: null,
+        briefStatusDetail: '',
+        briefErrorMessage: '',
+        itemsCreated: 0,
+
+        init() {
+            // Auto-resume polling for in-progress briefs
+            if (this.briefId && ['generating','synthesizing','prompting','researching','analyzing'].includes(this.briefStatus)) {
+                this.pollBriefStatus(this.briefId);
+            }
+        },
+
         async createPlan() {
             if (!this.newPlanMonth) return toast('Select a month', 'warning');
             await fetch('/api/plans', {
@@ -220,6 +438,177 @@ function planningApp() {
             });
             toast('Plan created', 'success');
             location.reload();
+        },
+
+        async generateBrief(btn) {
+            this.briefStatus = 'generating';
+            this.briefPreview = '';
+            this.geminiPromptPreview = '';
+            this.contentAngles = [];
+            this.angleDecisions = {};
+            this.briefErrorMessage = '';
+            this.briefProgress = 5;
+            this.briefElapsed = 0;
+            if (this.briefTimer) clearInterval(this.briefTimer);
+            this.briefTimer = setInterval(() => { this.briefElapsed++; }, 1000);
+            this.briefGeneratingStep = 'Starting pipeline...';
+            toast('Starting automated pipeline — Opus analysis → Gemini Deep Research → Content angles', 'info');
+            try {
+                const res = await fetch('/api/brands/{{ brand.id }}/research-brief/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.briefId = data.brief_id;
+                    this.pollBriefStatus(data.brief_id);
+                } else {
+                    this.briefStatus = '';
+                    toast(data.error || 'Brief generation failed', 'error');
+                }
+            } catch (e) {
+                this.briefStatus = '';
+                toast('Brief generation failed: ' + e.message, 'error');
+            }
+        },
+
+        pollBriefStatus(briefId) {
+            if (this.briefPolling) clearInterval(this.briefPolling);
+            const statusMap = {
+                'generating':   { text: 'Step 1/5: Gathering intelligence data...', pct: 15, est: '~30s' },
+                'synthesizing': { text: 'Step 2/5: Opus analyzing & synthesizing brief...', pct: 35, est: '~2-3 min' },
+                'prompting':    { text: 'Step 3/5: Building Deep Research prompt...', pct: 50, est: '~1-2 min' },
+                'researching':  { text: 'Step 4/5: Gemini Deep Research running...', pct: 65, est: '~5-15 min' },
+                'analyzing':    { text: 'Step 5/5: Generating content angles...', pct: 85, est: '~1-2 min' },
+            };
+            const self = this;
+            self.briefPolling = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/brands/{{ brand.id }}/research-brief/${briefId}/status`);
+                    const data = await res.json();
+                    if (!data.ok) return;
+                    self.briefStatus = data.status;
+                    if (statusMap[data.status]) {
+                        self.briefGeneratingStep = statusMap[data.status].text;
+                        self.briefProgress = statusMap[data.status].pct;
+                    }
+                    self.briefStatusDetail = data.status_detail || '';
+                    if (data.brief_preview) self.briefPreview = data.brief_preview;
+                    if (data.gemini_prompt_preview) self.geminiPromptPreview = data.gemini_prompt_preview;
+                    // Terminal states
+                    if (data.status === 'complete') {
+                        clearInterval(self.briefPolling);
+                        self.briefPolling = null;
+                        if (self.briefTimer) { clearInterval(self.briefTimer); self.briefTimer = null; }
+                        self.briefProgress = 100;
+                        self.briefGeneratingStep = 'Pipeline complete!';
+                        self.contentAngles = data.content_angles || [];
+                        const rawDec = data.angle_decisions || {};
+                        const mapped = {};
+                        for (const [k, v] of Object.entries(rawDec)) { mapped[k] = typeof v === 'object' ? (v.decision === 'accept' ? 'accepted' : v.decision === 'reject' ? 'rejected' : v.decision) : v; }
+                        self.angleDecisions = mapped;
+                        toast('Pipeline complete — review your content angles!', 'success');
+                    } else if (data.status === 'awaiting_research') {
+                        clearInterval(self.briefPolling);
+                        self.briefPolling = null;
+                        if (self.briefTimer) { clearInterval(self.briefTimer); self.briefTimer = null; }
+                        self.briefProgress = 55;
+                        self.briefGeneratingStep = 'Auto-research unavailable — manual fallback';
+                        toast('Deep Research unavailable. Copy the prompt below and run manually.', 'warning');
+                    } else if (data.status === 'error') {
+                        clearInterval(self.briefPolling);
+                        self.briefPolling = null;
+                        if (self.briefTimer) { clearInterval(self.briefTimer); self.briefTimer = null; }
+                        self.briefErrorMessage = data.error_message || 'Unknown error';
+                        toast('Pipeline error: ' + (data.error_message || 'Unknown'), 'error');
+                    }
+                } catch (e) {
+                    console.error('Poll error:', e);
+                }
+            }, 5000);
+        },
+
+        async copyGeminiPrompt() {
+            if (!this.briefId) return;
+            const res = await fetch(`/api/brands/{{ brand.id }}/research-briefs/${this.briefId}`);
+            const data = await res.json();
+            if (data.ok) {
+                await navigator.clipboard.writeText(data.brief.gemini_prompt || this.geminiPromptPreview);
+                toast('Gemini prompt copied to clipboard!', 'success');
+            }
+        },
+
+        async uploadReport(btn) {
+            if (!this.geminiReport.trim()) return toast('Paste the Gemini report first', 'warning');
+            if (!this.briefId) return toast('No brief to upload to', 'warning');
+            withLoading(btn, async () => {
+                const res = await fetch(`/api/brands/{{ brand.id }}/research-brief/${this.briefId}/upload-report`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ report: this.geminiReport })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.contentAngles = data.content_angles || [];
+                    this.angleDecisions = {};
+                    this.briefStatus = 'complete';
+                    toast(`${data.total_angles} content angles generated — review and accept/reject below`, 'success');
+                } else {
+                    toast(data.error || 'Report processing failed', 'error');
+                }
+            });
+        },
+
+        async acceptAngle(idx, edits) {
+            const angle = edits || this.contentAngles[idx];
+            try {
+                const res = await fetch(`/api/brands/{{ brand.id }}/research-brief/${this.briefId}/angle-decision`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ angle_idx: idx, decision: 'accept', edits: angle })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.angleDecisions[idx] = 'accepted';
+                    this.editingAngle = null;
+                    toast(data.message || 'Angle accepted — content item created', 'success');
+                } else {
+                    toast(data.error || 'Failed to accept angle', 'error');
+                }
+            } catch (e) {
+                toast('Error: ' + e.message, 'error');
+            }
+        },
+
+        async rejectAngle(idx) {
+            try {
+                const res = await fetch(`/api/brands/{{ brand.id }}/research-brief/${this.briefId}/angle-decision`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ angle_idx: idx, decision: 'reject', reason: 'User rejected' })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.angleDecisions[idx] = 'rejected';
+                    toast('Angle rejected', 'info');
+                } else {
+                    toast(data.error || 'Failed to reject angle', 'error');
+                }
+            } catch (e) {
+                toast('Error: ' + e.message, 'error');
+            }
+        },
+
+        async acceptAllHighUrgency() {
+            let accepted = 0;
+            for (let i = 0; i < this.contentAngles.length; i++) {
+                if (this.contentAngles[i].urgency === 'high' && !this.angleDecisions[i]) {
+                    await this.acceptAngle(i);
+                    accepted++;
+                }
+            }
+            toast(`Accepted ${accepted} high-urgency angles`, 'success');
         }
     };
 }

@@ -450,7 +450,7 @@
                     </button>
                 </div>
                 <p class="text-xs" style="color: {{ theme_colors['text-disabled'] }}">
-                    <i class="fas fa-info-circle mr-1"></i>Existing folders are preserved. Missing DIQIT subfolders will be created automatically.
+                    <i class="fas fa-info-circle mr-1"></i>Existing folders are preserved. Missing standard subfolders (01_Brand through 10_Pipeline) will be created automatically.
                 </p>
             </div>
 
@@ -614,6 +614,35 @@
         </div>
     </div>
 
+    <!-- Prompt Registry Sync -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-file-code mr-2" style="color: {{ theme_colors['accent-secondary'] }}"></i>Prompt Registry</h2>
+        </div>
+        <div class="p-4">
+            <p class="text-sm mb-4" style="color: {{ theme_colors['text-secondary'] }}">
+                Prompts are stored as Markdown files in <code class="px-1 py-0.5 rounded text-xs" style="background: {{ theme_colors['bg-tertiary'] }}">prompts/</code> and synced with the app. Use these buttons to manually sync in either direction.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-3">
+                <button @click="syncPrompts('from')" class="px-4 py-2 text-sm rounded-lg transition-colors border flex items-center justify-center gap-2"
+                    style="border-color: {{ theme_colors['accent-primary'] }}; color: {{ theme_colors['accent-primary'] }}"
+                    onmouseenter="this.style.background='{{ theme_colors['accent-primary'] }}15'" onmouseleave="this.style.background='transparent'">
+                    <i class="fas fa-download"></i>
+                    <span>Sync from Registry</span>
+                    <span class="text-[10px] opacity-60">(files → app)</span>
+                </button>
+                <button @click="syncPrompts('to')" class="px-4 py-2 text-sm rounded-lg transition-colors border flex items-center justify-center gap-2"
+                    style="border-color: {{ theme_colors['accent-secondary'] }}; color: {{ theme_colors['accent-secondary'] }}"
+                    onmouseenter="this.style.background='{{ theme_colors['accent-secondary'] }}15'" onmouseleave="this.style.background='transparent'">
+                    <i class="fas fa-upload"></i>
+                    <span>Sync to Registry</span>
+                    <span class="text-[10px] opacity-60">(app → files)</span>
+                </button>
+            </div>
+            <div x-show="promptSyncResult" x-transition class="mt-3 text-xs p-2 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}" x-html="promptSyncResult"></div>
+        </div>
+    </div>
+
     <!-- App Info -->
     <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
         <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
@@ -656,7 +685,7 @@
                 <span class="text-sm" style="color: {{ theme_colors['text-muted'] }}">Pipeline Configuration</span>
                 <div class="rounded-lg p-2 mt-1 text-xs font-mono" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
                     Pipeline folder: [brand_folder]/10_Pipeline/Briefs/<br>
-                    Apps Script: [brand_folder]/10_Pipeline/DIQIT_Apps_Script.js<br>
+                    Apps Script: [brand_folder]/10_Pipeline/Apps_Script.js<br>
                     Setup guide: [brand_folder]/10_Pipeline/SETUP_GUIDE.md
                 </div>
             </div>
@@ -701,6 +730,31 @@ function settingsApp() {
             prompts_repo_path: '{{ git_repos.prompts_repo_path or "" }}'
         },
         gitRepoStatus: '',
+        promptSyncResult: '',
+
+        async syncPrompts(direction) {
+            this.promptSyncResult = '<i class="fas fa-spinner fa-spin mr-1"></i>Syncing...';
+            try {
+                const url = direction === 'to' ? '/api/prompts/export' : '/api/prompts/sync';
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    if (direction === 'to') {
+                        this.promptSyncResult = `<i class="fas fa-check-circle mr-1 text-green-400"></i>Exported <strong>${data.exported}</strong> prompts to files (${data.skipped} unchanged/skipped)`;
+                    } else {
+                        this.promptSyncResult = `<i class="fas fa-check-circle mr-1 text-green-400"></i>Loaded <strong>${data.count}</strong> prompts from files into app`;
+                    }
+                    toast(direction === 'to' ? 'Prompts exported to registry files' : 'Prompts loaded from registry files', 'success');
+                } else {
+                    this.promptSyncResult = `<i class="fas fa-times-circle mr-1 text-red-400"></i>${data.error || 'Sync failed'}`;
+                    toast('Prompt sync failed', 'error');
+                }
+            } catch(e) {
+                this.promptSyncResult = `<i class="fas fa-times-circle mr-1 text-red-400"></i>${e.message}`;
+                toast('Prompt sync error: ' + e.message, 'error');
+            }
+            setTimeout(() => this.promptSyncResult = '', 8000);
+        },
 
         async addQuickBrand() {
             if (!this.quickBrand.name.trim()) return toast('Brand name is required', 'warning');

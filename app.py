@@ -4,6 +4,7 @@ Local deployment with Flask + SQLite
 """
 
 import os
+import re
 import json
 import sqlite3
 import subprocess
@@ -156,6 +157,8 @@ def init_db():
     # Migrate: add new notification columns if missing
     _migrate_notifications(db)
     _migrate_brands(db)
+    _migrate_research_briefs(db)
+    _migrate_content_items(db)
     # Seed DIQIT if no brands exist
     count = db.execute("SELECT COUNT(*) FROM brands").fetchone()[0]
     if count == 0:
@@ -192,6 +195,32 @@ def _migrate_brands(db):
         db.execute("ALTER TABLE brands ADD COLUMN linkedin_company_url TEXT DEFAULT ''")
     if 'linkedin_profile_url' not in cols:
         db.execute("ALTER TABLE brands ADD COLUMN linkedin_profile_url TEXT DEFAULT ''")
+    db.commit()
+
+
+def _migrate_research_briefs(db):
+    """Add error_message and angle_decisions columns to research_briefs table if missing."""
+    cols = {row[1] for row in db.execute("PRAGMA table_info(research_briefs)").fetchall()}
+    if 'error_message' not in cols:
+        db.execute("ALTER TABLE research_briefs ADD COLUMN error_message TEXT")
+    if 'angle_decisions' not in cols:
+        db.execute("ALTER TABLE research_briefs ADD COLUMN angle_decisions TEXT")
+    if 'status_detail' not in cols:
+        db.execute("ALTER TABLE research_briefs ADD COLUMN status_detail TEXT")
+    db.commit()
+
+
+def _migrate_content_items(db):
+    """Add revision_count/revision_notes columns and migrate legacy statuses to 5-column model."""
+    cols = {row[1] for row in db.execute("PRAGMA table_info(content_items)").fetchall()}
+    if 'revision_count' not in cols:
+        db.execute("ALTER TABLE content_items ADD COLUMN revision_count INTEGER DEFAULT 0")
+    if 'revision_notes' not in cols:
+        db.execute("ALTER TABLE content_items ADD COLUMN revision_notes TEXT")
+    # Migrate legacy statuses to new 5-column model
+    db.execute("UPDATE content_items SET status='drafting' WHERE status='research'")
+    db.execute("UPDATE content_items SET status='review' WHERE status='visuals'")
+    db.execute("UPDATE content_items SET status='published' WHERE status='analyzed'")
     db.commit()
 
 
@@ -276,7 +305,7 @@ CREATE TABLE IF NOT EXISTS content_items (
     title TEXT NOT NULL,
     content_type TEXT DEFAULT 'linkedin_post',  -- linkedin_post, carousel, video, blog, email, reel
     market TEXT DEFAULT 'APAC',  -- Japan, Singapore, APAC, Australia
-    status TEXT DEFAULT 'backlog',  -- backlog, research, drafting, visuals, review, ready, published, analyzed
+    status TEXT DEFAULT 'backlog',  -- backlog, drafting, review, ready, published
     body_text TEXT,
     visual_prompt TEXT,
     video_prompt TEXT,
@@ -1093,7 +1122,7 @@ MEDIA_TAG_REGISTRY = {
     'stock_image': {
         'tool_name': 'stock_search',
         'auto_capable': True,
-        'run_at_status': 'visuals',
+        'run_at_status': 'drafting',
         'api_keys_needed': ['unsplash_api_key', 'pexels_api_key'],  # either/or
         'api_keys_mode': 'any',
         'description': 'Search & download stock images',
@@ -1143,7 +1172,7 @@ MEDIA_TAG_REGISTRY = {
     'remove_bg': {
         'tool_name': 'remove_bg',
         'auto_capable': True,
-        'run_at_status': 'visuals',
+        'run_at_status': 'drafting',
         'api_keys_needed': ['removebg_api_key'],
         'api_keys_mode': 'all',
         'description': 'Remove image background',
@@ -1206,7 +1235,7 @@ def dashboard():
         bid = brand['id']
         stats[bid] = {
             'total_content': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=?", (bid,)).fetchone()[0],
-            'in_progress': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status NOT IN ('published','analyzed','backlog')", (bid,)).fetchone()[0],
+            'in_progress': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status NOT IN ('published','backlog')", (bid,)).fetchone()[0],
             'published': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status='published'", (bid,)).fetchone()[0],
             'pending_feedback': db.execute("SELECT COUNT(*) FROM feedback f JOIN content_items c ON f.content_item_id=c.id WHERE c.brand_id=? AND f.status='pending'", (bid,)).fetchone()[0],
         }
@@ -1235,7 +1264,7 @@ def _auto_generate_overdue(db):
         bid = brand['id']
         overdue = db.execute("""
             SELECT * FROM content_items
-            WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published','analyzed')
+            WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published')
         """, (bid, today_str)).fetchall()
         for item in overdue:
             existing = db.execute("""
@@ -1283,7 +1312,7 @@ def generate_today_tasks(db):
         # Check for overdue content
         overdue = db.execute("""
             SELECT COUNT(*) FROM content_items
-            WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published','analyzed')
+            WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published')
         """, (bid, today.strftime('%Y-%m-%d'))).fetchone()[0]
         if overdue > 0:
             tasks.append({
@@ -1396,7 +1425,7 @@ def brand_detail(brand_id):
     content_stats = {
         'total': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=?", (brand_id,)).fetchone()[0],
         'backlog': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status='backlog'", (brand_id,)).fetchone()[0],
-        'in_progress': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status NOT IN ('published','analyzed','backlog')", (brand_id,)).fetchone()[0],
+        'in_progress': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status NOT IN ('published','backlog')", (brand_id,)).fetchone()[0],
         'published': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status='published'", (brand_id,)).fetchone()[0],
     }
 
@@ -1405,7 +1434,7 @@ def brand_detail(brand_id):
     perf_rows = db.execute("""
         SELECT cp.id as pillar_id, cp.name, a.metric_type, AVG(a.metric_value) as avg_val, COUNT(DISTINCT ci.id) as post_count
         FROM content_pillars cp
-        LEFT JOIN content_items ci ON ci.pillar_id = cp.id AND ci.status IN ('published', 'analyzed')
+        LEFT JOIN content_items ci ON ci.pillar_id = cp.id AND ci.status IN ('published')
         LEFT JOIN analytics_snapshots a ON a.content_item_id = ci.id
         WHERE cp.brand_id = ?
         GROUP BY cp.id, a.metric_type
@@ -1593,11 +1622,18 @@ def pipeline_view(brand_id):
     pillars = db.execute("SELECT * FROM content_pillars WHERE brand_id=? ORDER BY sort_order", (brand_id,)).fetchall()
     unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
 
-    # Group by status
-    columns = ['backlog', 'research', 'drafting', 'visuals', 'review', 'ready', 'published', 'analyzed']
+    # Group by status — 5 clear stages
+    columns = ['backlog', 'drafting', 'review', 'ready', 'published']
     pipeline = {col: [] for col in columns}
+    # Map legacy statuses to new 5-column model
+    status_map = {
+        'research': 'drafting', 'visuals': 'review', 'analyzed': 'published',
+    }
     for item in content_items:
-        status = item['status'] if item['status'] in columns else 'backlog'
+        status = item['status']
+        status = status_map.get(status, status)
+        if status not in columns:
+            status = 'backlog'
         pipeline[status].append(item)
 
     # Pipeline activity for audit trail sidebar
@@ -1618,11 +1654,36 @@ def pipeline_view(brand_id):
         ORDER BY pal.created_at DESC LIMIT 50
     """, (brand_id,)).fetchall()
 
+    # Check latest brief for un-decided angles
+    latest_brief = db.execute("""
+        SELECT id, content_angles, angle_decisions FROM research_briefs
+        WHERE brand_id=? AND status='complete' ORDER BY created_at DESC LIMIT 1
+    """, (brand_id,)).fetchone()
+    pending_angles = []
+    latest_brief_id = None
+    if latest_brief and latest_brief['content_angles']:
+        latest_brief_id = latest_brief['id']
+        try:
+            angles = json.loads(latest_brief['content_angles'] or '[]')
+            decisions = json.loads(latest_brief['angle_decisions'] or '{}')
+            for i, angle in enumerate(angles):
+                if str(i) not in decisions:
+                    pending_angles.append({
+                        'index': i,
+                        'title': angle.get('title', f'Angle {i+1}'),
+                        'format': angle.get('format', 'unknown'),
+                        'urgency': angle.get('urgency', 'unknown'),
+                        'pillar': angle.get('pillar', ''),
+                    })
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return render_template('pipeline/view.html',
         brand=brand, pipeline=pipeline, columns=columns,
         pillars=pillars, unread_notifications=unread_notifications,
         pending_actions=[dict(r) for r in pending_actions],
-        recent_activity=[dict(r) for r in recent_activity])
+        recent_activity=[dict(r) for r in recent_activity],
+        pending_angles=pending_angles, latest_brief_id=latest_brief_id)
 
 
 @app.route('/api/content-items', methods=['POST'])
@@ -1668,6 +1729,24 @@ def update_content_status(item_id):
                 to_status='review', requires_human=True)
     db.commit()
     return jsonify({'ok': True})
+
+
+@app.route('/api/content-items/<int:item_id>/revision', methods=['POST'])
+def record_revision(item_id):
+    """Record a revision request — increments revision_count and stores notes."""
+    db = get_db()
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        return jsonify({'ok': False, 'error': 'Item not found'}), 404
+    revision_count = (item['revision_count'] or 0) + 1
+    notes = (request.json or {}).get('notes', '')
+    db.execute("UPDATE content_items SET revision_count=?, revision_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+               (revision_count, notes, item_id))
+    _log_pipeline_activity(db, item['brand_id'], item_id, 'status_change',
+        f'Revision requested (#{revision_count})', notes[:200],
+        from_status='review', to_status='drafting')
+    db.commit()
+    return jsonify({'ok': True, 'revision_count': revision_count})
 
 
 @app.route('/api/content-items/<int:item_id>/generate-draft', methods=['POST'])
@@ -1733,9 +1812,9 @@ Write the content now."""
 
     draft_text = result['text']
 
-    # Save the draft and advance status to 'visuals' (drafting is complete, move to visuals)
+    # Save the draft and advance status to 'review' (drafting + visuals combined → review)
     old_status = item['status']
-    new_status = 'visuals' if item['status'] in ('backlog', 'research', 'drafting') else item['status']
+    new_status = 'review' if item['status'] in ('backlog', 'drafting') else item['status']
     db.execute("""
         UPDATE content_items SET body_text=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
     """, (draft_text, new_status, item_id))
@@ -1753,19 +1832,11 @@ Write the content now."""
             f'Tool "{tr["tag"]}" {tr["status"]}', tr.get('error', ''),
             from_status=new_status, to_status=new_status)
 
-    # Auto-progress: if at visuals and tools done (or no tools), advance to review
-    if new_status == 'visuals':
-        all_done = not tool_results or all(r['status'] in ('completed', 'skipped') for r in tool_results)
-        if all_done:
-            db.execute("UPDATE content_items SET status='review', updated_at=CURRENT_TIMESTAMP WHERE id=?", (item_id,))
-            _log_pipeline_activity(db, item['brand_id'], item_id, 'status_change',
-                'Auto-advanced to Review',
-                'All visual tools completed' if tool_results else 'No visual tools configured',
-                from_status='visuals', to_status='review')
-            _log_pipeline_activity(db, item['brand_id'], item_id, 'human_needed',
-                'Human review required', 'Approve, revise, or reject this content',
-                to_status='review', requires_human=True)
-            new_status = 'review'
+    # Log human review needed when draft lands in review
+    if new_status == 'review':
+        _log_pipeline_activity(db, item['brand_id'], item_id, 'human_needed',
+            'Human review required', 'Approve, revise, or reject this content',
+            to_status='review', requires_human=True)
 
     # Auto-chain: check if the current workflow step's successor can auto-trigger
     auto_chaining = False
@@ -2049,15 +2120,15 @@ def _step_to_status(step_name):
     """Map a workflow step name to a pipeline column status.
 
     Uses keyword matching so it works regardless of how many steps the template has.
-    The pipeline columns are: backlog, research, drafting, visuals, review, ready, published, analyzed.
+    Pipeline columns (5 stages): backlog → drafting → review → ready → published.
     """
     name_lower = step_name.lower()
     if 'research' in name_lower or 'deep dive' in name_lower:
-        return 'research'
+        return 'drafting'
     if 'draft' in name_lower or 'writing' in name_lower or 'content creation' in name_lower:
-        return 'visuals'  # drafting is auto-skipped — once draft is done, move to visuals
+        return 'drafting'
     if 'visual' in name_lower or 'image' in name_lower or 'video' in name_lower or 'design' in name_lower:
-        return 'visuals'
+        return 'review'
     if 'polish' in name_lower or 'assembly' in name_lower or 'brand' in name_lower:
         return 'review'
     if 'review' in name_lower or 'approve' in name_lower or 'client' in name_lower:
@@ -2065,8 +2136,8 @@ def _step_to_status(step_name):
     if 'publish' in name_lower or 'schedule' in name_lower:
         return 'ready'
     if 'feedback' in name_lower or 'analyz' in name_lower or 'performance' in name_lower:
-        return 'analyzed'
-    return 'visuals'  # safe default for unknown steps
+        return 'published'
+    return 'drafting'  # safe default for unknown steps
 
 
 @app.route('/api/content-items/<int:item_id>/complete-step', methods=['POST'])
@@ -2652,7 +2723,7 @@ def analytics_view(brand_id):
     today = date.today().strftime('%Y-%m-%d')
     overdue = db.execute("""
         SELECT * FROM content_items
-        WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published','analyzed')
+        WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published')
         ORDER BY publish_date
     """, (brand_id, today)).fetchall()
 
@@ -2707,7 +2778,7 @@ def generate_performance_insights(brand_id):
                cp.name as pillar_name, cp.color as pillar_color
         FROM content_items ci
         LEFT JOIN content_pillars cp ON ci.pillar_id = cp.id
-        WHERE ci.brand_id=? AND ci.status IN ('published', 'analyzed')
+        WHERE ci.brand_id=? AND ci.status IN ('published')
         ORDER BY ci.published_at DESC LIMIT 50
     """, (brand_id,)).fetchall()
 
@@ -2750,7 +2821,8 @@ def generate_performance_insights(brand_id):
 
     pillar_list = ', '.join(p['name'] for p in pillars) if pillars else 'No pillars defined'
 
-    analysis_prompt = f"""You are a content performance analyst for {brand['name']} (DIQIT), an F&B technology company.
+    analysis_prompt = f"""You are a content performance analyst for {brand['name']}.
+Brand: {brand['name']} | Website: {brand.get('website') or 'N/A'} | Tagline: {brand.get('tagline') or 'N/A'}
 
 ## CONTENT PILLARS
 {pillar_list}
@@ -2977,7 +3049,7 @@ def analyze_performance(brand_id):
         SELECT ci.*, cp.name as pillar_name
         FROM content_items ci
         LEFT JOIN content_pillars cp ON ci.pillar_id = cp.id
-        WHERE ci.brand_id = ? AND ci.status IN ('published', 'analyzed')
+        WHERE ci.brand_id = ? AND ci.status IN ('published')
         ORDER BY ci.published_at DESC LIMIT 30
     """, (brand_id,)).fetchall()
 
@@ -3299,9 +3371,19 @@ def planning_view(brand_id):
 
     unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
 
+    # Load latest research brief for this brand
+    latest_brief = db.execute(
+        "SELECT id, brief_content, gemini_prompt, gemini_report, content_angles, angle_decisions, status, error_message, status_detail FROM research_briefs WHERE brand_id=? ORDER BY id DESC LIMIT 1",
+        (brand_id,)).fetchone()
+    if latest_brief:
+        latest_brief = dict(latest_brief)
+        latest_brief['parsed_angles'] = json.loads(latest_brief.get('content_angles') or '[]')
+        latest_brief['parsed_decisions'] = json.loads(latest_brief.get('angle_decisions') or '{}')
+
     return render_template('planning/view.html',
         brand=brand, plans=plans_list, pillars=pillars,
-        content_stats=content_stats, unread_notifications=unread_notifications)
+        content_stats=content_stats, unread_notifications=unread_notifications,
+        latest_brief=latest_brief)
 
 
 @app.route('/api/plans', methods=['POST'])
@@ -3379,7 +3461,7 @@ def schedule_plan(plan_id):
                         INSERT INTO content_step_progress (content_item_id, workflow_step_id, status, started_at)
                         VALUES (?, ?, 'in_progress', CURRENT_TIMESTAMP)
                     """, (content_id, first_step['id']))
-                    db.execute("UPDATE content_items SET status='research' WHERE id=?", (content_id,))
+                    db.execute("UPDATE content_items SET status='drafting' WHERE id=?", (content_id,))
                     pipeline_started += 1
 
     db.execute("UPDATE content_plans SET status='approved', updated_at=CURRENT_TIMESTAMP WHERE id=?", (plan_id,))
@@ -4537,7 +4619,7 @@ def generate_daily_notifications():
         # Check for overdue items
         overdue = db.execute("""
             SELECT * FROM content_items
-            WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published','analyzed')
+            WHERE brand_id=? AND publish_date < ? AND status NOT IN ('published')
         """, (bid, today_str)).fetchall()
         for item in overdue:
             existing = db.execute("""
@@ -4856,8 +4938,14 @@ def generate_content_recommendations(brand_id):
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # ── Build feedback context from past angle decisions ──
+    feedback_context = _build_feedback_context(brand_id, db)
+
     # ── Step 1: Opus 4.6 — Strategic analysis & content framework ──
-    opus_strategy_prompt = f"""You are the Chief Content Strategist for {brand['name']}, an enterprise F&B technology company (cloud POS, AI analytics, unified restaurant operations platform) in APAC.
+    brand_desc = brand.get('tagline') or brand.get('voice_summary') or ''
+    opus_strategy_prompt = f"""You are the Chief Content Strategist for {brand['name']}.
+{f"Brand: {brand_desc}" if brand_desc else ""}
+Website: {brand.get('website') or 'N/A'}
 
 ## CURRENT CONTENT PILLARS & PERFORMANCE
 {pillar_summary}
@@ -4867,10 +4955,11 @@ def generate_content_recommendations(brand_id):
 {latest_insight['insight_text'][:2000] if latest_insight else 'No comprehensive analysis available yet.'}
 
 ## LATEST RESEARCH INTELLIGENCE
-{latest_brief['brief_content'][:2500] if latest_brief else 'No research brief available. Use your knowledge of the F&B tech industry.'}
+{latest_brief['brief_content'][:2500] if latest_brief else 'No research brief available yet.'}
 
 ## GEMINI MARKET RESEARCH
 {latest_brief['gemini_report'][:2500] if latest_brief and latest_brief['gemini_report'] else 'No Gemini report available.'}
+{feedback_context}
 
 ## YOUR TASK — STRATEGIC CONTENT FRAMEWORK
 
@@ -4885,7 +4974,7 @@ Analyze the data above and produce a strategic framework with:
    - The ideal format for each (linkedin_post, carousel, video, blog, reel)
    - The target emotion/reaction (educate, provoke, inspire, validate, challenge)
    - A specific data point or hook from the research to anchor it
-   - The competitive advantage angle (what makes DIQIT's perspective unique here)
+   - The competitive advantage angle (what makes {brand['name']}'s perspective unique here)
 
 4. **CONTENT MIX RECOMMENDATION**: Optimal distribution across pillars for the next 30 days, considering what's working and what needs more investment.
 
@@ -4922,7 +5011,8 @@ Return your analysis as structured JSON:
         content_briefs = strategy.get('content_briefs', [])
         briefs_text = json.dumps(content_briefs, indent=2)
 
-        gemini_prompt = f"""You are a creative content producer for {brand['name']}, an F&B technology company.
+        gemini_prompt = f"""You are a creative content producer for {brand['name']}.
+{f"Brand: {brand_desc}" if brand_desc else ""}
 
 A senior strategist has produced this content framework:
 
@@ -5286,7 +5376,8 @@ def generate_text(prompt, max_tokens=2000, system=None, model=None, messages=Non
                 f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}',
                 data=json.dumps(body).encode(),
                 headers={'Content-Type': 'application/json'})
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            gemini_timeout = 300 if max_tokens > 4096 else 120
+            with urllib.request.urlopen(req, timeout=gemini_timeout) as resp:
                 result = json.loads(resp.read().decode())
                 text = result['candidates'][0]['content']['parts'][0]['text'].strip()
         else:
@@ -5302,11 +5393,14 @@ def generate_text(prompt, max_tokens=2000, system=None, model=None, messages=Non
                 data=json.dumps(body).encode(),
                 headers={'Content-Type': 'application/json', 'x-api-key': api_key,
                          'anthropic-version': '2023-06-01'})
-            # Opus 4.6 with large prompts can take 90+ seconds
-            timeout = 240 if 'opus' in model else 120
+            # Opus 4.6 with large prompts + high max_tokens (8192) can take 5+ minutes
+            timeout = 480 if 'opus' in model else 180
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read().decode())
                 text = result['content'][0]['text'].strip()
+                stop_reason = result.get('stop_reason', '')
+                if stop_reason == 'max_tokens':
+                    print(f"[generate_text] WARNING: Response truncated by max_tokens ({max_tokens}) for model {model}. Response length: {len(text)} chars")
         return {'ok': True, 'text': text}
     except urllib.error.HTTPError as e:
         err_body = e.read().decode() if e.fp else ''
@@ -6031,9 +6125,26 @@ def scraping_view(brand_id):
         if row:
             last_scrapes[stype] = {'at': row['created_at'], 'count': row['item_count']}
 
+    # LinkedIn analytics summary and content pillars for the analytics card
+    linkedin_analytics = _get_linkedin_analytics_summary(brand_id, db)
+    content_pillars = [dict(r) for r in db.execute("SELECT * FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()]
+
+    # Load latest research brief for this brand (so results persist across page refreshes)
+    latest_brief = db.execute(
+        "SELECT id, brief_content, gemini_prompt, gemini_report, content_angles, angle_decisions, status, error_message FROM research_briefs WHERE brand_id=? ORDER BY id DESC LIMIT 1",
+        (brand_id,)).fetchone()
+    if latest_brief:
+        latest_brief = dict(latest_brief)
+        latest_brief['parsed_angles'] = json.loads(latest_brief.get('content_angles') or '[]')
+        latest_brief['parsed_decisions'] = json.loads(latest_brief.get('angle_decisions') or '{}')
+    else:
+        latest_brief = None
+
     return render_template('scraping/view.html', brand=brand, configs=configs, competitors=competitors,
                            forums=forums, leaders=leaders, unread_notifications=unread_notifications,
-                           recent_results=recent_results, last_scrapes=last_scrapes)
+                           recent_results=recent_results, last_scrapes=last_scrapes,
+                           linkedin_analytics=linkedin_analytics, content_pillars=content_pillars,
+                           latest_brief=latest_brief)
 
 
 @app.route('/api/scrape-configs', methods=['POST'])
@@ -6729,10 +6840,30 @@ Return a JSON object:
 
     import re
     try:
-        match = re.search(r'\{.*\}', analysis_result['text'], re.DOTALL)
+        # Strip markdown fences if present
+        raw_text = analysis_result['text'].strip()
+        if raw_text.startswith('```'):
+            raw_text = raw_text.split('\n', 1)[1] if '\n' in raw_text else raw_text[3:]
+            if raw_text.rstrip().endswith('```'):
+                raw_text = raw_text.rstrip()[:-3]
+            raw_text = raw_text.strip()
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         analysis = json.loads(match.group()) if match else {}
-    except Exception:
-        analysis = {}
+    except Exception as e:
+        import traceback
+        print(f"[Discovery] Gap analysis JSON parsing failed: {e}")
+        traceback.print_exc()
+        print(f"[Discovery] Raw response was: {analysis_result['text'][:500]}")
+        # Provide fallback analysis so discovery still runs with generic queries
+        analysis = {
+            'gap_analysis': f"Could not parse gap analysis. Running generic discovery for {brand['name']}.",
+            'discovery_instructions': {
+                'competitors': f"Find top competitors in {brand['name']}'s industry based on: {brand['tagline'] or brand['website'] or 'their market'}",
+                'forums': f"Find online communities and forums where {brand['name']}'s target audience gathers",
+                'leaders': f"Find thought leaders and influencers in {brand['name']}'s industry"
+            },
+            'priority_order': ['competitors', 'forums', 'leaders']
+        }
 
     gap_analysis = analysis.get('gap_analysis', '')
     instructions = analysis.get('discovery_instructions', {})
@@ -6792,13 +6923,24 @@ Return ONLY a JSON array: [{{"name":"...","linkedin_url":"https://linkedin.com/i
                 continue
 
             try:
-                disc_match = re.search(r'\[.*\]', disc_result['text'], re.DOTALL)
+                # Strip markdown fences if present
+                disc_text = disc_result['text'].strip()
+                if disc_text.startswith('```'):
+                    disc_text = disc_text.split('\n', 1)[1] if '\n' in disc_text else disc_text[3:]
+                    if disc_text.rstrip().endswith('```'):
+                        disc_text = disc_text.rstrip()[:-3]
+                    disc_text = disc_text.strip()
+                disc_match = re.search(r'\[.*\]', disc_text, re.DOTALL)
                 if disc_match:
                     items = json.loads(disc_match.group())
                     if dtype not in all_discoveries:
                         all_discoveries[dtype] = []
                     all_discoveries[dtype].extend(items)
-            except Exception:
+                else:
+                    print(f"[Discovery] No JSON array found in {dtype} response: {disc_text[:200]}")
+            except Exception as e:
+                print(f"[Discovery] Failed to parse {dtype} results: {e}")
+                print(f"[Discovery] Raw: {disc_result['text'][:200]}")
                 continue
 
         # After each round, refine instruction based on what was found
@@ -6811,10 +6953,17 @@ Return JSON: {{"competitors": "new instruction or null", "forums": "...", "leade
             refine_result = generate_text(refine_prompt, max_tokens=500, model='claude-opus-4-6')
             if refine_result['ok']:
                 try:
-                    ref_match = re.search(r'\{.*\}', refine_result['text'], re.DOTALL)
+                    ref_text = refine_result['text'].strip()
+                    if ref_text.startswith('```'):
+                        ref_text = ref_text.split('\n', 1)[1] if '\n' in ref_text else ref_text[3:]
+                        if ref_text.rstrip().endswith('```'):
+                            ref_text = ref_text.rstrip()[:-3]
+                        ref_text = ref_text.strip()
+                    ref_match = re.search(r'\{.*\}', ref_text, re.DOTALL)
                     if ref_match:
                         instructions = json.loads(ref_match.group())
-                except Exception:
+                except Exception as e:
+                    print(f"[Discovery] Refinement parse failed: {e}")
                     pass
 
     # Auto-apply discoveries to tracked lists
@@ -6868,58 +7017,1053 @@ Return JSON: {{"competitors": "new instruction or null", "forums": "...", "leade
     })
 
 
+# ─── LinkedIn Analytics & Research Brief Helpers ─────────────────────
+
+def _extract_top_topics(posts, max_topics=10):
+    """Extract most frequent meaningful words from post texts."""
+    from collections import Counter
+    stop_words = {
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
+        'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+        'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+        'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
+        'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'each',
+        'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no',
+        'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+        'just', 'because', 'but', 'and', 'or', 'if', 'while', 'about', 'up',
+        'this', 'that', 'these', 'those', 'what', 'which', 'who', 'whom',
+        'its', 'his', 'her', 'their', 'our', 'your', 'my', 'also', 'been',
+        'like', 'make', 'many', 'much', 'them', 'they', 'we', 'you', 'it',
+        'he', 'she', 'him', 'me', 'us', 'get', 'got', 'going', 'know',
+        'think', 'thing', 'things', 'really', 'still', 'even', 'way', 'well',
+        'come', 'back', 'want', 'look', 'see', 'say', 'said', 'new', 'one',
+        'two', 'first', 'last', 'long', 'great', 'good', 'right', 'take',
+        'people', 'work', 'time', 'year', 'years', 'http', 'https', 'www',
+        'don', 'doesn', 'didn', 'won', 'isn', 'aren', 'wasn', 'weren',
+    }
+    words = Counter()
+    for p in posts:
+        text = p.get('text', '')
+        if not text:
+            continue
+        for word in str(text).lower().split():
+            word = word.strip('.,!?;:()[]{}"\'-#@&*~`/\\|<>+=$%^_')
+            if len(word) > 3 and word not in stop_words and not word.startswith('http'):
+                words[word] += 1
+    return [word for word, _ in words.most_common(max_topics)]
+
+
+# ─── Sentiment, Tone & Format Classification Constants ────────────────
+
+_POSITIVE_WORDS = frozenset({
+    'success', 'growth', 'innovative', 'excellent', 'powerful', 'transform',
+    'breakthrough', 'achieve', 'opportunity', 'winning', 'proud', 'excited',
+    'thrilled', 'amazing', 'incredible', 'love', 'happy', 'boost', 'improve',
+    'grow', 'scale', 'optimize', 'efficient', 'streamline', 'profit', 'revenue',
+    'impact', 'empower', 'inspire', 'grateful', 'milestone', 'record',
+    'celebrate', 'launched', 'delighted', 'brilliant', 'outstanding', 'solved',
+    'enabled', 'accelerate', 'thrive', 'rewarding',
+})
+
+_NEGATIVE_WORDS = frozenset({
+    'fail', 'struggle', 'problem', 'broken', 'waste', 'terrible', 'frustrated',
+    'painful', 'mistake', 'challenge', 'loss', 'decline', 'risk', 'expensive',
+    'complicated', 'outdated', 'fragmented', 'disconnect', 'slow', 'missing',
+    'wrong', 'difficult', 'confusing', 'overwhelmed', 'burnout', 'crisis',
+    'stuck', 'regret', 'fear', 'anxiety', 'chaos', 'nightmare',
+})
+
+
+def _classify_hook(text):
+    """Classify first line into hook type: question, statistic, bold_claim, list, story, statement."""
+    first_line = text.split('\n')[0].strip()[:150]
+    fl = first_line.lower()
+    if first_line.endswith('?') or any(fl.startswith(w) for w in ('what ', 'why ', 'how ', 'when ', 'do ', 'does ', 'is ', 'are ', 'can ', 'will ', 'should ', 'would ', 'have ')):
+        return 'question'
+    if re.search(r'\d', first_line) or any(w in fl for w in ('percent', 'million', 'billion')):
+        return 'statistic'
+    if any(w in fl for w in ('most ', 'best ', 'worst ', 'never ', 'always ', 'nobody', 'everyone', 'only way', 'biggest mistake', 'stop ', "don't ", 'the truth')):
+        return 'bold_claim'
+    if re.match(r'^\d+\s+\w', fl) or re.match(r'^here\s+are', fl):
+        return 'list'
+    if any(fl.startswith(w) for w in ('i ', 'my ', 'last ', 'when i', 'yesterday', 'a few years', 'a year ago')):
+        return 'story'
+    return 'statement'
+
+
+def _classify_cta(text):
+    """Classify last lines into CTA type: question, link, call_to_action, none."""
+    lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
+    last_lines = ' '.join(lines[-2:]).lower() if len(lines) >= 2 else (lines[-1].lower() if lines else '')
+    if last_lines.rstrip().endswith('?'):
+        return 'question'
+    if re.search(r'https?://', last_lines):
+        return 'link'
+    if any(w in last_lines for w in ('follow', 'subscribe', 'share', 'comment', 'repost', 'dm me', 'reach out', 'sign up', 'book', 'join', 'download', 'check out', 'click', 'link in')):
+        return 'call_to_action'
+    return 'none'
+
+
+def _classify_tone(text):
+    """Classify into tone: educational, promotional, personal, thought_leadership, industry_news."""
+    tl = text.lower()
+    scores = {
+        'educational': sum(1 for w in ('how to', 'tips', 'guide', 'learn', 'steps', 'framework', '101', 'explained', 'lesson', "here's what") if w in tl),
+        'promotional': sum(1 for w in ('launch', 'announce', 'feature', 'demo', 'pricing', 'try ', 'free ', 'product', 'introducing', 'now available') if w in tl),
+        'personal': sum(1 for w in ('i ', 'my journey', 'my story', 'learned', 'taught me', 'honest', 'truth is', 'confession', 'behind the scenes', 'vulnerable') if w in tl),
+        'thought_leadership': sum(1 for w in ('believe', 'future', 'prediction', 'trend', 'industry', 'shift', 'opinion', 'unpopular', 'hot take', 'controversial') if w in tl),
+        'industry_news': sum(1 for w in ('report', 'study', 'data shows', 'according', 'survey', 'market', 'research', 'published', 'findings', 'statistics') if w in tl),
+    }
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else 'personal'
+
+
+def _score_sentiment(text):
+    """Return 'positive', 'negative', or 'neutral' based on word scoring."""
+    words = set(re.findall(r'[a-z]+', text.lower()))
+    pos = len(words & _POSITIVE_WORDS)
+    neg = len(words & _NEGATIVE_WORDS)
+    score = pos - neg
+    if score > 1:
+        return 'positive'
+    if score < -1:
+        return 'negative'
+    return 'neutral'
+
+
+def _map_posts_to_pillars(posts, pillars):
+    """Map posts to content pillars via keyword matching. Returns (mapping_dict, pillar_keywords)."""
+    pillar_keywords = {}
+    for p in pillars:
+        p_dict = dict(p) if not isinstance(p, dict) else p
+        name_words = set(w for w in re.findall(r'[a-z]+', (p_dict.get('name') or '').lower()) if len(w) > 3)
+        desc_words = set(w for w in re.findall(r'[a-z]+', (p_dict.get('description') or '').lower()) if len(w) > 3)
+        pillar_keywords[p_dict.get('name', '')] = {'name': name_words, 'desc': desc_words, 'color': p_dict.get('color', '#888')}
+
+    mapping = {pn: [] for pn in pillar_keywords}
+    mapping['__unmapped'] = []
+
+    for post in posts:
+        text_words = set(re.findall(r'[a-z]+', post.get('text', '').lower()))
+        best_pillar, best_score = None, 0
+        for pn, kw in pillar_keywords.items():
+            score = len(text_words & kw['name']) * 2 + len(text_words & kw['desc'])
+            if score > best_score:
+                best_pillar, best_score = pn, score
+        if best_score >= 2 and best_pillar:
+            mapping[best_pillar].append(post)
+        else:
+            mapping['__unmapped'].append(post)
+    return mapping, pillar_keywords
+
+
+def _compute_linkedin_deep_analytics(brand_id, db):
+    """Compute comprehensive LinkedIn post analytics for a brand.
+    Returns a superset of the old _get_linkedin_analytics_summary() fields plus deep analytics.
+    """
+    from collections import Counter
+    from datetime import datetime
+
+    results = db.execute("""
+        SELECT data FROM scrape_results
+        WHERE brand_id=? AND source_type IN ('linkedin_company', 'linkedin_profile', 'baseline_company', 'baseline_personal')
+        ORDER BY created_at DESC LIMIT 10
+    """, (brand_id,)).fetchall()
+
+    all_posts = []
+    for r in results:
+        try:
+            raw = r['data']
+            items = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(items, list):
+                all_posts.extend(items)
+        except Exception:
+            continue
+
+    if not all_posts:
+        return None
+
+    # Deduplicate by URL
+    seen_urls = set()
+    unique_posts = []
+    for p in all_posts:
+        if not isinstance(p, dict):
+            continue
+        url = p.get('url', '')
+        if url and url in seen_urls:
+            continue
+        if url:
+            seen_urls.add(url)
+        unique_posts.append(p)
+
+    if not unique_posts:
+        return None
+
+    total = len(unique_posts)
+
+    # ── Per-post metrics ──
+    for p in unique_posts:
+        likes = int(p.get('numLikes', 0) or 0)
+        comments = int(p.get('numComments', 0) or 0)
+        shares = int(p.get('numShares', 0) or 0)
+        p['_likes'] = likes
+        p['_comments'] = comments
+        p['_shares'] = shares
+        p['_engagement'] = likes + comments * 2 + shares * 3
+        p['_virality'] = shares / max(likes, 1) if likes else 0
+        p['_conversation_rate'] = comments / max(likes, 1) if likes else 0
+        text = str(p.get('text', ''))
+        p['_word_count'] = len(text.split())
+        p['_hook'] = _classify_hook(text) if text else 'statement'
+        p['_cta'] = _classify_cta(text) if text else 'none'
+        p['_tone'] = _classify_tone(text) if text else 'personal'
+        p['_sentiment'] = _score_sentiment(text) if text else 'neutral'
+        p['_hashtags'] = re.findall(r'#\w+', text)
+        p['_has_emoji'] = bool(re.search(r'[\U0001F300-\U0001FAFF\u2600-\u27BF]', text))
+        p['_has_link'] = bool(re.search(r'https?://', text))
+        p['_has_list'] = bool(re.search(r'^\s*[\d•\-\*]\s', text, re.MULTILINE))
+
+    # ── Basic backward-compatible fields ──
+    total_likes = sum(p['_likes'] for p in unique_posts)
+    total_comments = sum(p['_comments'] for p in unique_posts)
+    total_shares = sum(p['_shares'] for p in unique_posts)
+    top_posts = sorted(unique_posts, key=lambda p: p['_engagement'], reverse=True)[:10]
+
+    dates_raw = [p.get('postedAt', '') for p in unique_posts if p.get('postedAt')]
+    dates_raw.sort()
+    earliest = dates_raw[0][:10] if dates_raw else 'N/A'
+    latest = dates_raw[-1][:10] if dates_raw else 'N/A'
+
+    # ── Engagement percentiles ──
+    eng_scores = sorted(p['_engagement'] for p in unique_posts)
+    def _percentile(arr, pct):
+        if not arr:
+            return 0
+        idx = int(len(arr) * pct / 100)
+        return arr[min(idx, len(arr) - 1)]
+
+    median_eng = _percentile(eng_scores, 50)
+    avg_eng = sum(eng_scores) / total if total else 0
+    p75_eng = _percentile(eng_scores, 75)
+    p90_eng = _percentile(eng_scores, 90)
+
+    avg_virality = sum(p['_virality'] for p in unique_posts) / total if total else 0
+    avg_conversation = sum(p['_conversation_rate'] for p in unique_posts) / total if total else 0
+
+    # ── Posting frequency ──
+    parsed_dates = []
+    for d in dates_raw:
+        try:
+            parsed_dates.append(datetime.fromisoformat(d[:10]))
+        except (ValueError, TypeError):
+            pass
+    if len(parsed_dates) >= 2:
+        date_span = (parsed_dates[-1] - parsed_dates[0]).days or 1
+        posts_per_week = total / (date_span / 7)
+    else:
+        posts_per_week = 0
+
+    # ── Recency trend ──
+    if len(parsed_dates) >= 4:
+        mid = len(parsed_dates) // 2
+        first_half_rate = mid / max((parsed_dates[mid - 1] - parsed_dates[0]).days, 1)
+        second_half_rate = (total - mid) / max((parsed_dates[-1] - parsed_dates[mid]).days, 1)
+        if second_half_rate > first_half_rate * 1.2:
+            recency_trend = 'increasing'
+        elif second_half_rate < first_half_rate * 0.8:
+            recency_trend = 'decreasing'
+        else:
+            recency_trend = 'stable'
+    else:
+        recency_trend = 'stable'
+
+    # ── Pillar mapping ──
+    pillars = db.execute("SELECT name, description, color FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()
+    pillar_mapping, pillar_kw = _map_posts_to_pillars(unique_posts, pillars)
+
+    mapped_pillars = []
+    gap_pillars = []
+    for pn in pillar_kw:
+        posts_in_pillar = pillar_mapping.get(pn, [])
+        if posts_in_pillar:
+            pillar_eng = sum(p['_engagement'] for p in posts_in_pillar) / len(posts_in_pillar)
+            best = max(posts_in_pillar, key=lambda p: p['_engagement'])
+            mapped_pillars.append({
+                'pillar_name': pn,
+                'pillar_color': pillar_kw[pn]['color'],
+                'post_count': len(posts_in_pillar),
+                'avg_engagement': round(pillar_eng, 1),
+                'best_post_preview': str(best.get('text', ''))[:120],
+            })
+        else:
+            gap_pillars.append({'pillar_name': pn, 'pillar_color': pillar_kw[pn]['color']})
+
+    # Unlabeled themes from unmapped posts
+    unmapped = pillar_mapping.get('__unmapped', [])
+    unlabeled_topics = _extract_top_topics(unmapped, max_topics=5) if unmapped else []
+    unlabeled_themes = [{'theme': t, 'count': sum(1 for p in unmapped if t in str(p.get('text', '')).lower())} for t in unlabeled_topics]
+
+    # ── Format analysis ──
+    def _bucket_length(wc):
+        if wc < 80:
+            return 'short (<80 words)'
+        elif wc < 200:
+            return 'medium (80-200 words)'
+        else:
+            return 'long (200+ words)'
+
+    length_groups = {}
+    for p in unique_posts:
+        bucket = _bucket_length(p['_word_count'])
+        length_groups.setdefault(bucket, []).append(p)
+    length_buckets = [{'label': k, 'count': len(v), 'avg_engagement': round(sum(p['_engagement'] for p in v) / len(v), 1)} for k, v in length_groups.items()]
+
+    hook_groups = {}
+    for p in unique_posts:
+        hook_groups.setdefault(p['_hook'], []).append(p)
+    hook_types = sorted([{'type': k, 'count': len(v), 'avg_engagement': round(sum(p['_engagement'] for p in v) / len(v), 1)} for k, v in hook_groups.items()], key=lambda x: x['avg_engagement'], reverse=True)
+
+    cta_groups = {}
+    for p in unique_posts:
+        cta_groups.setdefault(p['_cta'], []).append(p)
+    cta_types = sorted([{'type': k, 'count': len(v), 'avg_engagement': round(sum(p['_engagement'] for p in v) / len(v), 1)} for k, v in cta_groups.items()], key=lambda x: x['avg_engagement'], reverse=True)
+
+    # Hashtag stats
+    all_hashtags = []
+    for p in unique_posts:
+        all_hashtags.extend(p['_hashtags'])
+    hashtag_counter = Counter(all_hashtags)
+    avg_hashtags = sum(len(p['_hashtags']) for p in unique_posts) / total if total else 0
+
+    # Binary comparisons helper
+    def _binary_split(field):
+        with_it = [p for p in unique_posts if p.get(field)]
+        without = [p for p in unique_posts if not p.get(field)]
+        return {
+            'with': {'count': len(with_it), 'avg_eng': round(sum(p['_engagement'] for p in with_it) / max(len(with_it), 1), 1)},
+            'without': {'count': len(without), 'avg_eng': round(sum(p['_engagement'] for p in without) / max(len(without), 1), 1)},
+        }
+
+    emoji_impact = _binary_split('_has_emoji')
+    link_impact = _binary_split('_has_link')
+    list_impact = _binary_split('_has_list')
+
+    # ── Temporal analysis ──
+    day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    day_groups = {d: [] for d in day_names}
+    monthly_groups = {}
+    for p in unique_posts:
+        try:
+            dt = datetime.fromisoformat(str(p.get('postedAt', ''))[:10])
+            day_groups[day_names[dt.weekday()]].append(p)
+            month_key = dt.strftime('%Y-%m')
+            monthly_groups.setdefault(month_key, []).append(p)
+        except (ValueError, TypeError):
+            pass
+
+    day_of_week = [{'day': d, 'post_count': len(day_groups[d]), 'avg_engagement': round(sum(p['_engagement'] for p in day_groups[d]) / max(len(day_groups[d]), 1), 1)} for d in day_names]
+    monthly_trend = sorted([{'month': k, 'post_count': len(v)} for k, v in monthly_groups.items()], key=lambda x: x['month'])
+
+    # Best posting windows (top 3 days by avg engagement)
+    active_days = [d for d in day_of_week if d['post_count'] >= 2]
+    best_windows = sorted(active_days, key=lambda d: d['avg_engagement'], reverse=True)[:3]
+
+    # ── Sentiment & Tone ──
+    sentiment_dist = Counter(p['_sentiment'] for p in unique_posts)
+    tone_groups = {}
+    for p in unique_posts:
+        tone_groups.setdefault(p['_tone'], []).append(p)
+    tone_dist = sorted([{'tone': k, 'count': len(v), 'avg_engagement': round(sum(p['_engagement'] for p in v) / len(v), 1)} for k, v in tone_groups.items()], key=lambda x: x['avg_engagement'], reverse=True)
+    best_tone = tone_dist[0]['tone'] if tone_dist else 'N/A'
+    worst_tone = tone_dist[-1]['tone'] if tone_dist else 'N/A'
+
+    # ── Viral DNA (top 10% posts) ──
+    viral_threshold = max(int(total * 0.1), 1)
+    viral_posts = sorted(unique_posts, key=lambda p: p['_engagement'], reverse=True)[:viral_threshold]
+    bottom_posts = sorted(unique_posts, key=lambda p: p['_engagement'])[:5]
+
+    viral_avg_length = sum(p['_word_count'] for p in viral_posts) / len(viral_posts) if viral_posts else 0
+    viral_hooks = Counter(p['_hook'] for p in viral_posts)
+    viral_tones = Counter(p['_tone'] for p in viral_posts)
+    viral_emoji_pct = sum(1 for p in viral_posts if p['_has_emoji']) / len(viral_posts) * 100 if viral_posts else 0
+    viral_avg_hashtags = sum(len(p['_hashtags']) for p in viral_posts) / len(viral_posts) if viral_posts else 0
+
+    dominant_hook = viral_hooks.most_common(1)[0][0] if viral_hooks else 'statement'
+    dominant_tone = viral_tones.most_common(1)[0][0] if viral_tones else 'personal'
+
+    # Find dominant pillar among viral posts
+    viral_pillar_counts = Counter()
+    for p in viral_posts:
+        for pn, posts_list in pillar_mapping.items():
+            if pn != '__unmapped' and p in posts_list:
+                viral_pillar_counts[pn] += 1
+    dominant_pillar = viral_pillar_counts.most_common(1)[0][0] if viral_pillar_counts else 'N/A'
+
+    # Build formula text
+    length_label = 'short' if viral_avg_length < 80 else ('medium' if viral_avg_length < 200 else 'long')
+    formula_text = f"{length_label.title()} {dominant_tone} posts with {dominant_hook} hooks"
+    if viral_emoji_pct > 50:
+        formula_text += " + emojis"
+    if viral_avg_hashtags > 2:
+        formula_text += f" + {int(viral_avg_hashtags)} hashtags"
+    if dominant_pillar != 'N/A':
+        formula_text += f" about {dominant_pillar}"
+
+    def _post_preview(p):
+        return {
+            'text_preview': str(p.get('text', ''))[:150],
+            'engagement': p['_engagement'],
+            'likes': p['_likes'],
+            'comments': p['_comments'],
+            'shares': p['_shares'],
+            'url': p.get('url', ''),
+            'hook': p['_hook'],
+            'tone': p['_tone'],
+            'sentiment': p['_sentiment'],
+        }
+
+    return {
+        # Backward-compatible fields
+        'total_posts': total,
+        'avg_likes': total_likes / total if total else 0,
+        'avg_comments': total_comments / total if total else 0,
+        'avg_shares': total_shares / total if total else 0,
+        'total_likes': total_likes,
+        'total_comments': total_comments,
+        'total_shares': total_shares,
+        'top_posts': [_post_preview(p) for p in top_posts[:5]],
+        'earliest': earliest,
+        'latest': latest,
+        'top_topics': _extract_top_topics(unique_posts),
+        # Deep analytics
+        'overview': {
+            'total_posts': total,
+            'date_range': f"{earliest} to {latest}",
+            'posting_freq_per_week': round(posts_per_week, 1),
+            'median_engagement': median_eng,
+            'avg_engagement': round(avg_eng, 1),
+            'p75_engagement': p75_eng,
+            'p90_engagement': p90_eng,
+            'avg_virality': round(avg_virality, 3),
+            'avg_conversation_rate': round(avg_conversation, 3),
+            'recency_trend': recency_trend,
+        },
+        'pillar_mapping': {
+            'mapped': sorted(mapped_pillars, key=lambda x: x['avg_engagement'], reverse=True),
+            'gaps': gap_pillars,
+            'unlabeled_themes': unlabeled_themes,
+        },
+        'format_analysis': {
+            'length_buckets': sorted(length_buckets, key=lambda x: x['avg_engagement'], reverse=True),
+            'hook_types': hook_types,
+            'cta_types': cta_types,
+            'hashtag_stats': {
+                'avg_per_post': round(avg_hashtags, 1),
+                'most_used': [{'tag': t, 'count': c} for t, c in hashtag_counter.most_common(10)],
+            },
+            'emoji_impact': emoji_impact,
+            'link_impact': link_impact,
+            'list_impact': list_impact,
+        },
+        'temporal': {
+            'day_of_week': day_of_week,
+            'monthly_trend': monthly_trend,
+            'recency_trend': recency_trend,
+            'best_windows': best_windows,
+        },
+        'sentiment_tone': {
+            'sentiment_dist': dict(sentiment_dist),
+            'tone_dist': tone_dist,
+            'best_tone': best_tone,
+            'worst_tone': worst_tone,
+        },
+        'viral_dna': {
+            'formula_text': formula_text,
+            'traits': {
+                'avg_length': round(viral_avg_length),
+                'dominant_hook': dominant_hook,
+                'dominant_pillar': dominant_pillar,
+                'dominant_tone': dominant_tone,
+                'avg_hashtags': round(viral_avg_hashtags, 1),
+                'emoji_pct': round(viral_emoji_pct),
+            },
+            'top_viral_posts': [_post_preview(p) for p in viral_posts[:5]],
+        },
+        'bottom_posts': [_post_preview(p) for p in bottom_posts],
+    }
+
+
+def _get_linkedin_analytics_summary(brand_id, db):
+    """Backward-compatible wrapper — returns deep analytics (superset of old format)."""
+    return _compute_linkedin_deep_analytics(brand_id, db)
+
+
+def _format_deep_analytics_for_ai(analytics):
+    """Format deep analytics into a condensed text summary for AI prompt inclusion."""
+    if not analytics:
+        return ''
+    o = analytics.get('overview', {})
+    pm = analytics.get('pillar_mapping', {})
+    fa = analytics.get('format_analysis', {})
+    st = analytics.get('sentiment_tone', {})
+    vd = analytics.get('viral_dna', {})
+    t = analytics.get('temporal', {})
+
+    lines = [f"LinkedIn Deep Analytics ({o.get('total_posts', 0)} posts, {o.get('date_range', 'N/A')}):"]
+    lines.append(f"  Engagement: median={o.get('median_engagement', 0)}, avg={o.get('avg_engagement', 0)}, P90={o.get('p90_engagement', 0)}")
+    lines.append(f"  Virality: {o.get('avg_virality', 0)} | Conversation: {o.get('avg_conversation_rate', 0)}")
+    lines.append(f"  Posting: {o.get('posting_freq_per_week', 0)}/week | Trend: {o.get('recency_trend', 'stable')}")
+
+    # Pillar performance
+    mapped = pm.get('mapped', [])
+    if mapped:
+        lines.append("  Content Pillar Performance:")
+        for mp in mapped[:6]:
+            strength = 'STRONG' if mp['avg_engagement'] > o.get('avg_engagement', 0) * 1.2 else ('WEAK' if mp['avg_engagement'] < o.get('avg_engagement', 0) * 0.8 else 'AVERAGE')
+            lines.append(f"    - {mp['pillar_name']}: {mp['post_count']} posts, avg engagement {mp['avg_engagement']} ({strength})")
+    gaps = pm.get('gaps', [])
+    if gaps:
+        lines.append(f"  Pillar gaps (no posts): {', '.join(g['pillar_name'] for g in gaps)}")
+    themes = pm.get('unlabeled_themes', [])
+    if themes:
+        lines.append(f"  Emerging themes: {', '.join(t['theme'] for t in themes[:5])}")
+
+    # Format insights
+    if fa.get('length_buckets'):
+        best_len = fa['length_buckets'][0]
+        lines.append(f"  Best format: {best_len['label']} ({best_len['avg_engagement']} avg eng)")
+    if fa.get('hook_types'):
+        best_hook = fa['hook_types'][0]
+        lines.append(f"  Best hook: {best_hook['type']} ({best_hook['avg_engagement']} avg eng)")
+
+    # Tone/sentiment
+    lines.append(f"  Best tone: {st.get('best_tone', 'N/A')} | Worst: {st.get('worst_tone', 'N/A')}")
+    sd = st.get('sentiment_dist', {})
+    total_s = sum(sd.values()) or 1
+    lines.append(f"  Sentiment: {round(sd.get('positive', 0)/total_s*100)}% pos, {round(sd.get('neutral', 0)/total_s*100)}% neutral, {round(sd.get('negative', 0)/total_s*100)}% neg")
+
+    # Viral formula
+    lines.append(f"  Viral Formula: {vd.get('formula_text', 'N/A')}")
+
+    # Best days
+    bw = t.get('best_windows', [])
+    if bw:
+        lines.append(f"  Best days: {', '.join(w['day'] for w in bw)}")
+
+    return '\n'.join(lines)
+
+
+def _build_research_brief_context(brand_id, db):
+    """Build brand-specific context for research brief synthesis (replaces hardcoded DIQIT context)."""
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    pillars = db.execute("SELECT name, description FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()
+    cadence = db.execute("SELECT name, channel, posts_per_week, notes FROM cadence_rules WHERE brand_id=?", (brand_id,)).fetchall()
+
+    pillar_text = '\n'.join(f"  {i+1}. {p['name']}: {p['description'] or 'No description'}" for i, p in enumerate(pillars)) if pillars else '  Not yet defined'
+    cadence_text = '\n'.join(f"  - {c['channel']}: {c['posts_per_week']} posts/week" + (f" ({c['notes']})" if c['notes'] else '') for c in cadence) if cadence else '  Not yet defined'
+
+    context = f"""Brand: {brand['name']}
+Website: {brand['website'] or 'N/A'}
+Tagline: {brand['tagline'] or 'N/A'}
+Voice Summary: {(brand['voice_summary'] or 'Not yet defined')[:500]}
+
+Content Pillars:
+{pillar_text}
+
+Publishing Cadence:
+{cadence_text}"""
+
+    # Add LinkedIn deep analytics if available
+    li_analytics = _get_linkedin_analytics_summary(brand_id, db)
+    if li_analytics:
+        deep_summary = _format_deep_analytics_for_ai(li_analytics)
+        if deep_summary:
+            context += f"\n\n{deep_summary}"
+
+    return context, brand, pillars
+
+
+# ─── Research Brief Helpers ────────────────────────────────────────────
+
+
+def _get_setting_from_conn(conn, key, default=''):
+    """Read an app setting using a raw sqlite3 connection (for background threads without Flask context)."""
+    row = conn.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+    if not row:
+        return default
+    value = row[0] if isinstance(row, tuple) else row['value']
+    if key in ENCRYPTED_KEYS:
+        return decrypt_value(value)
+    return value
+
+
+def _call_gemini_deep_research(prompt, api_key, max_wait=900):
+    """Call Gemini Deep Research API with async polling. Returns {'ok': bool, 'text': str, 'error': str}."""
+    import urllib.request, urllib.error
+
+    # Create interaction
+    url = 'https://generativelanguage.googleapis.com/v1beta/interactions'
+    body = json.dumps({
+        'input': prompt,
+        'agent': 'deep-research-pro-preview-12-2025',
+        'background': True,
+        'stream': False,
+        'tools': [],
+        'agent_config': {'type': 'deep-research', 'thinking_summaries': 'auto'}
+    }).encode()
+    req = urllib.request.Request(url, data=body, headers={
+        'Content-Type': 'application/json',
+        'x-goog-api-key': api_key
+    })
+
+    try:
+        resp = urllib.request.urlopen(req, timeout=30)
+        interaction = json.loads(resp.read().decode())
+        interaction_id = interaction.get('id') or interaction.get('name', '').split('/')[-1]
+        print(f"[DeepResearch] Created interaction: {interaction_id}")
+    except urllib.error.HTTPError as he:
+        err_body = he.read().decode()[:500] if he.fp else ''
+        print(f"[DeepResearch] HTTP {he.code}: {err_body}")
+        return {'ok': False, 'text': '', 'error': f'HTTP {he.code}: {err_body[:200]}'}
+    except Exception as e:
+        return {'ok': False, 'text': '', 'error': f'Failed to create deep research: {e}'}
+
+    # Poll for completion
+    poll_url = f'{url}/{interaction_id}'
+    start = _time.time()
+    while _time.time() - start < max_wait:
+        _time.sleep(15)  # Deep Research takes minutes, not seconds
+        try:
+            poll_req = urllib.request.Request(poll_url, headers={'x-goog-api-key': api_key})
+            poll_resp = urllib.request.urlopen(poll_req, timeout=30)
+            result = json.loads(poll_resp.read().decode())
+            status = result.get('status', '')
+            print(f"[DeepResearch] Poll status: {status} ({int(_time.time() - start)}s elapsed)")
+            if status == 'completed':
+                # Extract text from outputs
+                outputs = result.get('outputs', [])
+                text = '\n'.join(o.get('text', '') for o in outputs if o.get('type') == 'text')
+                if not text:
+                    # Try alternative response structures
+                    text = result.get('output', result.get('text', ''))
+                return {'ok': True, 'text': text or 'No text output', 'error': ''}
+            elif status in ('failed', 'error'):
+                return {'ok': False, 'text': '', 'error': result.get('error', 'Deep research failed')}
+            # else: still in_progress, keep polling
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode()[:500] if he.fp else ''
+            print(f"[DeepResearch] HTTP {he.code}: {err_body}")
+            return {'ok': False, 'text': '', 'error': f'HTTP {he.code}: {err_body[:200]}'}
+        except Exception as e:
+            print(f"[DeepResearch] Poll error: {e}")
+            continue
+
+    return {'ok': False, 'text': '', 'error': f'Deep research timed out after {max_wait}s'}
+
+
+def _build_feedback_context(brand_id, db):
+    """Build a feedback summary from past brief angle decisions for self-improving loop."""
+    # Query last 3 briefs with angle decisions
+    briefs = db.execute("""
+        SELECT content_angles, angle_decisions FROM research_briefs
+        WHERE brand_id=? AND angle_decisions IS NOT NULL AND angle_decisions != '{}'
+        ORDER BY id DESC LIMIT 3
+    """, (brand_id,)).fetchall()
+
+    if not briefs:
+        return ''
+
+    accepted = []
+    rejected = []
+    for brief in briefs:
+        try:
+            angles = json.loads(brief['content_angles'] or '[]')
+            decisions = json.loads(brief['angle_decisions'] or '{}')
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for idx_str, decision in decisions.items():
+            try:
+                idx = int(idx_str)
+                if idx < len(angles):
+                    angle = angles[idx]
+                    title = angle.get('title', f'Angle {idx+1}')
+                    fmt = angle.get('format', 'unknown')
+                    urgency = angle.get('urgency', 'unknown')
+                    if decision.get('decision') == 'accept' or decision.get('decision') == 'edit':
+                        accepted.append(f'- "{title}" ({fmt}, {urgency} urgency)')
+                    elif decision.get('decision') == 'reject':
+                        reason = decision.get('reason', 'no reason given')
+                        rejected.append(f'- "{title}" ({fmt}) — rejected: {reason}')
+            except (ValueError, IndexError):
+                continue
+
+    # Also get top performing published content
+    top_content = db.execute("""
+        SELECT ci.title, ci.content_type, a.metric_type, SUM(a.metric_value) as total
+        FROM content_items ci
+        JOIN analytics_snapshots a ON a.content_item_id = ci.id
+        WHERE ci.brand_id=? AND ci.status='published'
+        GROUP BY ci.id, a.metric_type
+        ORDER BY total DESC LIMIT 10
+    """, (brand_id,)).fetchall()
+
+    top_posts = {}
+    for row in top_content:
+        title = row['title']
+        if title not in top_posts:
+            top_posts[title] = {'type': row['content_type'], 'metrics': {}}
+        top_posts[title]['metrics'][row['metric_type']] = int(row['total'])
+
+    if not accepted and not rejected and not top_posts:
+        return ''
+
+    lines = ['\n## LEARNING FROM PAST CONTENT DECISIONS']
+    if accepted:
+        lines.append('**ACCEPTED (generate more like these):**')
+        lines.extend(accepted[:10])
+    if rejected:
+        lines.append('**REJECTED (avoid these patterns):**')
+        lines.extend(rejected[:10])
+    if top_posts:
+        lines.append('**TOP PERFORMING PUBLISHED CONTENT:**')
+        for title, data in list(top_posts.items())[:5]:
+            metrics_str = ', '.join(f"{k}={v}" for k, v in data['metrics'].items())
+            lines.append(f'- "{title}" ({data["type"]}) — {metrics_str}')
+
+    return '\n'.join(lines)
+
+
+def _generate_content_angles(brand_id, brief_id, conn, brand, gemini_report, brief_content, feedback_context=''):
+    """Generate content angles from brief + Gemini report. Updates research_briefs table.
+    Works with both raw sqlite3 connections (background thread) and Flask db connections."""
+    brand_name = brand['name'] if hasattr(brand, '__getitem__') else brand[1]
+    brand_desc = ''
+    try:
+        brand_desc = brand.get('tagline') or brand.get('voice_summary') or ''
+    except (AttributeError, TypeError):
+        pass
+
+    feedback_instruction = ''
+    if feedback_context:
+        feedback_instruction = f"""
+
+{feedback_context}
+
+If LEARNING FROM PAST CONTENT DECISIONS is provided, use it to:
+- Generate more angles similar to previously ACCEPTED ones
+- Avoid patterns similar to previously REJECTED ones
+- Prioritize formats and topics the user has consistently preferred
+"""
+
+    angles_prompt = f"""You are the content strategist for {brand_name}.
+{f"Brand context: {brand_desc}" if brand_desc else ""}
+{feedback_instruction}
+You have two intelligence sources:
+1. INTERNAL BRIEF (from our monitoring data):
+{brief_content[:8000]}
+
+2. GEMINI DEEP RESEARCH REPORT (external market intelligence):
+{gemini_report[:15000]}
+
+Cross-reference BOTH sources and produce a CONTENT EXECUTION PLAN:
+
+For each content piece (aim for 10-15), specify:
+1. **Title**: Clear, compelling working title
+2. **Angle**: The specific perspective {brand_name} should take (not generic)
+3. **Format**: linkedin_post / carousel / blog / video / reel / email
+4. **Urgency**: high (this week) / medium (next 2 weeks) / low (this month)
+5. **Key data points**: 2-3 specific stats or facts from the research to include
+6. **Hook**: The opening line or hook for the piece
+7. **CTA**: What action should the reader take
+8. **Tools**: What tools to use for creation (e.g., "Imagen 3 for hero image", "Nano Banana for infographic", "Carousel template")
+
+IMPORTANT: Your ENTIRE response must be a valid JSON array and NOTHING else. No markdown, no explanations, no preamble. Just the JSON array starting with [ and ending with ].
+
+Example format:
+[{{"title":"...","angle":"...","format":"linkedin_post","urgency":"high","data_points":["..."],"hook":"...","cta":"...","tools":["..."]}}]"""
+
+    print(f"[ResearchBrief] Brief {brief_id}: Calling Opus for content angles (input: {len(angles_prompt)} chars)...", flush=True)
+    angles_result = generate_text(angles_prompt, max_tokens=12288, model='claude-opus-4-6')
+    if not angles_result['ok']:
+        error_msg = f"Angle generation failed: {angles_result.get('error', 'Unknown error')}"
+        print(f"[ResearchBrief] Brief {brief_id}: {error_msg}")
+        conn.execute("UPDATE research_briefs SET status='error', error_message=? WHERE id=?",
+                     (error_msg, brief_id))
+        conn.commit()
+        return
+
+    angles_text = angles_result['text']
+    print(f"[ResearchBrief] Brief {brief_id}: Got angles response ({len(angles_text)} chars)", flush=True)
+
+    # Strip markdown code fences if present
+    cleaned = angles_text.strip()
+    if cleaned.startswith('```'):
+        # Remove ```json or ``` prefix and trailing ```
+        cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+
+    content_angles = []
+    try:
+        # Try direct parse first (ideal case: response is pure JSON)
+        content_angles = json.loads(cleaned)
+        if isinstance(content_angles, list):
+            print(f"[ResearchBrief] Brief {brief_id}: Direct JSON parse: {len(content_angles)} angles")
+        else:
+            content_angles = []
+    except (json.JSONDecodeError, ValueError):
+        # Fallback: extract JSON array from mixed text
+        try:
+            first_bracket = cleaned.find('[')
+            last_bracket = cleaned.rfind(']')
+            if first_bracket >= 0 and last_bracket > first_bracket:
+                json_str = cleaned[first_bracket:last_bracket + 1]
+                content_angles = json.loads(json_str)
+                print(f"[ResearchBrief] Brief {brief_id}: Bracket extraction: {len(content_angles)} angles")
+            else:
+                print(f"[ResearchBrief] Brief {brief_id}: No closing ] found — attempting truncation repair")
+                raise ValueError("No closing bracket")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"[ResearchBrief] Brief {brief_id}: JSON parse failed ({e}), trying truncation repair...")
+            # JSON was likely truncated by max_tokens — try to repair
+            # Find the start of the array
+            arr_start = cleaned.find('[')
+            if arr_start >= 0:
+                fragment = cleaned[arr_start:]
+                # Find the last complete object by looking for the last '},' or '}'
+                # that ends a complete JSON object
+                last_complete = -1
+                brace_depth = 0
+                bracket_depth = 0
+                in_string = False
+                escape_next = False
+                for i, ch in enumerate(fragment):
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    if ch == '\\' and in_string:
+                        escape_next = True
+                        continue
+                    if ch == '"' and not escape_next:
+                        in_string = not in_string
+                        continue
+                    if in_string:
+                        continue
+                    if ch == '{':
+                        brace_depth += 1
+                    elif ch == '}':
+                        brace_depth -= 1
+                        if brace_depth == 0 and bracket_depth == 1:
+                            last_complete = i
+                    elif ch == '[':
+                        bracket_depth += 1
+                    elif ch == ']':
+                        bracket_depth -= 1
+
+                if last_complete > 0:
+                    repaired = fragment[:last_complete + 1] + ']'
+                    try:
+                        content_angles = json.loads(repaired)
+                        print(f"[ResearchBrief] Brief {brief_id}: Truncation repair SUCCESS: {len(content_angles)} angles recovered")
+                    except (json.JSONDecodeError, ValueError) as e2:
+                        print(f"[ResearchBrief] Brief {brief_id}: Truncation repair also failed: {e2}")
+                else:
+                    print(f"[ResearchBrief] Brief {brief_id}: No complete objects found in truncated JSON")
+
+    # Validate each angle is a dict
+    content_angles = [a for a in content_angles if isinstance(a, dict)]
+    print(f"[ResearchBrief] Brief {brief_id}: Final validated angles: {len(content_angles)}")
+
+    # Debug: save raw response for troubleshooting if no angles
+    if not content_angles:
+        # Save first 2000 + last 500 chars for debugging truncation issues
+        debug_preview = angles_text[:2000]
+        if len(angles_text) > 2500:
+            debug_preview += f"\n...[{len(angles_text) - 2500} chars omitted]...\n" + angles_text[-500:]
+        conn.execute("UPDATE research_briefs SET error_message=? WHERE id=?",
+                     (f"Angle parsing returned 0. Raw response ({len(angles_text)} chars): {debug_preview}", brief_id))
+        conn.commit()
+
+    conn.execute("""
+        UPDATE research_briefs SET content_angles=?, status='complete', completed_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (json.dumps(content_angles), brief_id))
+    conn.commit()
+    print(f"[ResearchBrief] Brief {brief_id}: {len(content_angles)} content angles generated", flush=True)
+
+
 # ─── Research Brief Synthesis Pipeline ────────────────────────────────
+
+@app.route('/api/brands/<int:brand_id>/research-brief/<int:brief_id>/rerun-angles', methods=['POST'])
+def rerun_content_angles(brand_id, brief_id):
+    """Re-run ONLY the angle generation step using existing brief + report data.
+    Useful for testing angle parsing without re-running the full 10-min pipeline."""
+    db = get_db()
+    brief = db.execute(
+        "SELECT * FROM research_briefs WHERE id=? AND brand_id=?",
+        (brief_id, brand_id)).fetchone()
+    if not brief:
+        return jsonify({'ok': False, 'error': 'Brief not found'}), 404
+    if not brief['brief_content'] or not brief['gemini_report']:
+        return jsonify({'ok': False, 'error': 'Brief needs both brief_content and gemini_report'}), 400
+
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    # Reset status
+    db.execute("UPDATE research_briefs SET status='analyzing', status_detail='Generating content angles...', content_angles='[]', error_message=NULL WHERE id=?", (brief_id,))
+    db.commit()
+
+    # Run in background thread
+    db_path = DATABASE
+    def _rerun(brand_id, brief_id, db_path):
+        import sys
+        with app.app_context():
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                brand = conn.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+                brief = conn.execute("SELECT * FROM research_briefs WHERE id=?", (brief_id,)).fetchone()
+                feedback_context = _build_feedback_context(brand_id, conn)
+                print(f"[ResearchBrief] Re-running angles for brief {brief_id}...", flush=True)
+                _generate_content_angles(brand_id, brief_id, conn, brand,
+                                        brief['gemini_report'], brief['brief_content'], feedback_context)
+                print(f"[ResearchBrief] Re-run complete for brief {brief_id}", flush=True)
+            except Exception as e:
+                print(f"[ResearchBrief] Re-run error: {e}", flush=True)
+                import traceback; traceback.print_exc()
+                conn.execute("UPDATE research_briefs SET status='error', error_message=? WHERE id=?",
+                             (str(e)[:500], brief_id))
+                conn.commit()
+            finally:
+                conn.close()
+
+    t = threading.Thread(target=_rerun, args=(brand_id, brief_id, db_path), daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'status': 'analyzing', 'message': 'Re-running angle generation'})
+
 
 @app.route('/api/brands/<int:brand_id>/research-brief/generate', methods=['POST'])
 def generate_research_brief(brand_id):
-    """Chained pipeline: gather scrape data → Opus synthesizes brief → Gemini prompt → save.
-    Step 1: Gather recent scraping data (competitors 7d, leaders 14d, forums 7d, own posts 60d)
-    Step 2: Opus 4.6 synthesizes a deep research brief
-    Step 3: Generate Gemini Deep Research prompt
-    Step 4: Save brief + prompt, ready for Gemini report upload
-    """
+    """Thin launcher: creates brief row, spawns background thread, returns immediately."""
     db = get_db()
     brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
     if not brand:
         return jsonify({'ok': False, 'error': 'Brand not found'}), 404
 
+    # Create brief row immediately with 'generating' status
+    now = datetime.now()
+    db.execute("""INSERT INTO research_briefs (brand_id, title, status) VALUES (?, ?, 'generating')""",
+               (brand_id, f"Research Brief — {now.strftime('%Y-%m-%d')}"))
+    brief_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.commit()
+
+    # Spawn background thread
+    db_path = DATABASE
+    t = threading.Thread(target=_generate_brief_background,
+                         args=(brand_id, brief_id, db_path), daemon=True)
+    t.start()
+
+    return jsonify({'ok': True, 'brief_id': brief_id, 'status': 'generating'})
+
+
+@app.route('/api/brands/<int:brand_id>/research-brief/<int:brief_id>/status')
+def research_brief_status(brand_id, brief_id):
+    """Poll the status of a brief being generated in the background."""
+    db = get_db()
+    brief = db.execute(
+        "SELECT status, status_detail, brief_content, gemini_prompt, gemini_report, content_angles, error_message, angle_decisions FROM research_briefs WHERE id=? AND brand_id=?",
+        (brief_id, brand_id)).fetchone()
+    if not brief:
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    return jsonify({
+        'ok': True,
+        'status': brief['status'],
+        'status_detail': brief['status_detail'] or '',
+        'brief_preview': (brief['brief_content'] or '')[:800],
+        'gemini_prompt_preview': (brief['gemini_prompt'] or '')[:800],
+        'has_gemini_report': bool(brief['gemini_report']),
+        'content_angles': json.loads(brief['content_angles'] or '[]'),
+        'angle_decisions': json.loads(brief['angle_decisions'] or '{}'),
+        'error_message': brief['error_message'] or ''
+    })
+
+
+def _generate_brief_background(brand_id, brief_id, db_path):
+    """Background worker: gathers data, synthesizes brief, runs Deep Research, generates angles.
+    Uses app.app_context() so generate_text() and get_setting() work properly."""
+    with app.app_context():
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            _do_generate_brief(brand_id, brief_id, conn)
+        except Exception as e:
+            print(f"[ResearchBrief] Background worker error: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                conn.execute("UPDATE research_briefs SET status='error', error_message=? WHERE id=?",
+                             (str(e)[:500], brief_id))
+                conn.commit()
+            except Exception:
+                pass
+        finally:
+            conn.close()
+
+
+def _do_generate_brief(brand_id, brief_id, conn):
+    """Core brief generation logic — called by background worker."""
+    brand = conn.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        conn.execute("UPDATE research_briefs SET status='error', error_message='Brand not found' WHERE id=?", (brief_id,))
+        conn.commit()
+        return
+
     # ── Step 1: Gather recent data ──
     now = datetime.now()
-    seven_days = (now - __import__('datetime').timedelta(days=7)).strftime('%Y-%m-%d')
-    fourteen_days = (now - __import__('datetime').timedelta(days=14)).strftime('%Y-%m-%d')
-    sixty_days = (now - __import__('datetime').timedelta(days=60)).strftime('%Y-%m-%d')
+    seven_days = (now - timedelta(days=7)).strftime('%Y-%m-%d')
+    fourteen_days = (now - timedelta(days=14)).strftime('%Y-%m-%d')
+    sixty_days = (now - timedelta(days=60)).strftime('%Y-%m-%d')
 
     # Competitor scrape data (last 7 days)
-    comp_data = db.execute("""
+    conn.execute("UPDATE research_briefs SET status_detail='Gathering competitor intelligence...' WHERE id=?", (brief_id,))
+    conn.commit()
+    comp_data = conn.execute("""
         SELECT data, source_name, created_at FROM scrape_results
         WHERE brand_id=? AND source_type='competitors' AND created_at >= ?
         ORDER BY created_at DESC LIMIT 5
     """, (brand_id, seven_days)).fetchall()
 
     # Leader scrape data (last 14 days)
-    leader_data = db.execute("""
+    conn.execute("UPDATE research_briefs SET status_detail='Gathering leader data...' WHERE id=?", (brief_id,))
+    conn.commit()
+    leader_data = conn.execute("""
         SELECT data, source_name, created_at FROM scrape_results
         WHERE brand_id=? AND source_type='leaders' AND created_at >= ?
         ORDER BY created_at DESC LIMIT 5
     """, (brand_id, fourteen_days)).fetchall()
 
     # Forum scrape data (last 7 days)
-    forum_data = db.execute("""
+    conn.execute("UPDATE research_briefs SET status_detail='Gathering forum discussions...' WHERE id=?", (brief_id,))
+    conn.commit()
+    forum_data = conn.execute("""
         SELECT data, source_name, created_at FROM scrape_results
         WHERE brand_id=? AND source_type='forums' AND created_at >= ?
         ORDER BY created_at DESC LIMIT 5
     """, (brand_id, seven_days)).fetchall()
 
     # Own post performance (last 60 days)
-    own_posts = db.execute("""
+    conn.execute("UPDATE research_briefs SET status_detail='Loading own content performance...' WHERE id=?", (brief_id,))
+    conn.commit()
+    own_posts = conn.execute("""
         SELECT title, content_type, status, publish_date, notes, body_text
         FROM content_items WHERE brand_id=? AND publish_date >= ?
         ORDER BY publish_date DESC LIMIT 20
     """, (brand_id, sixty_days)).fetchall()
 
     # ── Analytics performance data ──
-    # Get engagement metrics grouped by post
-    post_metrics = db.execute("""
+    conn.execute("UPDATE research_briefs SET status_detail='Analyzing engagement metrics...' WHERE id=?", (brief_id,))
+    conn.commit()
+    post_metrics = conn.execute("""
         SELECT ci.title, ci.content_type, ci.publish_date, cp.name as pillar_name,
                a.metric_type, a.metric_value
         FROM analytics_snapshots a
@@ -6933,30 +8077,26 @@ def generate_research_brief(brand_id):
     pillar_perf = {}
     post_engagement = {}
     for m in post_metrics:
-        # Per-pillar aggregation
         pname = m['pillar_name'] or 'Untagged'
         if pname not in pillar_perf:
             pillar_perf[pname] = {'impressions': 0, 'likes': 0, 'comments': 0, 'shares': 0, 'posts': set()}
         pillar_perf[pname][m['metric_type']] = pillar_perf[pname].get(m['metric_type'], 0) + m['metric_value']
         pillar_perf[pname]['posts'].add(m['title'])
 
-        # Per-post engagement
         ptitle = m['title']
         if ptitle not in post_engagement:
             post_engagement[ptitle] = {'type': m['content_type'], 'pillar': pname, 'date': m['publish_date'], 'metrics': {}}
         post_engagement[ptitle]['metrics'][m['metric_type']] = m['metric_value']
 
-    # Get latest performance insights from Claude analysis
-    latest_insight = db.execute("""
+    latest_insight = conn.execute("""
         SELECT insight_text FROM performance_insights
         WHERE brand_id=? AND insight_type='comprehensive_analysis'
         ORDER BY created_at DESC LIMIT 1
     """, (brand_id,)).fetchone()
 
-    # Get tracked sources for context
-    competitors = [dict(r) for r in db.execute("SELECT competitor_name, linkedin_url FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
-    forums = [dict(r) for r in db.execute("SELECT name, url, platform FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
-    leaders = [dict(r) for r in db.execute("SELECT name, title, company, linkedin_url FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+    competitors = [dict(r) for r in conn.execute("SELECT competitor_name, linkedin_url, website_url FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+    forums = [dict(r) for r in conn.execute("SELECT name, url, platform FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+    leaders = [dict(r) for r in conn.execute("SELECT name, title, company, linkedin_url FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
 
     # ── Summarize scraped data by type (extract useful fields per source) ──
     def _summarize_competitors(rows):
@@ -6970,10 +8110,8 @@ def generate_research_brief(brand_id):
                     continue
                 item_type = item.get('type', '')
                 if item_type in ('rss_article', 'news_article'):
-                    # News/blog article from RSS or Google News
                     title = item.get('title', '')
                     source = item.get('source', '')
-                    url = item.get('url', '')
                     desc = item.get('description', '')
                     pub = item.get('published_at', '')[:10]
                     company = item.get('company', '')
@@ -6988,7 +8126,6 @@ def generate_research_brief(brand_id):
                     if desc:
                         text += f"  {str(desc)[:300]}\n"
                 elif 'companyName' in item:
-                    # LinkedIn company profile (from Apify)
                     name = item.get('companyName', '')
                     tagline = item.get('tagline', '')
                     desc = item.get('description', '')
@@ -7016,7 +8153,6 @@ def generate_research_brief(brand_id):
                 success_count += 1
                 item_type = item.get('type', '')
                 if item_type == 'news_article':
-                    # Google News article about a leader
                     title = item.get('title', '')
                     source = item.get('source', '')
                     leader = item.get('leader', '')
@@ -7037,7 +8173,6 @@ def generate_research_brief(brand_id):
                     if desc:
                         text += f"  {str(desc)[:250]}\n"
                 else:
-                    # LinkedIn profile (from Apify)
                     name = item.get('fullName', item.get('name', ''))
                     headline = item.get('headline', '')
                     about = item.get('about', item.get('summary', ''))
@@ -7060,7 +8195,6 @@ def generate_research_brief(brand_id):
                     continue
                 item_type = item.get('type', '')
                 if item_type == 'reddit_post':
-                    # Reddit post
                     title = item.get('title', '')
                     source = item.get('source', '')
                     score = item.get('score', 0)
@@ -7071,7 +8205,6 @@ def generate_research_brief(brand_id):
                     if desc:
                         text += f"  {str(desc)[:300]}\n"
                 elif item_type in ('news_article', 'rss_article'):
-                    # News article found for forum topic
                     useful_count += 1
                     title = item.get('title', '')
                     source = item.get('source', '')
@@ -7080,7 +8213,6 @@ def generate_research_brief(brand_id):
                     if desc:
                         text += f"  {str(desc)[:250]}\n"
                 elif item_type in ('web_page', 'web_link'):
-                    # Web page content
                     page_text = item.get('text', item.get('description', ''))
                     if not page_text or len(page_text) < 100:
                         continue
@@ -7092,11 +8224,11 @@ def generate_research_brief(brand_id):
                     text += f"\n- **{str(title)[:100]}**\n"
                     text += f"  {str(page_text)[:400]}\n"
         if useful_count == 0:
-            text += "No useful forum data scraped. Opus should use its own knowledge of restaurant tech community discussions.\n"
+            text += f"No useful forum data scraped. Opus should use its own knowledge of {brand['name']}'s industry community discussions.\n"
         return text
 
     # Also fetch industry news if available
-    news_data = db.execute("""
+    news_data = conn.execute("""
         SELECT data, source_name, created_at FROM scrape_results
         WHERE brand_id=? AND source_type='industry_news' AND created_at >= ?
         ORDER BY created_at DESC LIMIT 3
@@ -7135,7 +8267,6 @@ def generate_research_brief(brand_id):
     # Add engagement analytics
     if post_engagement:
         own_summary += "\n### Engagement Analytics (per post)\n"
-        # Sort by total engagement (likes + comments + shares)
         sorted_posts = sorted(post_engagement.items(),
             key=lambda x: sum(x[1]['metrics'].get(m, 0) for m in ('likes', 'comments', 'shares')), reverse=True)
         for title, data in sorted_posts[:15]:
@@ -7162,28 +8293,35 @@ def generate_research_brief(brand_id):
     }
 
     # ── Step 2: Opus 4.6 synthesizes the brief ──
-    synthesis_prompt = f"""You are the content intelligence director for {brand['name']}, an enterprise F&B technology company building POSTAP — a unified restaurant operating platform with cloud POS, AI-powered analytics, smart kitchen systems, self-order kiosks, and multi-channel order unification. Headquartered in Singapore with operations in Japan, Vietnam, and expanding into Australia.
+    conn.execute("UPDATE research_briefs SET status='synthesizing', status_detail='Opus analyzing all intelligence data...' WHERE id=?", (brief_id,))
+    conn.commit()
+    print(f"[ResearchBrief] Brief {brief_id}: Status → synthesizing")
 
-## DIQIT'S CONTENT PILLARS (must inform all recommendations)
-1. Unified operations / eliminating system fragmentation
-2. AI-powered restaurant intelligence (demand forecasting, inventory optimization, labor planning)
-3. APAC F&B technology landscape and trends
-4. Multi-store scaling and operational excellence
-5. Self-service kiosks and customer experience innovation
-6. Digital transformation for traditional F&B operators
+    # Build dynamic brand context
+    brand_context, _, brand_pillars = _build_research_brief_context(brand_id, conn)
 
-## DIQIT'S KEY DIFFERENTIATORS (use to find competitive angles)
-- Unified architecture: one database, one order flow vs competitors' fragmented patchwork
-- Built for APAC complexity: 8+ languages, 12+ currencies, 20+ payment methods
-- Scalable infrastructure for multi-store chains
-- Unlimited users (no per-user licensing unlike Toast/Square)
-- AI-powered demand forecasting and labor optimization
-- Powers 1,000+ stores across 8 APAC countries
+    # Build feedback context from past decisions (self-improving loop — Phase 5)
+    feedback_context = _build_feedback_context(brand_id, conn)
 
-## TARGET AUDIENCE
-- CxOs and VPs of Operations/Digital/IT at multi-branch F&B brands (5+ outlets)
-- QSR chains, casual dining, cloud kitchens, convenience/specialty retail
-- Primary market: Singapore. Secondary: Australia. Established: Japan.
+    comp_names_list = ', '.join(c['competitor_name'] for c in competitors) if competitors else 'None tracked yet'
+    leader_names_list = ', '.join(f"{l['name']} ({l['title']}, {l['company']})" for l in leaders) if leaders else 'None tracked yet'
+    forum_names_list = ', '.join(f['name'] for f in forums) if forums else 'None tracked yet'
+
+    feedback_instruction = ''
+    if feedback_context:
+        feedback_instruction = f"""
+{feedback_context}
+
+If LEARNING FROM PAST CONTENT DECISIONS is provided, use it to:
+- Generate more angles similar to previously ACCEPTED ones
+- Avoid patterns similar to previously REJECTED ones
+- Prioritize formats and topics the user has consistently preferred
+"""
+
+    synthesis_prompt = f"""You are the content intelligence director for {brand['name']}.
+
+## BRAND CONTEXT
+{brand_context}
 
 ## INTELLIGENCE FROM MONITORING
 {comp_summary}
@@ -7191,37 +8329,46 @@ def generate_research_brief(brand_id):
 {forum_summary}
 {news_summary}
 {own_summary}
+{feedback_instruction}
 
 ## DATA QUALITY NOTE
 - Competitor profiles scraped: {data_quality['competitors_scraped']} (LinkedIn company profiles — static positioning data, not recent posts)
 - Leader profiles scraped: {data_quality['leaders_scraped']} (many failed — use your own knowledge of these leaders' typical content themes)
-- Forum content scraped: {data_quality['forums_useful']} useful pages (many forums require auth — use your own knowledge of restaurant tech community discussions)
+- Forum content scraped: {data_quality['forums_useful']} useful pages (many forums require auth — use your own knowledge of {brand['name']}'s industry community discussions)
 
 ## TRACKED SOURCES
-Competitors: {', '.join(c['competitor_name'] for c in competitors)}
-Industry leaders: {', '.join(f"{l['name']} ({l['title']}, {l['company']})" for l in leaders)}
-Forums/communities: {', '.join(f['name'] for f in forums)}
+Competitors: {comp_names_list}
+Industry leaders: {leader_names_list}
+Forums/communities: {forum_names_list}
 
 ## YOUR TASK
-Using the scraped data above PLUS your own extensive knowledge of these companies, leaders, and the F&B tech industry, create a DEEP RESEARCH BRIEF that:
+Using the scraped data above PLUS your own extensive knowledge of these companies, leaders, and {brand['name']}'s industry, create a DEEP RESEARCH BRIEF that:
 
-1. **COMPETITOR POSITIONING ANALYSIS** — Based on scraped company descriptions AND your knowledge of what Toast, Square, Lightspeed, Eats365, etc. have been doing recently: What are they messaging? What product moves are they making? Where is DIQIT's positioning stronger/weaker?
+1. **COMPETITOR POSITIONING ANALYSIS** — Based on scraped company descriptions AND your knowledge of the tracked competitors: What are they messaging? What product moves are they making? Where is {brand['name']}'s positioning stronger/weaker?
 
-2. **LEADER DISCOURSE THEMES** — Based on your knowledge of what Chris Comparato, Deepinder Goyal, and other tracked leaders typically talk about: What themes are they pushing? What does this signal about where the industry is heading?
+2. **LEADER DISCOURSE THEMES** — Based on your knowledge of the tracked leaders and what they typically discuss: What themes are they pushing? What does this signal about where the industry is heading?
 
-3. **COMMUNITY PAIN POINTS** — Based on your knowledge of r/RestaurantTech, Restaurant Technology Network, restaurant operator communities: What are operators struggling with? What questions keep coming up? Where is nobody providing good answers?
+3. **COMMUNITY PAIN POINTS** — Based on the tracked forums and your knowledge of {brand['name']}'s industry communities: What are people struggling with? What questions keep coming up? Where is nobody providing good answers?
 
-4. **CONTENT GAPS** — Topics competitors cover that DIQIT doesn't, and vice versa. Topics the audience is searching for that nobody is addressing well.
+4. **CONTENT GAPS** — Topics competitors cover that {brand['name']} doesn't, and vice versa. Topics the audience is searching for that nobody is addressing well.
 
-5. **TREND FORECAST (next 30-60 days)** — Based on industry events, seasonal patterns, regulatory changes, and technology adoption curves: What topics will be trending next month? What should DIQIT publish BEFORE competitors?
+5. **TREND FORECAST (next 30-60 days)** — Based on industry events, seasonal patterns, regulatory changes, and market dynamics: What topics will be trending next month? What should {brand['name']} publish BEFORE competitors?
 
-6. **OUR CONTENT EVALUATION** — What's working in our content? What's missing? What adjustments?
+6. **OUR CONTENT EVALUATION** — What's working in our content? What's missing? What adjustments based on the LinkedIn analytics data?
 
-7. **10 SPECIFIC CONTENT RECOMMENDATIONS** ranked by urgency (HIGH/MEDIUM/LOW):
+7. **LINKEDIN POST INTELLIGENCE** — Using the deep analytics in the brand context:
+   - Which content pillars drive highest engagement? Which are underperforming or have zero coverage?
+   - What is the viral post formula (length, hook type, tone)? How should we replicate it?
+   - Are there emerging themes not yet in our pillars we should capitalize on?
+   - What posting cadence and timing optimizations should we make?
+   - How does the engagement trend look — growing, declining, or stable?
+   - Which sentiment/tone drives the best engagement?
+
+8. **10 SPECIFIC CONTENT RECOMMENDATIONS** ranked by urgency (HIGH/MEDIUM/LOW):
 For each:
 - TOPIC and HEADLINE suggestion
 - WHY NOW (timing rationale)
-- TARGET ANGLE (how DIQIT frames it differently using our differentiators)
+- TARGET ANGLE (how {brand['name']} frames it differently)
 - FORMAT (LinkedIn post, carousel, video, blog, case study)
 - DATA POINTS to include
 - HOOK (opening line that stops the scroll)
@@ -7229,13 +8376,21 @@ For each:
 
 Write this as an actionable brief. Be specific, not generic. Reference actual competitors by name. Reference actual industry events and trends."""
 
-    brief_result = generate_text(synthesis_prompt, max_tokens=4096, model='claude-opus-4-6')
+    brief_result = generate_text(synthesis_prompt, max_tokens=8192, model='claude-opus-4-6')
     if not brief_result['ok']:
-        return jsonify(brief_result), 500
+        conn.execute("UPDATE research_briefs SET status='error', error_message=? WHERE id=?",
+                     (f"Brief synthesis failed: {brief_result.get('error', 'Unknown error')}", brief_id))
+        conn.commit()
+        return
 
     brief_content = brief_result['text']
 
     # ── Step 3: Generate Gemini Deep Research prompt ──
+    conn.execute("UPDATE research_briefs SET brief_content=?, status='prompting', status_detail='Building Deep Research prompt...' WHERE id=?",
+                 (brief_content, brief_id))
+    conn.commit()
+    print(f"[ResearchBrief] Brief {brief_id}: Status → prompting")
+
     # Build performance summary for Gemini context
     _perf_lines = []
     if pillar_perf:
@@ -7261,18 +8416,26 @@ Write this as an actionable brief. Be specific, not generic. Reference actual co
     if data_quality['leaders_scraped'] == 0:
         research_gaps.append("We could not scrape leader profiles. Find recent LinkedIn posts, conference talks, podcast appearances, and quotes from these industry leaders in the past 2 weeks.")
     if data_quality['forums_useful'] == 0:
-        research_gaps.append("We could not scrape forum content (auth-gated). Find recent trending discussions on Reddit r/RestaurantTech, r/restaurateur, Restaurant Technology Network, and other F&B tech communities.")
+        tracked_forum_names = [f['name'] for f in forums[:5]]
+        if tracked_forum_names:
+            forum_gap_ref = f"Find recent trending discussions on {', '.join(tracked_forum_names)} and similar communities in {brand['name']}'s industry."
+        else:
+            forum_gap_ref = f"Find relevant online communities and recent trending discussions in {brand['name']}'s industry."
+        research_gaps.append(f"We could not scrape forum content (auth-gated). {forum_gap_ref}")
 
-    comp_names_str = ', '.join(c['competitor_name'] for c in competitors[:8])
-    leader_names_str = ', '.join(f"{l['name']} ({l['company']})" for l in leaders[:8])
+    comp_names_str = ', '.join(f"{c['competitor_name']} ({c.get('website_url') or 'no website'})" for c in competitors[:12]) if competitors else 'None tracked'
+    leader_names_str = ', '.join(f"{l['name']} ({l['company']}, {l.get('linkedin_url') or 'no LinkedIn'})" for l in leaders[:12]) if leaders else 'None tracked'
+    forum_names_str = ', '.join(f"{f['name']} ({f['url']})" for f in forums[:10]) if forums else 'None tracked'
 
     gemini_prompt_gen = f"""You are generating a research prompt for Google Gemini Deep Research. The goal: produce a report that fills the gaps our scraping missed and adds real-time market intelligence.
 
 ## CONTEXT
-We are {brand['name']}, an F&B technology company (unified restaurant operating platform, cloud POS, AI analytics) in APAC. We need Gemini to research what we couldn't scrape.
+{brand_context}
+
+We need Gemini to research what we couldn't scrape.
 
 ## WHAT WE ALREADY HAVE (from our brief — do NOT duplicate)
-{brief_content[:2000]}
+{brief_content[:8000]}
 
 ## WHAT WE'RE MISSING (Gemini must fill these gaps)
 {chr(10).join(f"- {g}" for g in research_gaps)}
@@ -7280,7 +8443,7 @@ We are {brand['name']}, an F&B technology company (unified restaurant operating 
 ## SPECIFIC RESEARCH TARGETS
 Competitors to research: {comp_names_str}
 Industry leaders to research: {leader_names_str}
-Geographic focus: Singapore, Japan, Australia, Southeast Asia (APAC)
+Forums & communities to research: {forum_names_str}
 Time window: Last 14 days (2 weeks)
 
 ## OUR CONTENT PERFORMANCE DATA
@@ -7289,67 +8452,110 @@ Time window: Last 14 days (2 weeks)
 ## REQUIREMENTS FOR THE PROMPT
 The Gemini Deep Research prompt must ask for:
 1. **Recent competitor activity** — latest LinkedIn posts, blog posts, product launches, partnership announcements, earnings calls from the named competitors (last 2 weeks)
-2. **Industry leader discourse** — what the named leaders have been posting/saying about restaurant tech, POS, AI in F&B, digital transformation (last 2 weeks)
-3. **Community trending topics** — what restaurant operators are discussing on Reddit, industry forums, LinkedIn groups (last 2 weeks)
-4. **Breaking news & events** — any regulatory changes, major acquisitions, industry events, conferences in the F&B tech space (last 2 weeks + upcoming month)
-5. **Market data & statistics** — recent reports, surveys, or data on restaurant tech adoption, POS market share, AI in F&B, APAC digital transformation
-6. **Trending content formats** — what types of content (video, carousel, long-form) are performing best in the restaurant tech space right now
-7. **Performance benchmarking** — typical engagement rates for F&B tech companies on LinkedIn, what post formats and topics drive the highest engagement in this industry
+2. **Industry leader discourse** — what the named leaders have been posting/saying about {brand['name']}'s industry topics (last 2 weeks)
+3. **Community trending topics** — what {brand['name']}'s target audience is discussing on relevant industry forums, Reddit, LinkedIn groups (last 2 weeks)
+4. **Breaking news & events** — any regulatory changes, major acquisitions, industry events, conferences relevant to {brand['name']}'s space (last 2 weeks + upcoming month)
+5. **Market data & statistics** — recent reports, surveys, or data relevant to {brand['name']}'s industry and market
+6. **Trending content formats** — what types of content (video, carousel, long-form) are performing best in {brand['name']}'s industry right now
+7. **Performance benchmarking** — typical engagement rates for companies in {brand['name']}'s industry on LinkedIn, what post formats and topics drive the highest engagement. Compare against our actual metrics from the brand context above (engagement percentiles, posting frequency, viral formula)
+8. **Specific entities** — Do NOT use generic phrases like "key competitors" or "industry leaders". Use the EXACT company names, person names, and forum URLs listed above. Include their actual websites and LinkedIn URLs.
+9. **Specific data** — Include actual benchmark numbers (engagement rates, follower counts, posting frequencies) for the industry.
+10. **Specific hashtags** — List trending hashtags and keywords relevant to {brand['name']}'s industry.
+
+CRITICAL: The output prompt MUST be at minimum 2000 words. Include specific names, URLs, and data points throughout every section. Generic prompts produce generic research.
 
 Write the complete Gemini Deep Research prompt. Make it detailed and specific — reference companies and people by name. The output should be a comprehensive report that we can use to create 30-60 days of targeted content."""
 
-    gemini_result = generate_text(gemini_prompt_gen, max_tokens=4096, model='claude-opus-4-6')
+    gemini_result = generate_text(gemini_prompt_gen, max_tokens=8192, model='claude-opus-4-6')
     gemini_prompt = gemini_result['text'] if gemini_result['ok'] else 'Error generating Gemini prompt'
 
-    # ── Step 4: Save everything ──
-    brief_title = f"Research Brief — {now.strftime('%Y-%m-%d')}"
-    db.execute("""
-        INSERT INTO research_briefs (brand_id, title, brief_content, gemini_prompt, status)
-        VALUES (?, ?, ?, ?, 'awaiting_research')
-    """, (brand_id, brief_title, brief_content, gemini_prompt))
-    brief_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    db.commit()
+    # ── Step 4: Save prompt and attempt Deep Research API ──
+    conn.execute("UPDATE research_briefs SET gemini_prompt=?, status='researching' WHERE id=?",
+                 (gemini_prompt, brief_id))
+    conn.commit()
+    print(f"[ResearchBrief] Brief {brief_id}: Status → researching")
 
     # Save brief file to 08_Research
+    brief_title = f"Research Brief — {now.strftime('%Y-%m-%d')}"
     if brand['folder_path']:
-        research_dir = os.path.join(brand['folder_path'], '08_Research')
-        os.makedirs(research_dir, exist_ok=True)
-        brief_filename = f"deep_research_brief_{now.strftime('%Y%m%d')}.md"
-        with open(os.path.join(research_dir, brief_filename), 'w') as f:
-            f.write(f"# {brief_title}\n**Generated:** {now.strftime('%Y-%m-%d %H:%M')}\n\n{brief_content}")
+        try:
+            research_dir = os.path.join(brand['folder_path'], '08_Research')
+            os.makedirs(research_dir, exist_ok=True)
+            brief_filename = f"deep_research_brief_{now.strftime('%Y%m%d')}.md"
+            with open(os.path.join(research_dir, brief_filename), 'w') as f:
+                f.write(f"# {brief_title}\n**Generated:** {now.strftime('%Y-%m-%d %H:%M')}\n\n{brief_content}")
+            gemini_filename = f"gemini_research_prompt_{now.strftime('%Y%m%d')}.md"
+            with open(os.path.join(research_dir, gemini_filename), 'w') as f:
+                f.write(f"# Gemini Deep Research Prompt\n**For:** {brief_title}\n**Generated:** {now.strftime('%Y-%m-%d %H:%M')}\n\n{gemini_prompt}")
+        except Exception as e:
+            print(f"[ResearchBrief] Failed to save files: {e}")
 
-        gemini_filename = f"gemini_research_prompt_{now.strftime('%Y%m%d')}.md"
-        with open(os.path.join(research_dir, gemini_filename), 'w') as f:
-            f.write(f"# Gemini Deep Research Prompt\n**For:** {brief_title}\n**Generated:** {now.strftime('%Y-%m-%d %H:%M')}\n\n{gemini_prompt}")
+    # ── Step 5: Try Gemini Deep Research API first ──
+    api_key = _get_setting_from_conn(conn, 'gemini_api_key')
+    if api_key:
+        conn.execute("UPDATE research_briefs SET status_detail='Calling Gemini Deep Research API...' WHERE id=?", (brief_id,))
+        conn.commit()
+        print(f"[ResearchBrief] Brief {brief_id}: Attempting Gemini Deep Research API...")
+        deep_result = _call_gemini_deep_research(gemini_prompt, api_key, max_wait=900)
 
-    # Create notification
-    db.execute("""
+        if deep_result['ok']:
+            gemini_report = deep_result['text']
+            conn.execute("UPDATE research_briefs SET gemini_report=?, status='analyzing', status_detail='Generating content angles...' WHERE id=?",
+                         (gemini_report, brief_id))
+            conn.commit()
+            print(f"[ResearchBrief] Brief {brief_id}: Deep Research complete, generating angles...")
+
+            # Generate content angles
+            _generate_content_angles(brand_id, brief_id, conn, brand, gemini_report, brief_content, feedback_context)
+            return
+        else:
+            print(f"[ResearchBrief] Deep Research failed: {deep_result['error']}. Trying gemini-2.5-pro fallback...")
+
+            # Fallback: try regular gemini-2.5-pro
+            fallback = generate_text(gemini_prompt, max_tokens=8192, model='gemini-2.5-pro')
+            if fallback['ok']:
+                gemini_report = fallback['text']
+                conn.execute("UPDATE research_briefs SET gemini_report=?, status='analyzing', status_detail='Generating content angles...' WHERE id=?",
+                             (gemini_report, brief_id))
+                conn.commit()
+                print(f"[ResearchBrief] Brief {brief_id}: Gemini 2.5 Pro fallback complete, generating angles...")
+
+                _generate_content_angles(brand_id, brief_id, conn, brand, gemini_report, brief_content, feedback_context)
+                return
+
+    # Fallback 2: Use Opus as researcher
+    print(f"[ResearchBrief] Brief {brief_id}: gemini-2.5-pro also failed. Trying Opus-as-researcher...")
+    opus_research = generate_text(
+        f"You are a senior market research analyst. Based on your extensive knowledge, produce a comprehensive market intelligence report covering:\n\n{gemini_prompt}",
+        max_tokens=8192, model='claude-opus-4-6')
+    if opus_research['ok']:
+        gemini_report = opus_research['text']
+        conn.execute("UPDATE research_briefs SET gemini_report=?, status='analyzing', status_detail='Generating content angles...' WHERE id=?",
+                     (gemini_report, brief_id))
+        conn.commit()
+        print(f"[ResearchBrief] Brief {brief_id}: Opus-as-researcher complete, generating angles...")
+        _generate_content_angles(brand_id, brief_id, conn, brand, gemini_report, brief_content, feedback_context)
+        return
+
+    # All API attempts failed (or no API key) — fall back to manual mode
+    print(f"[ResearchBrief] Brief {brief_id}: All auto-research failed, setting awaiting_research")
+    conn.execute("UPDATE research_briefs SET status='awaiting_research' WHERE id=?", (brief_id,))
+    conn.commit()
+
+    # Create notification for manual fallback
+    conn.execute("""
         INSERT INTO notifications (brand_id, notification_type, title, message, due_date,
             action_type, action_url, action_label)
         VALUES (?, 'task', ?, ?, ?, 'go_to_page', ?, 'View Brief')
-    """, (brand_id, f'Research Brief Ready',
-          f'Deep research brief generated. Run the Gemini prompt in Deep Research, then upload the report.',
+    """, (brand_id, 'Research Brief Ready — Manual Research Needed',
+          'Brief generated but auto-research unavailable. Copy the Gemini prompt and run manually.',
           now.strftime('%Y-%m-%d'), f'/brands/{brand_id}/planning'))
-    db.commit()
-
-    return jsonify({
-        'ok': True,
-        'brief_id': brief_id,
-        'brief_preview': brief_content[:800],
-        'gemini_prompt_preview': gemini_prompt[:800],
-        'data_quality': data_quality,
-        'has_scrape_data': {
-            'competitors': len(comp_data) > 0,
-            'leaders': len(leader_data) > 0,
-            'forums': len(forum_data) > 0,
-            'own_posts': len(own_posts) > 0
-        }
-    })
+    conn.commit()
 
 
 @app.route('/api/brands/<int:brand_id>/research-brief/<int:brief_id>/upload-report', methods=['POST'])
 def upload_gemini_report(brand_id, brief_id):
-    """Step 5: After Gemini report is uploaded, Opus generates content angles + formats."""
+    """Manual fallback: after user pastes Gemini report, generate content angles."""
     db = get_db()
     brief = db.execute("SELECT * FROM research_briefs WHERE id=? AND brand_id=?",
                        (brief_id, brand_id)).fetchone()
@@ -7366,84 +8572,97 @@ def upload_gemini_report(brand_id, brief_id):
                (gemini_report, brief_id))
     db.commit()
 
-    # ── Step 6: Opus generates content angles ──
-    angles_prompt = f"""You are the content strategist for {brand['name']}, an F&B technology company.
+    # Generate content angles using shared helper
+    feedback_context = _build_feedback_context(brand_id, db)
+    _generate_content_angles(brand_id, brief_id, db, brand, gemini_report,
+                             brief['brief_content'] or '', feedback_context)
 
-You have two intelligence sources:
-1. INTERNAL BRIEF (from our monitoring data):
-{brief['brief_content'][:3000]}
-
-2. GEMINI DEEP RESEARCH REPORT (external market intelligence):
-{gemini_report[:4000]}
-
-Cross-reference BOTH sources and produce a CONTENT EXECUTION PLAN:
-
-For each content piece (aim for 10-15), specify:
-1. **Title**: Clear, compelling working title
-2. **Angle**: The specific perspective {brand['name']} should take (not generic)
-3. **Format**: linkedin_post / carousel / blog / video / reel / email
-4. **Urgency**: high (this week) / medium (next 2 weeks) / low (this month)
-5. **Key data points**: 2-3 specific stats or facts from the research to include
-6. **Hook**: The opening line or hook for the piece
-7. **CTA**: What action should the reader take
-8. **Tools**: What tools to use for creation (e.g., "Imagen 3 for hero image", "Nano Banana for infographic", "Carousel template")
-
-Return as a JSON array:
-[{{"title":"...","angle":"...","format":"linkedin_post","urgency":"high","data_points":["..."],"hook":"...","cta":"...","tools":["..."]}}]"""
-
-    angles_result = generate_text(angles_prompt, max_tokens=4096, model='claude-opus-4-6')
-    if not angles_result['ok']:
-        db.execute("UPDATE research_briefs SET status='error' WHERE id=?", (brief_id,))
-        db.commit()
-        return jsonify(angles_result), 500
-
-    import re
-    angles_text = angles_result['text']
-    try:
-        match = re.search(r'\[.*\]', angles_text, re.DOTALL)
-        content_angles = json.loads(match.group()) if match else []
-    except Exception:
-        content_angles = []
-
-    # Save angles and mark complete
-    db.execute("""
-        UPDATE research_briefs SET content_angles=?, status='complete', completed_at=CURRENT_TIMESTAMP
-        WHERE id=?
-    """, (json.dumps(content_angles), brief_id))
-
-    # Auto-create content items from high-urgency angles
-    created_items = 0
-    for angle in content_angles:
-        if angle.get('urgency') in ('high', 'medium'):
-            existing = db.execute("SELECT 1 FROM content_items WHERE brand_id=? AND title=?",
-                                  (brand_id, angle['title'])).fetchone()
-            if not existing:
-                db.execute("""
-                    INSERT INTO content_items (brand_id, title, content_type, status, notes, body_text)
-                    VALUES (?, ?, ?, 'backlog', ?, ?)
-                """, (brand_id, angle['title'], angle.get('format', 'linkedin_post'),
-                      f"Angle: {angle.get('angle', '')}\nHook: {angle.get('hook', '')}\nCTA: {angle.get('cta', '')}\nTools: {', '.join(angle.get('tools', []))}",
-                      f"Data points:\n" + '\n'.join(f"- {dp}" for dp in angle.get('data_points', []))))
-                created_items += 1
-
-    db.commit()
-
-    # Create notification
-    db.execute("""
-        INSERT INTO notifications (brand_id, notification_type, title, message, due_date,
-            action_type, action_url, action_label)
-        VALUES (?, 'system', ?, ?, ?, 'go_to_page', ?, 'View Pipeline')
-    """, (brand_id, f'Content Plan: {len(content_angles)} angles generated',
-          f'Research brief complete. {created_items} new content items created from high/medium urgency angles.',
-          datetime.now().strftime('%Y-%m-%d'), f'/brands/{brand_id}/pipeline'))
-    db.commit()
+    # Reload to get updated angles
+    updated = db.execute("SELECT content_angles, status FROM research_briefs WHERE id=?", (brief_id,)).fetchone()
+    content_angles = json.loads(updated['content_angles'] or '[]')
 
     return jsonify({
         'ok': True,
         'content_angles': content_angles,
         'total_angles': len(content_angles),
-        'items_created': created_items,
-        'brief_status': 'complete'
+        'brief_status': updated['status']
+    })
+
+
+@app.route('/api/brands/<int:brand_id>/research-brief/<int:brief_id>/angle-decision', methods=['POST'])
+def decide_content_angle(brand_id, brief_id):
+    """Accept, reject, or edit a content angle. Creates content item on accept/edit."""
+    db = get_db()
+    brief = db.execute("SELECT * FROM research_briefs WHERE id=? AND brand_id=?",
+                       (brief_id, brand_id)).fetchone()
+    if not brief:
+        return jsonify({'ok': False, 'error': 'Brief not found'}), 404
+
+    data = request.json or {}
+    angle_idx = data.get('angle_idx')
+    decision = data.get('decision')  # 'accept', 'reject', 'edit'
+    edits = data.get('edits', {})
+    reason = data.get('reason', '')
+
+    if angle_idx is None or decision not in ('accept', 'reject', 'edit'):
+        return jsonify({'ok': False, 'error': 'Invalid angle_idx or decision'}), 400
+
+    content_angles = json.loads(brief['content_angles'] or '[]')
+    if angle_idx < 0 or angle_idx >= len(content_angles):
+        return jsonify({'ok': False, 'error': 'Invalid angle index'}), 400
+
+    angle = content_angles[angle_idx]
+    if not isinstance(angle, dict):
+        return jsonify({'ok': False, 'error': 'Invalid angle data'}), 400
+
+    # Load existing decisions
+    angle_decisions = json.loads(brief['angle_decisions'] or '{}')
+
+    # Store the decision
+    angle_decisions[str(angle_idx)] = {
+        'decision': decision,
+        'reason': reason,
+        'edits': edits,
+        'decided_at': datetime.now().isoformat()
+    }
+
+    content_item_id = None
+
+    if decision in ('accept', 'edit'):
+        # Apply edits if provided
+        final_angle = dict(angle)
+        if edits:
+            for key in ('title', 'angle', 'format', 'hook', 'cta', 'urgency'):
+                if key in edits:
+                    final_angle[key] = edits[key]
+
+        # Check for duplicate
+        title = final_angle.get('title', f'Untitled Angle {angle_idx + 1}')
+        existing = db.execute("SELECT 1 FROM content_items WHERE brand_id=? AND title=?",
+                              (brand_id, title)).fetchone()
+        if not existing:
+            db.execute("""
+                INSERT INTO content_items (brand_id, title, content_type, status, notes, body_text)
+                VALUES (?, ?, ?, 'backlog', ?, ?)
+            """, (brand_id, title,
+                  final_angle.get('format', 'linkedin_post'),
+                  f"Angle: {final_angle.get('angle', '')}\nHook: {final_angle.get('hook', '')}\nCTA: {final_angle.get('cta', '')}\nUrgency: {final_angle.get('urgency', '')}\nTools: {', '.join(final_angle.get('tools', []))}",
+                  f"Data points:\n" + '\n'.join(f"- {dp}" for dp in final_angle.get('data_points', []))))
+            content_item_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # Save updated decisions
+    db.execute("UPDATE research_briefs SET angle_decisions=? WHERE id=?",
+               (json.dumps(angle_decisions), brief_id))
+    db.commit()
+
+    msg = f'Angle accepted — content item created' if decision in ('accept', 'edit') else 'Angle rejected'
+    return jsonify({
+        'ok': True,
+        'decision': decision,
+        'angle_idx': angle_idx,
+        'content_item_id': content_item_id,
+        'angle_decisions': angle_decisions,
+        'message': msg
     })
 
 
@@ -9189,8 +10408,166 @@ def onboard_sync_from_folders(brand_id):
     if new_content:
         synced.append(f'04_Content → {new_content} new content items')
 
+    # Sync 08_Research registry files → DB
+    research_dir = os.path.join(base, '08_Research')
+    if os.path.isdir(research_dir):
+        # Competitor registry
+        comp_path = os.path.join(research_dir, 'competitor_registry.md')
+        if os.path.isfile(comp_path):
+            file_comps = _read_competitor_registry(comp_path)
+            db_comp_names = {r[0].lower() for r in db.execute(
+                "SELECT competitor_name FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()}
+            added = 0
+            for fc in file_comps:
+                if fc.get('active', 'yes').lower() != 'yes':
+                    continue
+                if fc['name'].lower() not in db_comp_names:
+                    db.execute("INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, notes) VALUES (?,?,?,?)",
+                               (brand_id, fc['name'], fc.get('linkedin_url', ''), f"{fc.get('region', '')} — {fc.get('category', '')}"))
+                    added += 1
+            if added:
+                synced.append(f'competitor_registry.md → {added} competitors')
+
+        # Forum registry
+        forum_path = os.path.join(research_dir, 'forum_registry.md')
+        if os.path.isfile(forum_path):
+            file_forums = _read_forum_registry(forum_path)
+            db_forum_names = {r[0].lower() for r in db.execute(
+                "SELECT name FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()}
+            added = 0
+            for ff in file_forums:
+                if ff['name'].lower() not in db_forum_names:
+                    db.execute("INSERT INTO tracked_forums (brand_id, name, url, platform, notes) VALUES (?,?,?,?,?)",
+                               (brand_id, ff['name'], ff['url'], ff.get('platform', ''), ff.get('notes', '')))
+                    added += 1
+            if added:
+                synced.append(f'forum_registry.md → {added} forums')
+
+        # Leader registry
+        leader_path = os.path.join(research_dir, 'leader_registry.md')
+        if os.path.isfile(leader_path):
+            file_leaders = _read_leader_registry(leader_path)
+            db_leader_names = {r[0].lower() for r in db.execute(
+                "SELECT name FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()}
+            added = 0
+            for fl in file_leaders:
+                if fl['name'].lower() not in db_leader_names:
+                    db.execute("INSERT INTO tracked_leaders (brand_id, name, linkedin_url, title, company, notes) VALUES (?,?,?,?,?,?)",
+                               (brand_id, fl['name'], fl.get('linkedin_url', ''), fl.get('title', ''), fl.get('company', ''), fl.get('notes', '')))
+                    added += 1
+            if added:
+                synced.append(f'leader_registry.md → {added} leaders')
+
     db.commit()
     return jsonify({'ok': True, 'synced': synced, 'changes': len(synced)})
+
+
+@app.route('/api/brands/<int:brand_id>/onboard/auto-discover', methods=['POST'])
+def onboard_auto_discover(brand_id):
+    """Auto-trigger recursive discovery for competitors, forums, leaders after AI Brand Analysis.
+    Returns discovered entities for user to review and accept."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    # Check existing counts
+    comp_count = db.execute("SELECT COUNT(*) FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchone()[0]
+    forum_count = db.execute("SELECT COUNT(*) FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchone()[0]
+    leader_count = db.execute("SELECT COUNT(*) FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchone()[0]
+
+    # Use the existing recursive_discovery internally
+    # Build discovery prompt
+    pillars = db.execute("SELECT name FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()
+    pillar_names = ', '.join(p['name'] for p in pillars) if pillars else 'Not yet defined'
+
+    discover_prompt = f"""You are an intelligence analyst for {brand['name']}.
+Brand: {brand['name']} | Tagline: {brand['tagline'] or 'N/A'} | Website: {brand['website'] or 'N/A'}
+Voice: {(brand['voice_summary'] or '')[:200]}
+Content pillars: {pillar_names}
+Currently tracking: {comp_count} competitors, {forum_count} forums, {leader_count} leaders
+
+Based on this brand's industry and niche, discover the ESSENTIAL monitoring sources for their content strategy.
+
+Return a JSON object with exactly this format:
+{{
+  "competitors": [{{"name": "...", "linkedin_url": "...", "website_url": "...", "reason": "..."}}],
+  "forums": [{{"name": "...", "url": "...", "platform": "...", "reason": "..."}}],
+  "leaders": [{{"name": "...", "linkedin_url": "...", "title": "...", "company": "...", "reason": "..."}}]
+}}
+
+Include 5-8 competitors, 3-5 forums/communities, and 5-8 industry leaders.
+Focus on entities SPECIFIC to {brand['name']}'s industry — no generic business sources.
+Your ENTIRE response must be valid JSON — no markdown, no explanations."""
+
+    result = generate_text(discover_prompt, max_tokens=4096, model='claude-opus-4-6')
+    if not result['ok']:
+        return jsonify({'ok': False, 'error': result.get('error', 'AI discovery failed')}), 500
+
+    # Parse response
+    import re
+    text = result['text'].strip()
+    if text.startswith('```'):
+        text = re.sub(r'^```(?:json)?\s*', '', text)
+        text = re.sub(r'\s*```$', '', text)
+    try:
+        discovered = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        # Try to find JSON object
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        if first_brace >= 0 and last_brace > first_brace:
+            try:
+                discovered = json.loads(text[first_brace:last_brace + 1])
+            except (json.JSONDecodeError, ValueError):
+                return jsonify({'ok': False, 'error': 'Failed to parse discovery results'}), 500
+        else:
+            return jsonify({'ok': False, 'error': 'Failed to parse discovery results'}), 500
+
+    return jsonify({
+        'ok': True,
+        'discovered': discovered,
+        'existing': {'competitors': comp_count, 'forums': forum_count, 'leaders': leader_count}
+    })
+
+
+@app.route('/api/brands/<int:brand_id>/onboard/accept-discoveries', methods=['POST'])
+def onboard_accept_discoveries(brand_id):
+    """Bulk-accept discovered entities from auto-discovery."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    data = request.json or {}
+    added = {'competitors': 0, 'forums': 0, 'leaders': 0}
+
+    for comp in data.get('competitors', []):
+        existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
+                              (brand_id, comp['name'])).fetchone()
+        if not existing:
+            db.execute("INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, website_url, notes) VALUES (?,?,?,?,?)",
+                       (brand_id, comp['name'], comp.get('linkedin_url', ''), comp.get('website_url', ''), comp.get('reason', '')))
+            added['competitors'] += 1
+
+    for forum in data.get('forums', []):
+        existing = db.execute("SELECT 1 FROM tracked_forums WHERE brand_id=? AND name=?",
+                              (brand_id, forum['name'])).fetchone()
+        if not existing:
+            db.execute("INSERT INTO tracked_forums (brand_id, name, url, platform, notes) VALUES (?,?,?,?,?)",
+                       (brand_id, forum['name'], forum.get('url', ''), forum.get('platform', ''), forum.get('reason', '')))
+            added['forums'] += 1
+
+    for leader in data.get('leaders', []):
+        existing = db.execute("SELECT 1 FROM tracked_leaders WHERE brand_id=? AND name=?",
+                              (brand_id, leader['name'])).fetchone()
+        if not existing:
+            db.execute("INSERT INTO tracked_leaders (brand_id, name, linkedin_url, title, company, notes) VALUES (?,?,?,?,?,?)",
+                       (brand_id, leader['name'], leader.get('linkedin_url', ''), leader.get('title', ''), leader.get('company', ''), leader.get('reason', '')))
+            added['leaders'] += 1
+
+    db.commit()
+    return jsonify({'ok': True, 'added': added})
 
 
 def _calculate_baseline_confidence(brand_id, db):
@@ -9624,7 +11001,7 @@ def canva_qc(design_id):
     # Auto-advance content item status if QC passed
     if all_passed and design['content_item_id']:
         item = db.execute('SELECT status FROM content_items WHERE id = ?', (design['content_item_id'],)).fetchone()
-        if item and item['status'] == 'visuals':
+        if item and item['status'] == 'drafting':
             db.execute("UPDATE content_items SET status = 'review', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                        (design['content_item_id'],))
 

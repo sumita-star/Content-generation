@@ -439,7 +439,7 @@ function workflowApp() {
                     const scrapeRes = await fetch('/api/apify/scrape', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ brand_id: {{ brand.id }}, url: 'https://www.linkedin.com/company/diqit/', scraper_type: 'linkedin_posts' })
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, url: '{{ brand.linkedin_company_url or "" }}', scraper_type: 'linkedin_posts' })
                     });
                     const scrapeData = await scrapeRes.json();
                     const scrapeResults = scrapeData.ok ? JSON.stringify(scrapeData.results || scrapeData, null, 2).substring(0, 3000) : 'Scrape returned no results';

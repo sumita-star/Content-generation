@@ -233,12 +233,79 @@ class PromptRegistry:
 
 
 def create_sync_route(app, registry):
-    """Register /api/prompts/sync and /api/prompts routes on a Flask app."""
+    """Register /api/prompts/sync, /api/prompts/export and /api/prompts routes on a Flask app."""
 
     @app.route('/api/prompts/sync', methods=['POST'])
     def sync_prompts():
+        """Sync FROM registry: reload all prompt files from disk into cache."""
         registry.load_all()
-        return {'ok': True, 'count': len(registry._cache)}
+        return {'ok': True, 'count': len(registry._cache), 'direction': 'from_registry'}
+
+    @app.route('/api/prompts/export', methods=['POST'])
+    def export_prompts_to_registry():
+        """Sync TO registry: export workflow step prompts from DB into prompt files."""
+        import sqlite3
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'digitalize_me.db')
+        db = sqlite3.connect(db_path)
+        db.row_factory = sqlite3.Row
+
+        exported = 0
+        skipped = 0
+
+        # Export workflow steps
+        try:
+            steps = db.execute("""
+                SELECT ws.id, ws.name, ws.instructions, ws.brief_template, ws.step_type,
+                       ws.trigger_type, ws.sort_order, wt.brand_id
+                FROM workflow_steps ws
+                JOIN workflow_templates wt ON ws.template_id = wt.id
+                ORDER BY ws.sort_order
+            """).fetchall()
+        except Exception:
+            steps = []
+
+        for step in steps:
+            name = step['name'] or ''
+            instructions = step['instructions'] or ''
+            brief_template = step['brief_template'] or ''
+
+            if not instructions.strip() and not brief_template.strip():
+                skipped += 1
+                continue
+
+            # Build prompt ID from step name
+            sort_order = step['sort_order'] or 0
+            safe_name = name.lower().replace(' ', '-').replace('&', 'and')
+            safe_name = ''.join(c for c in safe_name if c.isalnum() or c == '-')
+            prompt_id = f"workflow-{sort_order + 1:02d}-{safe_name}"
+
+            # Determine model from trigger_type
+            trigger = step['trigger_type'] or 'none'
+            model = 'gemini' if trigger == 'gemini' else 'claude'
+
+            metadata = {
+                'id': prompt_id,
+                'type': 'workflow_step',
+                'name': name,
+                'model': model,
+                'step_type': step['step_type'] or 'manual',
+                'trigger_type': trigger,
+                'version': 1,
+            }
+
+            file_path = str(registry.prompts_dir / "workflow" / f"{prompt_id}.md")
+
+            # Check if file already exists — only overwrite if DB content is different
+            existing = registry.get(prompt_id)
+            if existing and existing['instructions'] == instructions.strip():
+                skipped += 1
+                continue
+
+            with registry._lock:
+                registry._write_file(prompt_id, instructions, brief_template if brief_template.strip() else None, metadata, file_path)
+            exported += 1
+
+        return {'ok': True, 'exported': exported, 'skipped': skipped, 'direction': 'to_registry'}
 
     @app.route('/api/prompts', methods=['GET'])
     def list_prompts():
