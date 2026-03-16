@@ -566,12 +566,9 @@ function scrapingApp() {
             toast('Starting scrape...', 'info');
             // Build actor-specific input format
             let actor_id, input;
-            if (type === 'linkedin_company') {
-                actor_id = 'dev_fusion/Linkedin-Company-Scraper';
-                input = { profileUrls: [url] };
-            } else if (type === 'linkedin_profile') {
-                actor_id = 'dev_fusion/Linkedin-Profile-Scraper';
-                input = { profileUrls: [url] };
+            if (type === 'linkedin_company' || type === 'linkedin_profile') {
+                actor_id = 'supreme_coder/linkedin-post';
+                input = { urls: [url], maxPosts: 50 };
             } else {
                 actor_id = 'apify/website-content-crawler';
                 input = { startUrls: [{ url }] };

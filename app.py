@@ -5655,6 +5655,8 @@ def apify_scrape():
 
     if 'profileUrls' in run_input:
         run_input['profileUrls'] = [_normalize_li(u) for u in run_input['profileUrls']]
+    if 'urls' in run_input:
+        run_input['urls'] = [_normalize_li(u) for u in run_input['urls']]
     if 'startUrls' in run_input:
         for item in run_input['startUrls']:
             if isinstance(item, dict) and 'url' in item:
@@ -6105,8 +6107,8 @@ Respond with a JSON object describing the changes to make:
 }}
 
 Only use IDs that exist in current configs. For "add" actions, pick the correct actor:
-- linkedin_company → dev_fusion/Linkedin-Company-Scraper (input: profileUrls)
-- linkedin_profile → dev_fusion/Linkedin-Profile-Scraper (input: profileUrls)
+- linkedin_company → supreme_coder/linkedin-post (input: urls, maxPosts)
+- linkedin_profile → supreme_coder/linkedin-post (input: urls, maxPosts)
 - web → apify/website-content-crawler (input: startUrls)
 
 Return ONLY the JSON object."""
@@ -6132,8 +6134,8 @@ Return ONLY the JSON object."""
                     actor_id = 'apify/website-content-crawler'
                     input_cfg = {'startUrls': [{'url': url}]}
                 else:
-                    actor_id = 'dev_fusion/Linkedin-Company-Scraper' if target_type == 'linkedin_company' else 'dev_fusion/Linkedin-Profile-Scraper'
-                    input_cfg = {'profileUrls': [url]}
+                    actor_id = 'supreme_coder/linkedin-post'
+                    input_cfg = {'urls': [url], 'maxPosts': 50}
                 db.execute("""
                     INSERT INTO scrape_configs (brand_id, target_name, target_type, actor_id, input_config, schedule, enabled)
                     VALUES (?, ?, ?, ?, ?, ?, 1)
@@ -9220,6 +9222,47 @@ def onboard_set_influence_level(brand_id):
     return jsonify({'ok': True, 'level': level})
 
 
+def _normalize_linkedin_posts(items):
+    """Normalize LinkedIn post data from various Apify actors into consistent field names.
+    Handles output formats from supreme_coder/linkedin-post, apimaestro/linkedin-profile-posts, etc."""
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        # Skip error items
+        if 'error' in item and 'text' not in item:
+            continue
+        # Extract text content
+        text = (item.get('text') or item.get('postText') or
+                item.get('content') or item.get('commentary') or '')
+        if not text:
+            continue  # Skip posts without text — useless for voice analysis
+        # Extract date (handle nested posted_at from apimaestro format)
+        posted_at = item.get('postedAtISO') or item.get('postedAt') or item.get('publishedAt') or item.get('date') or ''
+        if not posted_at and isinstance(item.get('posted_at'), dict):
+            posted_at = item['posted_at'].get('date', '')
+        # Extract engagement metrics (handle nested stats from apimaestro format)
+        stats = item.get('stats', {}) if isinstance(item.get('stats'), dict) else {}
+        num_likes = (item.get('numLikes') or stats.get('total_reactions') or
+                     item.get('likes') or item.get('likeCount') or 0)
+        comments_val = item.get('comments')
+        num_comments = (item.get('numComments') or stats.get('comments') or
+                        (comments_val if isinstance(comments_val, int) else None) or
+                        item.get('commentCount') or item.get('commentsCount') or 0)
+        num_shares = (item.get('numShares') or stats.get('reposts') or
+                      item.get('shares') or item.get('shareCount') or item.get('repostCount') or 0)
+        post = {
+            'text': str(text),
+            'postedAt': str(posted_at),
+            'numLikes': int(num_likes) if num_likes else 0,
+            'numComments': int(num_comments) if num_comments else 0,
+            'numShares': int(num_shares) if num_shares else 0,
+            'url': item.get('url') or item.get('postUrl') or item.get('link') or '',
+        }
+        normalized.append(post)
+    return normalized
+
+
 @app.route('/api/brands/<int:brand_id>/onboard/baseline-scrape', methods=['POST'])
 def onboard_baseline_scrape(brand_id):
     """Trigger Apify baseline scrape of 6 months of LinkedIn posts for personal & company accounts.
@@ -9284,6 +9327,9 @@ def onboard_baseline_scrape(brand_id):
             with urllib.request.urlopen(items_req, timeout=60) as resp:
                 items = json.loads(resp.read().decode())
 
+            # Normalize post data for consistent field names
+            items = _normalize_linkedin_posts(items)
+
             # Store in DB
             import sqlite3
             conn = sqlite3.connect(db_path)
@@ -9309,8 +9355,8 @@ def onboard_baseline_scrape(brand_id):
     if company_url:
         run_id = f"baseline-company-{int(_time.time())}"
         t = threading.Thread(target=_run_apify_scrape, args=(
-            'dev_fusion/Linkedin-Company-Scraper',
-            {'profileUrls': [company_url], 'maxPosts': 100},
+            'supreme_coder/linkedin-post',
+            {'urls': [company_url], 'maxPosts': 50},
             'linkedin_company',
             f'{brand["name"]} Company LinkedIn (baseline)'
         ), daemon=True)
@@ -9320,8 +9366,8 @@ def onboard_baseline_scrape(brand_id):
     if profile_url:
         run_id = f"baseline-profile-{int(_time.time())}"
         t = threading.Thread(target=_run_apify_scrape, args=(
-            'dev_fusion/Linkedin-Profile-Scraper',
-            {'profileUrls': [profile_url], 'maxPosts': 100},
+            'supreme_coder/linkedin-post',
+            {'urls': [profile_url], 'maxPosts': 50},
             'linkedin_profile',
             f'{brand["name"]} Personal LinkedIn (baseline)'
         ), daemon=True)
@@ -9336,7 +9382,7 @@ def onboard_baseline_scrape(brand_id):
          json.dumps({'url': f'/brands/{brand_id}/scraping'})))
     db.commit()
 
-    return jsonify({'ok': True, 'runs': runs_started, 'message': f'Baseline scrape started for {len(runs_started)} LinkedIn account(s). This scrapes up to 100 recent posts per account. Results will appear in Data Enrichment in 3-5 minutes.'})
+    return jsonify({'ok': True, 'runs': runs_started, 'message': f'Baseline scrape started for {len(runs_started)} LinkedIn account(s). This scrapes up to 50 recent posts per account. Results will appear in Data Enrichment in 3-5 minutes.'})
 
 
 @app.route('/api/brands/<int:brand_id>/onboard/baseline-status')
