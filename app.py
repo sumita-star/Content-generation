@@ -10,6 +10,7 @@ import subprocess
 import hashlib
 import secrets
 import base64
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import (
@@ -98,11 +99,18 @@ def inject_globals():
     """Inject theme config, current time, and all brands into every template."""
     db = get_db()
     all_brands = db.execute("SELECT id, name, accent_color FROM brands ORDER BY name").fetchall()
-    theme_mode = get_setting(db, 'theme_mode', 'dark')
+    theme_pref = get_setting(db, 'theme_mode', 'auto')
+    # Auto mode: dark between 7pm-7am, light otherwise
+    if theme_pref == 'auto':
+        hour = datetime.now().hour
+        theme_mode = 'dark' if hour >= 19 or hour < 7 else 'light'
+    else:
+        theme_mode = theme_pref
     colors = get_theme_colors(theme_mode)
     return {
         'now': datetime.now(),
         'theme_mode': theme_mode,
+        'theme_pref': theme_pref,
         'theme_colors': colors,
         'theme_fonts': FONTS,
         'tailwind_theme': tailwind_theme_config(theme_mode),
@@ -408,6 +416,27 @@ CREATE TABLE IF NOT EXISTS competitor_profiles (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS tracked_forums (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    url TEXT,
+    platform TEXT DEFAULT '',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS tracked_leaders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    linkedin_url TEXT,
+    title TEXT DEFAULT '',
+    company TEXT DEFAULT '',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS scrape_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -422,6 +451,34 @@ CREATE TABLE IF NOT EXISTS scrape_configs (
     last_run_at TEXT,
     last_result_count INTEGER DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS scrape_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    config_id INTEGER,
+    run_id TEXT,
+    source_type TEXT DEFAULT 'unknown',
+    source_name TEXT,
+    data TEXT DEFAULT '[]',
+    item_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    FOREIGN KEY (config_id) REFERENCES scrape_configs(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS research_briefs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    brief_content TEXT,
+    gemini_prompt TEXT,
+    gemini_report TEXT,
+    content_angles TEXT,
+    status TEXT DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
     FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
 );
 
@@ -1104,10 +1161,68 @@ def brand_detail(brand_id):
         'published': db.execute("SELECT COUNT(*) FROM content_items WHERE brand_id=? AND status='published'", (brand_id,)).fetchone()[0],
     }
 
+    # Pillar performance data for color-coding
+    pillar_perf = {}
+    perf_rows = db.execute("""
+        SELECT cp.id as pillar_id, cp.name, a.metric_type, AVG(a.metric_value) as avg_val, COUNT(DISTINCT ci.id) as post_count
+        FROM content_pillars cp
+        LEFT JOIN content_items ci ON ci.pillar_id = cp.id AND ci.status IN ('published', 'analyzed')
+        LEFT JOIN analytics_snapshots a ON a.content_item_id = ci.id
+        WHERE cp.brand_id = ?
+        GROUP BY cp.id, a.metric_type
+    """, (brand_id,)).fetchall()
+    for r in perf_rows:
+        pid = r['pillar_id']
+        if pid not in pillar_perf:
+            pillar_perf[pid] = {'posts': r['post_count'], 'impressions': 0, 'likes': 0, 'comments': 0, 'shares': 0, 'engagement_rate': 0}
+        if r['metric_type'] and r['avg_val']:
+            pillar_perf[pid][r['metric_type']] = round(r['avg_val'], 1)
+            pillar_perf[pid]['posts'] = r['post_count']
+
+    # Calculate performance tier per pillar (green/yellow/red)
+    if pillar_perf:
+        engagement_scores = []
+        for pid, stats in pillar_perf.items():
+            score = stats.get('likes', 0) + stats.get('comments', 0) * 2 + stats.get('shares', 0) * 3
+            pillar_perf[pid]['score'] = score
+            if stats['posts'] > 0:
+                engagement_scores.append(score)
+        if engagement_scores:
+            avg_score = sum(engagement_scores) / len(engagement_scores)
+            for pid, stats in pillar_perf.items():
+                s = stats.get('score', 0)
+                if stats['posts'] == 0:
+                    stats['tier'] = 'gray'
+                elif s >= avg_score * 1.2:
+                    stats['tier'] = 'green'
+                elif s >= avg_score * 0.6:
+                    stats['tier'] = 'yellow'
+                else:
+                    stats['tier'] = 'red'
+        else:
+            for pid in pillar_perf:
+                pillar_perf[pid]['tier'] = 'gray'
+
+    # Emerging pillar suggestions from latest pillar_review insight
+    emerging_pillars = []
+    latest_review = db.execute("""
+        SELECT recommendations FROM performance_insights
+        WHERE brand_id=? AND insight_type='pillar_review'
+        ORDER BY created_at DESC LIMIT 1
+    """, (brand_id,)).fetchone()
+    if latest_review and latest_review['recommendations']:
+        try:
+            review_data = json.loads(latest_review['recommendations'])
+            if isinstance(review_data, dict):
+                emerging_pillars = review_data.get('new_pillars', [])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
     return render_template('brands/detail.html',
         brand=brand, pillars=pillars, recent_content=recent_content,
         cadences=cadences, workflow=workflow, content_stats=content_stats,
+        pillar_perf=pillar_perf, emerging_pillars=emerging_pillars,
         unread_notifications=unread_notifications)
 
 
@@ -1807,6 +1922,125 @@ def add_analytics_snapshot():
     return jsonify({'ok': True})
 
 
+@app.route('/api/brands/<int:brand_id>/analytics/generate-insights', methods=['POST'])
+def generate_performance_insights(brand_id):
+    """Claude analyzes post performance trends by pillar, media type, sentiment, timing, etc.
+    Stores structured insights in performance_insights table for use in research briefs."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    # Gather all analytics data
+    # 1. Content items with their pillars
+    posts = db.execute("""
+        SELECT ci.id, ci.title, ci.content_type, ci.status, ci.publish_date, ci.published_at,
+               ci.body_text, ci.notes, ci.media_tags, ci.pillar_id,
+               cp.name as pillar_name, cp.color as pillar_color
+        FROM content_items ci
+        LEFT JOIN content_pillars cp ON ci.pillar_id = cp.id
+        WHERE ci.brand_id=? AND ci.status IN ('published', 'analyzed')
+        ORDER BY ci.published_at DESC LIMIT 50
+    """, (brand_id,)).fetchall()
+
+    # 2. Engagement metrics per post
+    metrics = db.execute("""
+        SELECT a.content_item_id, a.metric_type, a.metric_value, a.snapshot_date,
+               ci.title, ci.content_type, ci.publish_date, cp.name as pillar_name
+        FROM analytics_snapshots a
+        JOIN content_items ci ON a.content_item_id = ci.id
+        LEFT JOIN content_pillars cp ON ci.pillar_id = cp.id
+        WHERE a.brand_id=?
+        ORDER BY a.snapshot_date DESC LIMIT 300
+    """, (brand_id,)).fetchall()
+
+    # 3. Content pillars
+    pillars = db.execute("SELECT name, color FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()
+
+    if not posts and not metrics:
+        return jsonify({'ok': False, 'error': 'No published content or analytics data to analyze. Add posts and engagement metrics first.'}), 400
+
+    # Build data summary for Claude
+    post_summary = ""
+    for p in posts:
+        post_summary += f"- [{p['content_type']}] \"{p['title']}\" | Pillar: {p['pillar_name'] or 'None'} | Published: {p['published_at'] or p['publish_date'] or 'N/A'} | Media tags: {p['media_tags'] or '[]'}\n"
+
+    metrics_summary = ""
+    # Group metrics by post
+    post_metrics = {}
+    for m in metrics:
+        pid = m['content_item_id']
+        if pid not in post_metrics:
+            post_metrics[pid] = {'title': m['title'], 'content_type': m['content_type'], 'pillar': m['pillar_name'], 'publish_date': m['publish_date'], 'metrics': {}}
+        post_metrics[pid]['metrics'][m['metric_type']] = m['metric_value']
+
+    for pid, pm in post_metrics.items():
+        m = pm['metrics']
+        metrics_summary += f"- \"{pm['title']}\" ({pm['content_type']}, pillar: {pm['pillar'] or 'None'}, {pm['publish_date'] or 'N/A'}): "
+        metrics_summary += ', '.join(f"{k}={v}" for k, v in m.items())
+        metrics_summary += "\n"
+
+    pillar_list = ', '.join(p['name'] for p in pillars) if pillars else 'No pillars defined'
+
+    analysis_prompt = f"""You are a content performance analyst for {brand['name']} (DIQIT), an F&B technology company.
+
+## CONTENT PILLARS
+{pillar_list}
+
+## PUBLISHED POSTS ({len(posts)} posts)
+{post_summary or 'No published posts yet.'}
+
+## ENGAGEMENT METRICS ({len(post_metrics)} posts with data)
+{metrics_summary or 'No engagement data recorded yet.'}
+
+## ANALYSIS REQUIRED
+Analyze the content performance data above across these dimensions. For each dimension, provide specific findings and actionable recommendations. If data is limited, note that and provide what insights you can.
+
+### 1. PERFORMANCE BY CONTENT PILLAR
+Which pillars generate the highest engagement? Which are underperforming? Which are missing entirely?
+
+### 2. PERFORMANCE BY MEDIA/FORMAT TYPE
+Compare linkedin_post vs carousel vs video vs blog vs reel. Which formats drive more engagement?
+
+### 3. POSTING CADENCE & TIMING
+What publishing frequency do we maintain? Are there gaps? Any patterns in which days/times perform better?
+
+### 4. ENGAGEMENT PATTERNS
+What's the average engagement rate? Which posts significantly outperform or underperform the mean? What do top-performing posts have in common?
+
+### 5. CONTENT SENTIMENT & TONE ANALYSIS
+Based on post titles and topics: What's the balance between educational vs promotional vs thought leadership vs storytelling? Which tone performs best?
+
+### 6. TOPIC SATURATION
+Are we covering certain topics too much while neglecting others? What fresh angles are needed?
+
+### 7. AUDIENCE GROWTH INDICATORS
+Based on engagement trends over time: Is engagement growing, stable, or declining? Any inflection points?
+
+### 8. STRATEGIC RECOMMENDATIONS (Top 5)
+Based on all the above, what are the 5 most impactful changes we should make to our content strategy?
+
+Format your response as a structured analysis with clear section headers. Be specific — reference actual post titles, actual numbers, and actual pillar names. Don't be generic."""
+
+    result = generate_text(analysis_prompt, max_tokens=4096, model='claude-opus-4-6')
+    if not result['ok']:
+        return jsonify(result), 500
+
+    insight_text = result['text']
+
+    # Save to performance_insights table
+    from datetime import date, timedelta
+    today = date.today()
+    db.execute("""
+        INSERT INTO performance_insights (brand_id, insight_type, insight_text, recommendations, data_source, period_start, period_end)
+        VALUES (?, 'comprehensive_analysis', ?, ?, 'combined', ?, ?)
+    """, (brand_id, insight_text, json.dumps([]),
+          (today - timedelta(days=90)).strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d')))
+    db.commit()
+
+    return jsonify({'ok': True, 'insight': insight_text, 'post_count': len(posts), 'metric_count': len(metrics)})
+
+
 @app.route('/api/competitors', methods=['POST'])
 def add_competitor():
     db = get_db()
@@ -1820,11 +2054,45 @@ def add_competitor():
     return jsonify({'ok': True})
 
 
+def _sync_registry_after_delete(db, table, brand_id_col, record_id, writer_fn, query):
+    """After deleting a tracked item, get brand folder and rewrite the registry file."""
+    # Look up brand_id before deleting
+    row = db.execute(f"SELECT {brand_id_col} FROM {table} WHERE id=?", (record_id,)).fetchone()
+    if not row:
+        return
+    bid = row[brand_id_col]
+    brand = db.execute("SELECT folder_path FROM brands WHERE id=?", (bid,)).fetchone()
+    db.execute(f"DELETE FROM {table} WHERE id=?", (record_id,))
+    db.commit()
+    if brand and brand['folder_path']:
+        remaining = [dict(r) for r in db.execute(query, (bid,)).fetchall()]
+        writer_fn(brand['folder_path'], remaining)
+
+
 @app.route('/api/competitors/<int:comp_id>', methods=['DELETE'])
 def delete_competitor(comp_id):
     db = get_db()
-    db.execute("DELETE FROM competitor_profiles WHERE id=?", (comp_id,))
-    db.commit()
+    _sync_registry_after_delete(db, 'competitor_profiles', 'brand_id', comp_id,
+                                _write_competitor_registry,
+                                "SELECT * FROM competitor_profiles WHERE brand_id=?")
+    return jsonify({'ok': True})
+
+
+@app.route('/api/forums/<int:forum_id>', methods=['DELETE'])
+def delete_forum(forum_id):
+    db = get_db()
+    _sync_registry_after_delete(db, 'tracked_forums', 'brand_id', forum_id,
+                                _write_forum_registry,
+                                "SELECT * FROM tracked_forums WHERE brand_id=?")
+    return jsonify({'ok': True})
+
+
+@app.route('/api/leaders/<int:leader_id>', methods=['DELETE'])
+def delete_leader(leader_id):
+    db = get_db()
+    _sync_registry_after_delete(db, 'tracked_leaders', 'brand_id', leader_id,
+                                _write_leader_registry,
+                                "SELECT * FROM tracked_leaders WHERE brand_id=?")
     return jsonify({'ok': True})
 
 
@@ -3664,6 +3932,276 @@ Keep it practical — suggest 2-4 changes max. Only suggest changes that would m
     return jsonify({'ok': True, 'suggestions': suggestions})
 
 
+@app.route('/api/brands/<int:brand_id>/generate-content-recommendations', methods=['POST'])
+def generate_content_recommendations(brand_id):
+    """Collaborative Opus 4.6 + Gemini content recommendation engine.
+    Step 1: Opus 4.6 analyzes pillar performance + research briefs → strategic framework
+    Step 2: Gemini 3 thinking model generates distinct content options per pillar
+    Step 3: Opus 4.6 refines and ranks the final recommendations
+    """
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    # Gather pillar performance data
+    pillars = db.execute("""
+        SELECT cp.*, COUNT(ci.id) as content_count,
+            SUM(CASE WHEN ci.status='published' THEN 1 ELSE 0 END) as published_count
+        FROM content_pillars cp
+        LEFT JOIN content_items ci ON ci.pillar_id = cp.id
+        WHERE cp.brand_id = ?
+        GROUP BY cp.id ORDER BY cp.sort_order
+    """, (brand_id,)).fetchall()
+
+    pillar_engagement = db.execute("""
+        SELECT cp.name as pillar, cp.id as pillar_id, a.metric_type, AVG(a.metric_value) as avg_value,
+               COUNT(DISTINCT ci.id) as post_count
+        FROM analytics_snapshots a
+        JOIN content_items ci ON a.content_item_id = ci.id
+        JOIN content_pillars cp ON ci.pillar_id = cp.id
+        WHERE a.brand_id = ?
+        GROUP BY cp.name, a.metric_type
+    """, (brand_id,)).fetchall()
+
+    # Build pillar performance summary
+    perf_by_pillar = {}
+    for row in pillar_engagement:
+        name = row['pillar']
+        if name not in perf_by_pillar:
+            perf_by_pillar[name] = {'posts': row['post_count'], 'metrics': {}}
+        perf_by_pillar[name]['metrics'][row['metric_type']] = round(row['avg_value'], 1)
+
+    # Get latest research brief
+    latest_brief = db.execute("""
+        SELECT brief_content, gemini_report, content_angles FROM research_briefs
+        WHERE brand_id=? AND status='complete' ORDER BY created_at DESC LIMIT 1
+    """, (brand_id,)).fetchone()
+
+    # Get latest performance insights
+    latest_insight = db.execute("""
+        SELECT insight_text FROM performance_insights
+        WHERE brand_id=? AND insight_type='comprehensive_analysis'
+        ORDER BY created_at DESC LIMIT 1
+    """, (brand_id,)).fetchone()
+
+    # Get latest pillar review
+    latest_review = db.execute("""
+        SELECT recommendations FROM performance_insights
+        WHERE brand_id=? AND insight_type='pillar_review'
+        ORDER BY created_at DESC LIMIT 1
+    """, (brand_id,)).fetchone()
+
+    pillar_summary = json.dumps([{
+        'name': p['name'], 'description': p['description'],
+        'content_count': p['content_count'], 'published': p['published_count'],
+        'performance': perf_by_pillar.get(p['name'], {})
+    } for p in pillars], indent=2)
+
+    review_context = ''
+    if latest_review and latest_review['recommendations']:
+        try:
+            rd = json.loads(latest_review['recommendations'])
+            if isinstance(rd, dict):
+                review_context = f"\n\nLatest pillar review:\n- Assessment: {rd.get('overall_assessment', '')}\n- Balance score: {rd.get('balance_score', 'N/A')}/10"
+                for pu in rd.get('pillar_updates', []):
+                    review_context += f"\n- {pu.get('name', '')}: {pu.get('action', '')} — {pu.get('reason', '')}"
+                for np_item in rd.get('new_pillars', []):
+                    review_context += f"\n- NEW suggested: {np_item.get('name', '')} — {np_item.get('reason', '')}"
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # ── Step 1: Opus 4.6 — Strategic analysis & content framework ──
+    opus_strategy_prompt = f"""You are the Chief Content Strategist for {brand['name']}, an enterprise F&B technology company (cloud POS, AI analytics, unified restaurant operations platform) in APAC.
+
+## CURRENT CONTENT PILLARS & PERFORMANCE
+{pillar_summary}
+{review_context}
+
+## PERFORMANCE INSIGHTS
+{latest_insight['insight_text'][:2000] if latest_insight else 'No comprehensive analysis available yet.'}
+
+## LATEST RESEARCH INTELLIGENCE
+{latest_brief['brief_content'][:2500] if latest_brief else 'No research brief available. Use your knowledge of the F&B tech industry.'}
+
+## GEMINI MARKET RESEARCH
+{latest_brief['gemini_report'][:2500] if latest_brief and latest_brief['gemini_report'] else 'No Gemini report available.'}
+
+## YOUR TASK — STRATEGIC CONTENT FRAMEWORK
+
+Analyze the data above and produce a strategic framework with:
+
+1. **PILLAR HEALTH ASSESSMENT**: For each current pillar, rate as STRONG/AVERAGE/WEAK with reasoning. Identify which should stay, which need reinvention, and which should be retired.
+
+2. **EMERGING PILLAR OPPORTUNITIES**: Based on market research, competitor gaps, and audience demand — suggest 2-3 NEW pillar themes that could replace underperforming ones. Explain the market signal behind each.
+
+3. **CONTENT GENERATION BRIEF**: For EACH active pillar (current + any new ones you recommend), specify:
+   - 3 distinct content angles that are fresh and non-overlapping
+   - The ideal format for each (linkedin_post, carousel, video, blog, reel)
+   - The target emotion/reaction (educate, provoke, inspire, validate, challenge)
+   - A specific data point or hook from the research to anchor it
+   - The competitive advantage angle (what makes DIQIT's perspective unique here)
+
+4. **CONTENT MIX RECOMMENDATION**: Optimal distribution across pillars for the next 30 days, considering what's working and what needs more investment.
+
+Return your analysis as structured JSON:
+{{
+    "pillar_health": [{{"name": "...", "status": "strong|average|weak", "reasoning": "...", "recommendation": "keep|reinvent|retire"}}],
+    "emerging_pillars": [{{"name": "...", "description": "...", "market_signal": "...", "replaces": "pillar name or null"}}],
+    "content_briefs": [{{"pillar": "...", "angles": [{{"title": "...", "format": "...", "emotion": "...", "hook": "...", "differentiator": "...", "data_point": "..."}}]}}],
+    "mix_recommendation": {{"pillar_name": percentage}},
+    "strategic_notes": "1-2 paragraphs of overall strategic guidance"
+}}"""
+
+    opus_result = generate_text(opus_strategy_prompt, max_tokens=4096, model='claude-opus-4-6')
+    if not opus_result['ok']:
+        return jsonify(opus_result), 500
+
+    # Parse Opus strategy
+    import re
+    opus_text = opus_result['text']
+    try:
+        json_match = re.search(r'\{.*\}', opus_text, re.DOTALL)
+        strategy = json.loads(json_match.group()) if json_match else {}
+    except (json.JSONDecodeError, AttributeError):
+        strategy = {}
+
+    if not strategy:
+        return jsonify({'ok': True, 'strategy': {}, 'recommendations': [], 'raw_analysis': opus_text})
+
+    # ── Step 2: Gemini thinking — Generate distinct content pieces ──
+    gemini_key = get_setting(db, 'gemini_api_key')
+    gemini_recommendations = []
+
+    if gemini_key:
+        content_briefs = strategy.get('content_briefs', [])
+        briefs_text = json.dumps(content_briefs, indent=2)
+
+        gemini_prompt = f"""You are a creative content producer for {brand['name']}, an F&B technology company.
+
+A senior strategist has produced this content framework:
+
+PILLAR HEALTH: {json.dumps(strategy.get('pillar_health', []))}
+
+CONTENT BRIEFS:
+{briefs_text}
+
+STRATEGIC NOTES: {strategy.get('strategic_notes', '')}
+
+For EACH content angle in the briefs above, generate a FULLY FLESHED OUT content recommendation:
+
+1. **Working title** — Compelling, specific, scroll-stopping
+2. **Opening hook** — The first 2 lines that grab attention (use the data point or provocative question)
+3. **Key narrative arc** — 3-4 bullet points outlining the story flow
+4. **CTA** — What we want the reader to DO
+5. **Visual concept** — What image/graphic/video should accompany this
+6. **Urgency** — high (publish this week) / medium (next 2 weeks) / low (this month)
+7. **Estimated engagement** — Will this likely drive high/medium/low engagement based on the pillar's track record
+
+Make each piece DISTINCT — different angles, different emotions, different formats. Avoid repeating the same messaging pattern.
+
+Return as JSON array:
+[{{"pillar": "...", "title": "...", "format": "...", "hook": "...", "narrative": ["..."], "cta": "...", "visual_concept": "...", "urgency": "high|medium|low", "engagement_estimate": "high|medium|low", "emotion": "...", "differentiator": "..."}}]"""
+
+        gemini_result = generate_text(gemini_prompt, max_tokens=4096, model='gemini-2.5-flash')
+        if gemini_result['ok']:
+            try:
+                gmatch = re.search(r'\[.*\]', gemini_result['text'], re.DOTALL)
+                gemini_recommendations = json.loads(gmatch.group()) if gmatch else []
+            except (json.JSONDecodeError, AttributeError):
+                gemini_recommendations = []
+
+    # ── Step 3: Opus 4.6 — Final ranking & refinement ──
+    if gemini_recommendations:
+        ranking_prompt = f"""You are the final editor for {brand['name']}'s content plan.
+
+Gemini produced these content recommendations:
+{json.dumps(gemini_recommendations, indent=2)}
+
+Your strategic framework specified this pillar health:
+{json.dumps(strategy.get('pillar_health', []))}
+
+And this optimal mix:
+{json.dumps(strategy.get('mix_recommendation', {}))}
+
+TASK: Rank all recommendations by impact potential. For each:
+1. Assign a priority score 1-10 (10 = highest impact)
+2. Flag any that overlap or repeat messaging (mark as "skip" or "merge with X")
+3. Ensure the final list has good pillar coverage matching your mix recommendation
+4. Add a "production_notes" field with specific guidance (e.g., "Use Imagen 3 for hero image", "Create as carousel with 5 slides")
+
+Return the refined list as JSON array, sorted by priority (highest first):
+[{{"priority": 10, "pillar": "...", "title": "...", "format": "...", "hook": "...", "narrative": ["..."], "cta": "...", "visual_concept": "...", "urgency": "...", "engagement_estimate": "...", "production_notes": "...", "status": "create|skip|merge"}}]"""
+
+        ranking_result = generate_text(ranking_prompt, max_tokens=4096, model='claude-opus-4-6')
+        if ranking_result['ok']:
+            try:
+                rmatch = re.search(r'\[.*\]', ranking_result['text'], re.DOTALL)
+                final_recommendations = json.loads(rmatch.group()) if rmatch else gemini_recommendations
+            except (json.JSONDecodeError, AttributeError):
+                final_recommendations = gemini_recommendations
+        else:
+            final_recommendations = gemini_recommendations
+    else:
+        # Fallback: use Opus strategy briefs directly
+        final_recommendations = []
+        for brief in strategy.get('content_briefs', []):
+            for angle in brief.get('angles', []):
+                final_recommendations.append({
+                    'pillar': brief['pillar'],
+                    'title': angle.get('title', ''),
+                    'format': angle.get('format', 'linkedin_post'),
+                    'hook': angle.get('hook', ''),
+                    'urgency': 'medium',
+                    'engagement_estimate': 'medium',
+                    'production_notes': ''
+                })
+
+    # Save results
+    db.execute("""
+        INSERT INTO performance_insights (brand_id, insight_type, insight_text, recommendations, data_source)
+        VALUES (?, 'content_recommendations', ?, ?, 'combined')
+    """, (brand_id,
+          strategy.get('strategic_notes', 'Content recommendations generated'),
+          json.dumps({'strategy': strategy, 'recommendations': final_recommendations})))
+    db.commit()
+
+    # Auto-create content items from high-priority recommendations
+    created_items = 0
+    for rec in final_recommendations:
+        if rec.get('status') == 'skip':
+            continue
+        if rec.get('urgency') in ('high', 'medium') or rec.get('priority', 0) >= 7:
+            existing = db.execute("SELECT 1 FROM content_items WHERE brand_id=? AND title=?",
+                                  (brand_id, rec.get('title', ''))).fetchone()
+            if not existing and rec.get('title'):
+                # Try to map to a pillar
+                pillar_id = None
+                for p in pillars:
+                    if p['name'].lower() == rec.get('pillar', '').lower():
+                        pillar_id = p['id']
+                        break
+                narrative = '\n'.join(f"- {n}" for n in rec.get('narrative', []))
+                db.execute("""
+                    INSERT INTO content_items (brand_id, title, content_type, status, pillar_id, notes, body_text)
+                    VALUES (?, ?, ?, 'backlog', ?, ?, ?)
+                """, (brand_id, rec['title'], rec.get('format', 'linkedin_post'), pillar_id,
+                      f"Hook: {rec.get('hook', '')}\nCTA: {rec.get('cta', '')}\nVisual: {rec.get('visual_concept', '')}\nProduction: {rec.get('production_notes', '')}",
+                      f"Narrative arc:\n{narrative}\n\nDifferentiator: {rec.get('differentiator', '')}"))
+                created_items += 1
+
+    db.commit()
+
+    return jsonify({
+        'ok': True,
+        'strategy': strategy,
+        'recommendations': final_recommendations,
+        'items_created': created_items,
+        'pillar_count': len(pillars),
+        'total_recommendations': len([r for r in final_recommendations if r.get('status') != 'skip'])
+    })
+
+
 # ─── Routes: Cadence ───────────────────────────────────────────────
 
 @app.route('/api/cadence', methods=['POST'])
@@ -3919,7 +4457,9 @@ def generate_text(prompt, max_tokens=2000, system=None, model=None, messages=Non
                 data=json.dumps(body).encode(),
                 headers={'Content-Type': 'application/json', 'x-api-key': api_key,
                          'anthropic-version': '2023-06-01'})
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            # Opus 4.6 with large prompts can take 90+ seconds
+            timeout = 240 if 'opus' in model else 120
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 result = json.loads(resp.read().decode())
                 text = result['content'][0]['text'].strip()
         return {'ok': True, 'text': text}
@@ -4083,7 +4623,7 @@ def toggle_theme():
     db = get_db()
     data = request.json
     mode = data.get('mode', 'dark')
-    if mode not in ('light', 'dark'):
+    if mode not in ('light', 'dark', 'auto'):
         mode = 'dark'
     set_setting(db, 'theme_mode', mode)
     return jsonify({'ok': True, 'mode': mode})
@@ -4149,10 +4689,25 @@ def apify_scrape():
     run_input = data.get('input', {})
     brand_id = data.get('brand_id')
 
+    # Normalize LinkedIn URLs: ensure www. prefix
+    def _normalize_li(url):
+        if isinstance(url, str) and 'linkedin.com' in url and '://linkedin.com' in url:
+            return url.replace('://linkedin.com', '://www.linkedin.com')
+        return url
+
+    if 'profileUrls' in run_input:
+        run_input['profileUrls'] = [_normalize_li(u) for u in run_input['profileUrls']]
+    if 'startUrls' in run_input:
+        for item in run_input['startUrls']:
+            if isinstance(item, dict) and 'url' in item:
+                item['url'] = _normalize_li(item['url'])
+
     try:
         import urllib.request
         req_body = json.dumps(run_input)
-        url = f'https://api.apify.com/v2/acts/{actor_id}/runs?token={api_key}'
+        # Apify API uses ~ separator between username and actor name
+        actor_path = actor_id.replace('/', '~')
+        url = f'https://api.apify.com/v2/acts/{actor_path}/runs?token={api_key}'
         req = urllib.request.Request(url, data=req_body.encode(),
             headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=120) as resp:
@@ -4169,6 +4724,9 @@ def apify_scrape():
             db.commit()
 
         return jsonify({'ok': True, 'run_id': run_id, 'actor_id': actor_id})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if hasattr(e, 'read') else ''
+        return jsonify({'ok': False, 'error': f'Apify HTTP {e.code}: {body[:300]}'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -4186,9 +4744,267 @@ def apify_results(run_id):
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=60) as resp:
             items = json.loads(resp.read().decode())
+
+        # Store results in DB for later use by research brief pipeline
+        brand_id = request.args.get('brand_id')
+        source_type = request.args.get('source_type', 'unknown')
+        source_name = request.args.get('source_name', '')
+        if brand_id:
+            db.execute("""
+                INSERT INTO scrape_results (brand_id, run_id, source_type, source_name, data, item_count)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (brand_id, run_id, source_type, source_name,
+                  json.dumps(items[:100]), len(items)))
+            db.commit()
+
         return jsonify({'ok': True, 'items': items, 'count': len(items)})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/scrape-results/<int:result_id>')
+def get_scrape_result(result_id):
+    """Fetch stored scrape result items by DB id."""
+    db = get_db()
+    row = db.execute("SELECT data, source_type, source_name, item_count, created_at FROM scrape_results WHERE id=?", (result_id,)).fetchone()
+    if not row:
+        return jsonify({'ok': False, 'error': 'Result not found'}), 404
+    items = json.loads(row['data']) if row['data'] else []
+    return jsonify({'ok': True, 'items': items, 'count': row['item_count'],
+                    'source_type': row['source_type'], 'source_name': row['source_name'],
+                    'created_at': row['created_at']})
+
+
+def _get_delta_context(db_path, brand_id, source_type):
+    """Get last scrape time and existing URLs for delta/incremental scraping.
+    Returns (since_iso, existing_urls) where since_iso is the last scrape timestamp
+    and existing_urls is a list of URLs from the last 5 runs to prevent duplicates.
+    """
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    # Get last scrape timestamp for this source type
+    row = conn.execute(
+        "SELECT created_at FROM scrape_results WHERE brand_id=? AND source_type=? ORDER BY created_at DESC LIMIT 1",
+        (brand_id, source_type)).fetchone()
+    since = row['created_at'] if row else None
+
+    # Collect URLs from last 5 runs to deduplicate
+    existing_urls = []
+    rows = conn.execute(
+        "SELECT data FROM scrape_results WHERE brand_id=? AND source_type=? ORDER BY created_at DESC LIMIT 5",
+        (brand_id, source_type)).fetchall()
+    for r in rows:
+        try:
+            items = json.loads(r['data'])
+            for item in items:
+                url = item.get('url', '')
+                if url:
+                    existing_urls.append(url)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    conn.close()
+    return since, existing_urls
+
+
+@app.route('/api/local/scrape', methods=['POST'])
+def local_scrape():
+    """Run a local (non-Apify) scrape using open-source scrapers."""
+    import threading
+    from scraper import run_local_scrape
+
+    data = request.json
+    brand_id = data.get('brand_id')
+    scrape_type = data.get('scrape_type')  # competitors, forums, leaders, industry_news, etc.
+    params = data.get('params', {})
+    run_id = f"local-{int(_time.time())}-{scrape_type}"
+    db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
+
+    # Get delta context for incremental scraping
+    since, existing_urls = _get_delta_context(db_path, brand_id, scrape_type)
+
+    def _do_scrape():
+        try:
+            params['since'] = since
+            params['existing_urls'] = existing_urls
+            result = run_local_scrape(scrape_type, params)
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            conn.execute("""INSERT INTO scrape_results
+                (brand_id, run_id, source_type, source_name, data, item_count)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (brand_id, run_id, result['source_type'], result['source_name'],
+                 json.dumps(result['items'][:100]), len(result['items'])))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            conn.execute("""INSERT INTO scrape_results
+                (brand_id, run_id, source_type, source_name, data, item_count)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (brand_id, run_id, 'error', scrape_type,
+                 json.dumps([{'error': str(e)}]), 0))
+            conn.commit()
+            conn.close()
+
+    t = threading.Thread(target=_do_scrape, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'run_id': run_id, 'scrape_type': scrape_type, 'since': since})
+
+
+@app.route('/api/local/scrape/competitors', methods=['POST'])
+def local_scrape_competitors():
+    """Batch scrape all competitors — blogs + Google News."""
+    import threading
+    from scraper import run_local_scrape
+
+    data = request.json or {}
+    brand_id = data.get('brand_id')
+    db = get_db()
+    competitors = [dict(r) for r in db.execute(
+        "SELECT competitor_name as name, linkedin_url, website_url FROM competitor_profiles WHERE brand_id=?",
+        (brand_id,)).fetchall()]
+
+    run_id = f"local-{int(_time.time())}-competitors"
+    db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
+    since, existing_urls = _get_delta_context(db_path, brand_id, 'competitors')
+
+    def _do_scrape():
+        result = run_local_scrape('competitors', {
+            'competitors': competitors, 'since': since, 'existing_urls': existing_urls
+        })
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute("""INSERT INTO scrape_results
+            (brand_id, run_id, source_type, source_name, data, item_count)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (brand_id, run_id, result['source_type'], result['source_name'],
+             json.dumps(result['items'][:100]), len(result['items'])))
+        conn.commit()
+        conn.close()
+
+    t = threading.Thread(target=_do_scrape, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'run_id': run_id, 'count': len(competitors), 'since': since})
+
+
+@app.route('/api/local/scrape/forums', methods=['POST'])
+def local_scrape_forums():
+    """Batch scrape all forums — Reddit + web forums."""
+    import threading
+    from scraper import run_local_scrape
+
+    data = request.json or {}
+    brand_id = data.get('brand_id')
+    db = get_db()
+    forums = [dict(r) for r in db.execute(
+        "SELECT name, url, platform FROM tracked_forums WHERE brand_id=?",
+        (brand_id,)).fetchall()]
+
+    run_id = f"local-{int(_time.time())}-forums"
+    db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
+    since, existing_urls = _get_delta_context(db_path, brand_id, 'forums')
+
+    def _do_scrape():
+        result = run_local_scrape('forums', {
+            'forums': forums, 'since': since, 'existing_urls': existing_urls
+        })
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute("""INSERT INTO scrape_results
+            (brand_id, run_id, source_type, source_name, data, item_count)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (brand_id, run_id, result['source_type'], result['source_name'],
+             json.dumps(result['items'][:100]), len(result['items'])))
+        conn.commit()
+        conn.close()
+
+    t = threading.Thread(target=_do_scrape, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'run_id': run_id, 'count': len(forums), 'since': since})
+
+
+@app.route('/api/local/scrape/leaders', methods=['POST'])
+def local_scrape_leaders():
+    """Batch scrape leader mentions via Google News."""
+    import threading
+    from scraper import run_local_scrape
+
+    data = request.json or {}
+    brand_id = data.get('brand_id')
+    db = get_db()
+    leaders = [dict(r) for r in db.execute(
+        "SELECT name, title, company FROM tracked_leaders WHERE brand_id=?",
+        (brand_id,)).fetchall()]
+
+    run_id = f"local-{int(_time.time())}-leaders"
+    db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
+    since, existing_urls = _get_delta_context(db_path, brand_id, 'leaders')
+
+    def _do_scrape():
+        result = run_local_scrape('leaders', {
+            'leaders': leaders, 'since': since, 'existing_urls': existing_urls
+        })
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute("""INSERT INTO scrape_results
+            (brand_id, run_id, source_type, source_name, data, item_count)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (brand_id, run_id, result['source_type'], result['source_name'],
+             json.dumps(result['items'][:100]), len(result['items'])))
+        conn.commit()
+        conn.close()
+
+    t = threading.Thread(target=_do_scrape, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'run_id': run_id, 'count': len(leaders), 'since': since})
+
+
+@app.route('/api/local/scrape/news', methods=['POST'])
+def local_scrape_news():
+    """Scrape industry news RSS feeds."""
+    import threading
+    from scraper import run_local_scrape
+
+    data = request.json or {}
+    brand_id = data.get('brand_id')
+    run_id = f"local-{int(_time.time())}-news"
+    db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
+    since, existing_urls = _get_delta_context(db_path, brand_id, 'industry_news')
+
+    def _do_scrape():
+        result = run_local_scrape('industry_news', {
+            'since': since, 'existing_urls': existing_urls
+        })
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute("""INSERT INTO scrape_results
+            (brand_id, run_id, source_type, source_name, data, item_count)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (brand_id, run_id, result['source_type'], result['source_name'],
+             json.dumps(result['items'][:100]), len(result['items'])))
+        conn.commit()
+        conn.close()
+
+    t = threading.Thread(target=_do_scrape, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'run_id': run_id, 'since': since})
+
+
+@app.route('/api/local/results/<run_id>')
+def local_scrape_results(run_id):
+    """Fetch results of a local scrape by run_id."""
+    db = get_db()
+    row = db.execute("SELECT data, source_type, source_name, item_count, created_at FROM scrape_results WHERE run_id=?",
+                     (run_id,)).fetchone()
+    if not row:
+        return jsonify({'ok': False, 'error': 'not_ready'}), 202
+    items = json.loads(row['data']) if row['data'] else []
+    return jsonify({'ok': True, 'items': items, 'count': row['item_count'],
+                    'source_type': row['source_type'], 'source_name': row['source_name']})
 
 
 @app.route('/brands/<int:brand_id>/scraping')
@@ -4201,8 +5017,24 @@ def scraping_view(brand_id):
     unread_notifications = db.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
     configs = [dict(r) for r in db.execute("SELECT * FROM scrape_configs WHERE brand_id=? ORDER BY created_at DESC", (brand_id,)).fetchall()]
     competitors = [dict(r) for r in db.execute("SELECT * FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+    forums = [dict(r) for r in db.execute("SELECT * FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+    leaders = [dict(r) for r in db.execute("SELECT * FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+    recent_results = [dict(r) for r in db.execute(
+        "SELECT id, source_type, source_name, item_count, created_at, run_id FROM scrape_results WHERE brand_id=? ORDER BY created_at DESC LIMIT 20",
+        (brand_id,)).fetchall()]
+
+    # Get last scrape times per source type for delta display on cards
+    last_scrapes = {}
+    for stype in ['competitors', 'forums', 'leaders', 'industry_news', 'linkedin_company', 'linkedin_profile']:
+        row = db.execute(
+            "SELECT created_at, item_count FROM scrape_results WHERE brand_id=? AND source_type=? ORDER BY created_at DESC LIMIT 1",
+            (brand_id, stype)).fetchone()
+        if row:
+            last_scrapes[stype] = {'at': row['created_at'], 'count': row['item_count']}
+
     return render_template('scraping/view.html', brand=brand, configs=configs, competitors=competitors,
-                           unread_notifications=unread_notifications)
+                           forums=forums, leaders=leaders, unread_notifications=unread_notifications,
+                           recent_results=recent_results, last_scrapes=last_scrapes)
 
 
 @app.route('/api/scrape-configs', methods=['POST'])
@@ -4253,7 +5085,15 @@ def run_scrape_config(config_id):
     try:
         import urllib.request
         input_config = json.loads(config['input_config'] or '{}')
-        url = f"https://api.apify.com/v2/acts/{config['actor_id']}/runs?token={api_key}"
+        # Normalize LinkedIn URLs
+        if 'profileUrls' in input_config:
+            input_config['profileUrls'] = [u.replace('://linkedin.com', '://www.linkedin.com') if '://linkedin.com' in u else u for u in input_config['profileUrls']]
+        if 'startUrls' in input_config:
+            for item in input_config['startUrls']:
+                if isinstance(item, dict) and 'url' in item and '://linkedin.com' in item['url']:
+                    item['url'] = item['url'].replace('://linkedin.com', '://www.linkedin.com')
+        actor_path = config['actor_id'].replace('/', '~')
+        url = f"https://api.apify.com/v2/acts/{actor_path}/runs?token={api_key}"
         req = urllib.request.Request(url, data=json.dumps(input_config).encode(),
             headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=120) as resp:
@@ -4269,45 +5109,293 @@ def run_scrape_config(config_id):
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
-@app.route('/api/brands/<int:brand_id>/sync-competitors', methods=['POST'])
-def sync_competitors_from_registry(brand_id):
-    """Import competitors from 08_Research/competitor_registry.md into competitor_profiles."""
+@app.route('/api/brands/<int:brand_id>/scraping/adjust', methods=['POST'])
+def adjust_scraping_config(brand_id):
+    """Use AI to adjust scraping targets and schedules based on user request."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    user_request = request.json.get('request', '')
+    if not user_request:
+        return jsonify({'ok': False, 'error': 'No request provided'}), 400
+
+    # Get current configs
+    configs = [dict(r) for r in db.execute(
+        "SELECT * FROM scrape_configs WHERE brand_id=?", (brand_id,)).fetchall()]
+    configs_summary = json.dumps([{
+        'id': c['id'], 'target_name': c['target_name'], 'target_type': c['target_type'],
+        'schedule': c['schedule'], 'enabled': c['enabled'],
+        'input_config': c['input_config']
+    } for c in configs], indent=2)
+
+    prompt = f"""You manage scraping targets for {brand['name']}. Current configurations:
+{configs_summary}
+
+User request: "{user_request}"
+
+Respond with a JSON object describing the changes to make:
+{{
+  "actions": [
+    {{"action": "add", "target_name": "...", "target_type": "linkedin_company|linkedin_profile|web", "url": "https://...", "schedule": "daily|weekly|monthly|manual"}},
+    {{"action": "update", "id": <config_id>, "schedule": "weekly"}},
+    {{"action": "delete", "id": <config_id>}},
+    {{"action": "toggle", "id": <config_id>}}
+  ],
+  "summary": "Brief description of what was changed"
+}}
+
+Only use IDs that exist in current configs. For "add" actions, pick the correct actor:
+- linkedin_company → dev_fusion/Linkedin-Company-Scraper (input: profileUrls)
+- linkedin_profile → dev_fusion/Linkedin-Profile-Scraper (input: profileUrls)
+- web → apify/website-content-crawler (input: startUrls)
+
+Return ONLY the JSON object."""
+
+    result = generate_text(prompt, max_tokens=1500, model='claude-opus-4-6')
+    if not result['ok']:
+        return jsonify(result), 500
+
+    try:
+        import re
+        match = re.search(r'\{.*\}', result['text'], re.DOTALL)
+        if not match:
+            return jsonify({'ok': False, 'error': 'Could not parse AI response'}), 500
+
+        plan = json.loads(match.group())
+        actions_taken = 0
+
+        for action in plan.get('actions', []):
+            if action['action'] == 'add':
+                target_type = action.get('target_type', 'web')
+                url = action.get('url', '')
+                if target_type == 'web':
+                    actor_id = 'apify/website-content-crawler'
+                    input_cfg = {'startUrls': [{'url': url}]}
+                else:
+                    actor_id = 'dev_fusion/Linkedin-Company-Scraper' if target_type == 'linkedin_company' else 'dev_fusion/Linkedin-Profile-Scraper'
+                    input_cfg = {'profileUrls': [url]}
+                db.execute("""
+                    INSERT INTO scrape_configs (brand_id, target_name, target_type, actor_id, input_config, schedule, enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, 1)
+                """, (brand_id, action.get('target_name', 'New Target'), target_type,
+                      actor_id, json.dumps(input_cfg), action.get('schedule', 'weekly')))
+                actions_taken += 1
+
+            elif action['action'] == 'update' and action.get('id'):
+                fields = []
+                params = []
+                if 'schedule' in action:
+                    fields.append('schedule=?')
+                    params.append(action['schedule'])
+                if fields:
+                    params.append(action['id'])
+                    db.execute(f"UPDATE scrape_configs SET {', '.join(fields)} WHERE id=?", params)
+                    actions_taken += 1
+
+            elif action['action'] == 'delete' and action.get('id'):
+                db.execute("DELETE FROM scrape_configs WHERE id=?", (action['id'],))
+                actions_taken += 1
+
+            elif action['action'] == 'toggle' and action.get('id'):
+                db.execute("UPDATE scrape_configs SET enabled = CASE WHEN enabled=1 THEN 0 ELSE 1 END WHERE id=?",
+                           (action['id'],))
+                actions_taken += 1
+
+        db.commit()
+        return jsonify({'ok': True, 'message': plan.get('summary', f'{actions_taken} changes applied'),
+                        'actions_taken': actions_taken})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+def _write_competitor_registry(brand_folder, competitors):
+    """Write competitor_profiles to 08_Research/competitor_registry.md."""
+    import re
+    registry_path = os.path.join(brand_folder, '08_Research', 'competitor_registry.md')
+    os.makedirs(os.path.dirname(registry_path), exist_ok=True)
+
+    # Preserve own-profiles and notes sections if file exists
+    own_profiles = ""
+    if os.path.isfile(registry_path):
+        with open(registry_path, 'r', errors='ignore') as f:
+            text = f.read()
+        m = re.search(r'(## Own Profiles.*)', text, re.DOTALL)
+        if m:
+            own_profiles = m.group(1)
+
+    lines = [f"# Competitor Registry\n\n**Last Updated:** {datetime.now().strftime('%Y-%m-%d')}\n"]
+    lines.append("## Competitors\n")
+    lines.append("| # | Company | Region | LinkedIn URL | Category | Active |")
+    lines.append("|---|---------|--------|-------------|----------|--------|")
+    for i, c in enumerate(competitors, 1):
+        notes = c.get('notes') or ''
+        parts = notes.split(' — ', 1) if ' — ' in notes else [notes, notes]
+        region = parts[0].strip() or ''
+        category = parts[1].strip() if len(parts) > 1 else ''
+        lines.append(f"| {i} | {c['competitor_name']} | {region} | {c.get('linkedin_url', '')} | {category} | yes |")
+    lines.append("")
+    if own_profiles:
+        lines.append(own_profiles)
+
+    with open(registry_path, 'w') as f:
+        f.write('\n'.join(lines))
+
+
+def _write_forum_registry(brand_folder, forums):
+    """Write tracked_forums to 08_Research/forum_registry.md."""
+    registry_path = os.path.join(brand_folder, '08_Research', 'forum_registry.md')
+    os.makedirs(os.path.dirname(registry_path), exist_ok=True)
+    lines = [f"# Industry Forum Registry\n\n**Last Updated:** {datetime.now().strftime('%Y-%m-%d')}\n"]
+    lines.append("## Tracked Forums\n")
+    lines.append("| # | Name | URL | Platform | Notes |")
+    lines.append("|---|------|-----|----------|-------|")
+    for i, f_item in enumerate(forums, 1):
+        lines.append(f"| {i} | {f_item['name']} | {f_item.get('url', '')} | {f_item.get('platform', '')} | {f_item.get('notes', '')} |")
+    lines.append("")
+    with open(registry_path, 'w') as f:
+        f.write('\n'.join(lines))
+
+
+def _write_leader_registry(brand_folder, leaders):
+    """Write tracked_leaders to 08_Research/leader_registry.md."""
+    registry_path = os.path.join(brand_folder, '08_Research', 'leader_registry.md')
+    os.makedirs(os.path.dirname(registry_path), exist_ok=True)
+    lines = [f"# Industry Leader Registry\n\n**Last Updated:** {datetime.now().strftime('%Y-%m-%d')}\n"]
+    lines.append("## Tracked Leaders\n")
+    lines.append("| # | Name | LinkedIn URL | Title | Company | Notes |")
+    lines.append("|---|------|-------------|-------|---------|-------|")
+    for i, l in enumerate(leaders, 1):
+        lines.append(f"| {i} | {l['name']} | {l.get('linkedin_url', '')} | {l.get('title', '')} | {l.get('company', '')} | {l.get('notes', '')} |")
+    lines.append("")
+    with open(registry_path, 'w') as f:
+        f.write('\n'.join(lines))
+
+
+def _read_forum_registry(registry_path):
+    """Parse forum_registry.md and return list of dicts."""
+    import re
+    if not os.path.isfile(registry_path):
+        return []
+    with open(registry_path, 'r', errors='ignore') as f:
+        text = f.read()
+    rows = re.findall(r'\|\s*\d+\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]*)\|', text)
+    return [{'name': r[0].strip(), 'url': r[1].strip(), 'platform': r[2].strip(), 'notes': r[3].strip()} for r in rows if r[0].strip()]
+
+
+def _read_leader_registry(registry_path):
+    """Parse leader_registry.md and return list of dicts."""
+    import re
+    if not os.path.isfile(registry_path):
+        return []
+    with open(registry_path, 'r', errors='ignore') as f:
+        text = f.read()
+    rows = re.findall(r'\|\s*\d+\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]*)\|', text)
+    return [{'name': r[0].strip(), 'linkedin_url': r[1].strip(), 'title': r[2].strip(), 'company': r[3].strip(), 'notes': r[4].strip()} for r in rows if r[0].strip()]
+
+
+def _read_competitor_registry(registry_path):
+    """Parse competitor_registry.md and return list of dicts."""
+    import re
+    if not os.path.isfile(registry_path):
+        return []
+    with open(registry_path, 'r', errors='ignore') as f:
+        text = f.read()
+    rows = re.findall(r'\|\s*\d+\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|', text)
+    return [{'name': r[0].strip(), 'region': r[1].strip(), 'linkedin_url': r[2].strip(),
+             'category': r[3].strip(), 'active': r[4].strip().lower()} for r in rows]
+
+
+@app.route('/api/brands/<int:brand_id>/sync-registry', methods=['POST'])
+def sync_registry(brand_id):
+    """Bi-directional sync: DB ↔ 08_Research registry files for competitors, forums, and leaders."""
     db = get_db()
     brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
     if not brand or not brand['folder_path']:
         return jsonify({'ok': False, 'error': 'Brand folder not configured'}), 400
 
-    registry_path = os.path.join(brand['folder_path'], '08_Research', 'competitor_registry.md')
-    if not os.path.isfile(registry_path):
-        return jsonify({'ok': False, 'error': 'competitor_registry.md not found in 08_Research/'}), 404
+    sync_type = request.json.get('type', 'all') if request.json else 'all'
+    research_dir = os.path.join(brand['folder_path'], '08_Research')
+    os.makedirs(research_dir, exist_ok=True)
+    stats = {'competitors': {'added_to_db': 0, 'added_to_file': 0}, 'forums': {'added_to_db': 0, 'added_to_file': 0}, 'leaders': {'added_to_db': 0, 'added_to_file': 0}}
 
-    import re
-    with open(registry_path, 'r', errors='ignore') as f:
-        text = f.read()
+    # --- Competitors ---
+    if sync_type in ('all', 'competitors'):
+        comp_path = os.path.join(research_dir, 'competitor_registry.md')
+        db_comps = [dict(r) for r in db.execute("SELECT * FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+        file_comps = _read_competitor_registry(comp_path)
 
-    # Parse markdown table rows: | # | Company | Region | LinkedIn URL | Category | Active |
-    rows = re.findall(r'\|\s*\d+\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|', text)
-    added, skipped = 0, 0
-    for company, region, linkedin_url, category, active in rows:
-        company = company.strip()
-        linkedin_url = linkedin_url.strip()
-        active = active.strip().lower()
-        if active != 'yes':
-            continue
-        # Check if already exists
-        existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
-                              (brand_id, company)).fetchone()
-        if existing:
-            skipped += 1
-            continue
-        db.execute("""
-            INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, notes)
-            VALUES (?, ?, ?, ?)
-        """, (brand_id, company, linkedin_url, f"{region.strip()} — {category.strip()}"))
-        added += 1
+        db_names = {c['competitor_name'].lower() for c in db_comps}
+        for fc in file_comps:
+            if fc['active'] != 'yes':
+                continue
+            if fc['name'].lower() not in db_names:
+                db.execute("INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, notes) VALUES (?,?,?,?)",
+                           (brand_id, fc['name'], fc['linkedin_url'], f"{fc['region']} — {fc['category']}"))
+                stats['competitors']['added_to_db'] += 1
 
-    db.commit()
-    return jsonify({'ok': True, 'added': added, 'skipped': skipped})
+        db.commit()
+        all_comps = [dict(r) for r in db.execute("SELECT * FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+        file_names = {fc['name'].lower() for fc in file_comps}
+        new_in_file = sum(1 for c in all_comps if c['competitor_name'].lower() not in file_names)
+        stats['competitors']['added_to_file'] = new_in_file
+        _write_competitor_registry(brand['folder_path'], all_comps)
+
+    # --- Forums ---
+    if sync_type in ('all', 'forums'):
+        forum_path = os.path.join(research_dir, 'forum_registry.md')
+        db_forums = [dict(r) for r in db.execute("SELECT * FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+        file_forums = _read_forum_registry(forum_path)
+
+        db_names = {f['name'].lower() for f in db_forums}
+        for ff in file_forums:
+            if ff['name'].lower() not in db_names:
+                db.execute("INSERT INTO tracked_forums (brand_id, name, url, platform, notes) VALUES (?,?,?,?,?)",
+                           (brand_id, ff['name'], ff['url'], ff['platform'], ff['notes']))
+                stats['forums']['added_to_db'] += 1
+
+        db.commit()
+        all_forums = [dict(r) for r in db.execute("SELECT * FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+        file_names = {ff['name'].lower() for ff in file_forums}
+        new_in_file = sum(1 for f in all_forums if f['name'].lower() not in file_names)
+        stats['forums']['added_to_file'] = new_in_file
+        _write_forum_registry(brand['folder_path'], all_forums)
+
+    # --- Leaders ---
+    if sync_type in ('all', 'leaders'):
+        leader_path = os.path.join(research_dir, 'leader_registry.md')
+        db_leaders = [dict(r) for r in db.execute("SELECT * FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+        file_leaders = _read_leader_registry(leader_path)
+
+        db_names = {l['name'].lower() for l in db_leaders}
+        for fl in file_leaders:
+            if fl['name'].lower() not in db_names:
+                db.execute("INSERT INTO tracked_leaders (brand_id, name, linkedin_url, title, company, notes) VALUES (?,?,?,?,?,?)",
+                           (brand_id, fl['name'], fl['linkedin_url'], fl['title'], fl['company'], fl['notes']))
+                stats['leaders']['added_to_db'] += 1
+
+        db.commit()
+        all_leaders = [dict(r) for r in db.execute("SELECT * FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+        file_names = {fl['name'].lower() for fl in file_leaders}
+        new_in_file = sum(1 for l in all_leaders if l['name'].lower() not in file_names)
+        stats['leaders']['added_to_file'] = new_in_file
+        _write_leader_registry(brand['folder_path'], all_leaders)
+
+    total_to_db = sum(s['added_to_db'] for s in stats.values())
+    total_to_file = sum(s['added_to_file'] for s in stats.values())
+    return jsonify({'ok': True, 'stats': stats,
+                    'message': f'Synced: {total_to_db} added to app, {total_to_file} written to files'})
+
+
+# Keep old route as alias for backward compatibility
+@app.route('/api/brands/<int:brand_id>/sync-competitors', methods=['POST'])
+def sync_competitors_from_registry(brand_id):
+    """Legacy route — redirects to full sync with competitors only."""
+    request_data = request.json or {}
+    request_data['type'] = 'competitors'
+    with app.test_request_context(json=request_data):
+        return sync_registry(brand_id)
 
 
 @app.route('/api/brands/<int:brand_id>/populate-voice', methods=['POST'])
@@ -4501,27 +5589,880 @@ Return ONLY a JSON array:
 
 @app.route('/api/brands/<int:brand_id>/discover/apply', methods=['POST'])
 def apply_discoveries(brand_id):
-    """Save discovered competitors to the database."""
+    """Save discovered items (competitors, forums, leaders) to the database."""
     db = get_db()
     data = request.json
     items = data.get('items', [])
+    discover_type = data.get('type', 'competitors')
     added = 0
+
     for item in items:
         name = item.get('name', '')
         if not name:
             continue
-        existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
-                              (brand_id, name)).fetchone()
-        if existing:
-            continue
-        db.execute("""
-            INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, website_url, notes)
-            VALUES (?, ?, ?, ?, ?)
-        """, (brand_id, name, item.get('linkedin_url', ''), item.get('website', ''),
-              f"{item.get('region', '')} — {item.get('category', item.get('why', ''))}"))
-        added += 1
+
+        if discover_type == 'forums':
+            existing = db.execute("SELECT 1 FROM tracked_forums WHERE brand_id=? AND name=?",
+                                  (brand_id, name)).fetchone()
+            if existing:
+                continue
+            db.execute("""
+                INSERT INTO tracked_forums (brand_id, name, url, platform, notes)
+                VALUES (?, ?, ?, ?, ?)
+            """, (brand_id, name, item.get('url', ''), item.get('platform', ''),
+                  item.get('why', '')))
+            added += 1
+
+        elif discover_type == 'leaders':
+            existing = db.execute("SELECT 1 FROM tracked_leaders WHERE brand_id=? AND name=?",
+                                  (brand_id, name)).fetchone()
+            if existing:
+                continue
+            db.execute("""
+                INSERT INTO tracked_leaders (brand_id, name, linkedin_url, title, company, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (brand_id, name, item.get('linkedin_url', ''), item.get('title', ''),
+                  item.get('company', ''), item.get('why', '')))
+            added += 1
+
+        else:  # competitors
+            existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
+                                  (brand_id, name)).fetchone()
+            if existing:
+                continue
+            db.execute("""
+                INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, website_url, notes)
+                VALUES (?, ?, ?, ?, ?)
+            """, (brand_id, name, item.get('linkedin_url', ''), item.get('website', ''),
+                  f"{item.get('region', '')} — {item.get('category', item.get('why', ''))}"))
+            added += 1
+
     db.commit()
+
+    # Write updated lists back to registry files
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if brand and brand['folder_path']:
+        if discover_type == 'forums':
+            all_items = [dict(r) for r in db.execute("SELECT * FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+            _write_forum_registry(brand['folder_path'], all_items)
+        elif discover_type == 'leaders':
+            all_items = [dict(r) for r in db.execute("SELECT * FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+            _write_leader_registry(brand['folder_path'], all_items)
+        else:
+            all_items = [dict(r) for r in db.execute("SELECT * FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+            _write_competitor_registry(brand['folder_path'], all_items)
+
     return jsonify({'ok': True, 'added': added})
+
+
+# ─── Recursive Discovery Improvement ─────────────────────────────────
+
+@app.route('/api/brands/<int:brand_id>/discover/recursive', methods=['POST'])
+def recursive_discovery(brand_id):
+    """Opus 4.6-directed recursive discovery loop: analyze gaps → discover → evaluate → refine."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    data = request.json or {}
+    discover_type = data.get('type', 'all')  # all, competitors, forums, leaders
+    max_rounds = min(data.get('rounds', 2), 3)
+
+    # Gather current state
+    competitors = [dict(r) for r in db.execute("SELECT competitor_name, linkedin_url, notes FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+    forums = [dict(r) for r in db.execute("SELECT name, url, platform, notes FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+    leaders = [dict(r) for r in db.execute("SELECT name, linkedin_url, title, company, notes FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+
+    # Get recent scrape results for context
+    recent_results = [dict(r) for r in db.execute("""
+        SELECT source_type, source_name, data, item_count, created_at
+        FROM scrape_results WHERE brand_id=? ORDER BY created_at DESC LIMIT 10
+    """, (brand_id,)).fetchall()]
+
+    recent_summary = ""
+    for r in recent_results:
+        items = json.loads(r['data'] or '[]')[:5]
+        snippets = [str(item.get('title', item.get('text', '')))[:100] for item in items if isinstance(item, dict)]
+        recent_summary += f"\n- {r['source_type']}/{r['source_name']} ({r['item_count']} items, {r['created_at'][:10]}): {'; '.join(snippets[:3])}"
+
+    analysis_prompt = f"""You are an intelligence analyst for {brand['name']}, an F&B technology company (POS, CRM, AI, DX) in APAC.
+
+Current monitoring sources:
+- {len(competitors)} competitors: {', '.join(c['competitor_name'] for c in competitors[:10])}
+- {len(forums)} forums: {', '.join(f['name'] for f in forums[:10])}
+- {len(leaders)} leaders: {', '.join(l['name'] for l in leaders[:10])}
+
+Recent scraping data:{recent_summary or ' No recent scrape data available.'}
+
+Analyze the GAPS in our monitoring:
+1. Which competitor categories are we missing? (e.g., we track POS companies but not delivery-tech, payment-tech, kitchen automation)
+2. Which geographic markets are underrepresented? (we need coverage across SG, JP, AU, VN, broader APAC)
+3. Which community types are missing? (e.g., we have Reddit but not Discord, or forums but not LinkedIn groups)
+4. Which leader archetypes are missing? (e.g., we have CEOs but not analysts, journalists, investors)
+5. Based on recent scraping data, what emerging topics/trends should we track with NEW sources?
+
+Return a JSON object:
+{{
+    "gap_analysis": "2-3 sentence summary of biggest gaps",
+    "discovery_instructions": {{
+        "competitors": "Specific instruction for what types of competitors to find next (or null if coverage is good)",
+        "forums": "Specific instruction for what forum types to discover (or null)",
+        "leaders": "Specific instruction for what leader profiles to find (or null)"
+    }},
+    "priority_order": ["competitors", "forums", "leaders"],
+    "refinement_notes": "Any sources that should be REMOVED because they're low-value or redundant"
+}}"""
+
+    analysis_result = generate_text(analysis_prompt, max_tokens=1500, model='claude-opus-4-6')
+    if not analysis_result['ok']:
+        return jsonify(analysis_result), 500
+
+    import re
+    try:
+        match = re.search(r'\{.*\}', analysis_result['text'], re.DOTALL)
+        analysis = json.loads(match.group()) if match else {}
+    except Exception:
+        analysis = {}
+
+    gap_analysis = analysis.get('gap_analysis', '')
+    instructions = analysis.get('discovery_instructions', {})
+    priority = analysis.get('priority_order', ['competitors', 'forums', 'leaders'])
+
+    all_discoveries = {}
+    total_added = 0
+
+    # Run discovery rounds based on priority
+    types_to_run = priority if discover_type == 'all' else [discover_type]
+
+    for round_num in range(max_rounds):
+        for dtype in types_to_run:
+            instruction = instructions.get(dtype)
+            if not instruction:
+                continue
+
+            existing_names = []
+            if dtype == 'competitors':
+                existing_names = [c['competitor_name'] for c in competitors]
+            elif dtype == 'forums':
+                existing_names = [f['name'] for f in forums]
+            elif dtype == 'leaders':
+                existing_names = [l['name'] for l in leaders]
+
+            # Add previously discovered names to avoid duplicates
+            for prev in all_discoveries.get(dtype, []):
+                existing_names.append(prev.get('name', ''))
+
+            brand_context = f"""Brand: {brand['name']}
+Industry: F&B / Retail Technology (POS, CRM, AI, Digital Transformation)
+Markets: Singapore, Japan, Vietnam, Australia, APAC
+Products: Cloud POS, Unified Restaurant Operating Platform, AI-powered analytics"""
+
+            if dtype == 'competitors':
+                disc_prompt = f"""{brand_context}
+Already tracking: {', '.join(existing_names) if existing_names else 'none'}
+Specific focus (round {round_num+1}): {instruction}
+Find 5-8 NEW companies. DO NOT repeat any already listed.
+Return ONLY a JSON array: [{{"name":"...","linkedin_url":"https://linkedin.com/company/...","region":"...","category":"...","why":"..."}}]"""
+            elif dtype == 'forums':
+                disc_prompt = f"""{brand_context}
+Already tracking: {', '.join(existing_names) if existing_names else 'none'}
+Specific focus (round {round_num+1}): {instruction}
+Find 5-8 NEW forums/communities. DO NOT repeat any already listed.
+Return ONLY a JSON array: [{{"name":"...","url":"https://...","platform":"reddit/slack/discord/forum/linkedin_group","why":"..."}}]"""
+            else:
+                disc_prompt = f"""{brand_context}
+Already tracking: {', '.join(existing_names) if existing_names else 'none'}
+Specific focus (round {round_num+1}): {instruction}
+Find 5-8 NEW industry leaders. DO NOT repeat any already listed.
+Return ONLY a JSON array: [{{"name":"...","linkedin_url":"https://linkedin.com/in/...","title":"...","company":"...","why":"..."}}]"""
+
+            disc_result = generate_text(disc_prompt, max_tokens=2000, model='claude-opus-4-6')
+            if not disc_result['ok']:
+                continue
+
+            try:
+                disc_match = re.search(r'\[.*\]', disc_result['text'], re.DOTALL)
+                if disc_match:
+                    items = json.loads(disc_match.group())
+                    if dtype not in all_discoveries:
+                        all_discoveries[dtype] = []
+                    all_discoveries[dtype].extend(items)
+            except Exception:
+                continue
+
+        # After each round, refine instruction based on what was found
+        if round_num < max_rounds - 1:
+            found_so_far = {k: len(v) for k, v in all_discoveries.items()}
+            refine_prompt = f"""Previous discovery round found: {json.dumps(found_so_far)}.
+Original gap analysis: {gap_analysis}
+Are there still gaps? Update the discovery instructions for the NEXT round.
+Return JSON: {{"competitors": "new instruction or null", "forums": "...", "leaders": "..."}}"""
+            refine_result = generate_text(refine_prompt, max_tokens=500, model='claude-opus-4-6')
+            if refine_result['ok']:
+                try:
+                    ref_match = re.search(r'\{.*\}', refine_result['text'], re.DOTALL)
+                    if ref_match:
+                        instructions = json.loads(ref_match.group())
+                except Exception:
+                    pass
+
+    # Auto-apply discoveries to tracked lists
+    for dtype, items in all_discoveries.items():
+        for item in items:
+            name = item.get('name', '')
+            if not name:
+                continue
+            if dtype == 'competitors':
+                existing = db.execute("SELECT 1 FROM competitor_profiles WHERE brand_id=? AND competitor_name=?",
+                                      (brand_id, name)).fetchone()
+                if not existing:
+                    db.execute("INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, notes) VALUES (?,?,?,?)",
+                               (brand_id, name, item.get('linkedin_url', ''),
+                                f"{item.get('region', '')} — {item.get('category', item.get('why', ''))}"))
+                    total_added += 1
+            elif dtype == 'forums':
+                existing = db.execute("SELECT 1 FROM tracked_forums WHERE brand_id=? AND name=?",
+                                      (brand_id, name)).fetchone()
+                if not existing:
+                    db.execute("INSERT INTO tracked_forums (brand_id, name, url, platform, notes) VALUES (?,?,?,?,?)",
+                               (brand_id, name, item.get('url', ''), item.get('platform', ''), item.get('why', '')))
+                    total_added += 1
+            elif dtype == 'leaders':
+                existing = db.execute("SELECT 1 FROM tracked_leaders WHERE brand_id=? AND name=?",
+                                      (brand_id, name)).fetchone()
+                if not existing:
+                    db.execute("INSERT INTO tracked_leaders (brand_id, name, linkedin_url, title, company, notes) VALUES (?,?,?,?,?,?)",
+                               (brand_id, name, item.get('linkedin_url', ''), item.get('title', ''),
+                                item.get('company', ''), item.get('why', '')))
+                    total_added += 1
+
+    db.commit()
+
+    # Write updated registry files
+    if brand['folder_path']:
+        all_comps = [dict(r) for r in db.execute("SELECT * FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+        _write_competitor_registry(brand['folder_path'], all_comps)
+        all_forums = [dict(r) for r in db.execute("SELECT * FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+        _write_forum_registry(brand['folder_path'], all_forums)
+        all_leaders = [dict(r) for r in db.execute("SELECT * FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+        _write_leader_registry(brand['folder_path'], all_leaders)
+
+    return jsonify({
+        'ok': True,
+        'gap_analysis': gap_analysis,
+        'discoveries': {k: len(v) for k, v in all_discoveries.items()},
+        'total_added': total_added,
+        'rounds_completed': max_rounds,
+        'refinement_notes': analysis.get('refinement_notes', '')
+    })
+
+
+# ─── Research Brief Synthesis Pipeline ────────────────────────────────
+
+@app.route('/api/brands/<int:brand_id>/research-brief/generate', methods=['POST'])
+def generate_research_brief(brand_id):
+    """Chained pipeline: gather scrape data → Opus synthesizes brief → Gemini prompt → save.
+    Step 1: Gather recent scraping data (competitors 7d, leaders 14d, forums 7d, own posts 60d)
+    Step 2: Opus 4.6 synthesizes a deep research brief
+    Step 3: Generate Gemini Deep Research prompt
+    Step 4: Save brief + prompt, ready for Gemini report upload
+    """
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    # ── Step 1: Gather recent data ──
+    now = datetime.now()
+    seven_days = (now - __import__('datetime').timedelta(days=7)).strftime('%Y-%m-%d')
+    fourteen_days = (now - __import__('datetime').timedelta(days=14)).strftime('%Y-%m-%d')
+    sixty_days = (now - __import__('datetime').timedelta(days=60)).strftime('%Y-%m-%d')
+
+    # Competitor scrape data (last 7 days)
+    comp_data = db.execute("""
+        SELECT data, source_name, created_at FROM scrape_results
+        WHERE brand_id=? AND source_type='competitors' AND created_at >= ?
+        ORDER BY created_at DESC LIMIT 5
+    """, (brand_id, seven_days)).fetchall()
+
+    # Leader scrape data (last 14 days)
+    leader_data = db.execute("""
+        SELECT data, source_name, created_at FROM scrape_results
+        WHERE brand_id=? AND source_type='leaders' AND created_at >= ?
+        ORDER BY created_at DESC LIMIT 5
+    """, (brand_id, fourteen_days)).fetchall()
+
+    # Forum scrape data (last 7 days)
+    forum_data = db.execute("""
+        SELECT data, source_name, created_at FROM scrape_results
+        WHERE brand_id=? AND source_type='forums' AND created_at >= ?
+        ORDER BY created_at DESC LIMIT 5
+    """, (brand_id, seven_days)).fetchall()
+
+    # Own post performance (last 60 days)
+    own_posts = db.execute("""
+        SELECT title, content_type, status, publish_date, notes, body_text
+        FROM content_items WHERE brand_id=? AND publish_date >= ?
+        ORDER BY publish_date DESC LIMIT 20
+    """, (brand_id, sixty_days)).fetchall()
+
+    # ── Analytics performance data ──
+    # Get engagement metrics grouped by post
+    post_metrics = db.execute("""
+        SELECT ci.title, ci.content_type, ci.publish_date, cp.name as pillar_name,
+               a.metric_type, a.metric_value
+        FROM analytics_snapshots a
+        JOIN content_items ci ON a.content_item_id = ci.id
+        LEFT JOIN content_pillars cp ON ci.pillar_id = cp.id
+        WHERE a.brand_id=?
+        ORDER BY ci.publish_date DESC LIMIT 200
+    """, (brand_id,)).fetchall()
+
+    # Aggregate by pillar
+    pillar_perf = {}
+    post_engagement = {}
+    for m in post_metrics:
+        # Per-pillar aggregation
+        pname = m['pillar_name'] or 'Untagged'
+        if pname not in pillar_perf:
+            pillar_perf[pname] = {'impressions': 0, 'likes': 0, 'comments': 0, 'shares': 0, 'posts': set()}
+        pillar_perf[pname][m['metric_type']] = pillar_perf[pname].get(m['metric_type'], 0) + m['metric_value']
+        pillar_perf[pname]['posts'].add(m['title'])
+
+        # Per-post engagement
+        ptitle = m['title']
+        if ptitle not in post_engagement:
+            post_engagement[ptitle] = {'type': m['content_type'], 'pillar': pname, 'date': m['publish_date'], 'metrics': {}}
+        post_engagement[ptitle]['metrics'][m['metric_type']] = m['metric_value']
+
+    # Get latest performance insights from Claude analysis
+    latest_insight = db.execute("""
+        SELECT insight_text FROM performance_insights
+        WHERE brand_id=? AND insight_type='comprehensive_analysis'
+        ORDER BY created_at DESC LIMIT 1
+    """, (brand_id,)).fetchone()
+
+    # Get tracked sources for context
+    competitors = [dict(r) for r in db.execute("SELECT competitor_name, linkedin_url FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
+    forums = [dict(r) for r in db.execute("SELECT name, url, platform FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchall()]
+    leaders = [dict(r) for r in db.execute("SELECT name, title, company, linkedin_url FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchall()]
+
+    # ── Summarize scraped data by type (extract useful fields per source) ──
+    def _summarize_competitors(rows):
+        if not rows:
+            return "\n### Competitor Intelligence\nNo recent scrape data. Opus should use its own knowledge of these companies.\n"
+        text = "\n### Competitor Intelligence\n"
+        for row in rows:
+            items = json.loads(row['data'] or '[]')
+            for item in items:
+                if not isinstance(item, dict) or item.get('error'):
+                    continue
+                item_type = item.get('type', '')
+                if item_type in ('rss_article', 'news_article'):
+                    # News/blog article from RSS or Google News
+                    title = item.get('title', '')
+                    source = item.get('source', '')
+                    url = item.get('url', '')
+                    desc = item.get('description', '')
+                    pub = item.get('published_at', '')[:10]
+                    company = item.get('company', '')
+                    text += f"\n- **{title}**"
+                    if company:
+                        text += f" [{company}]"
+                    if source:
+                        text += f" — {source}"
+                    if pub:
+                        text += f" ({pub})"
+                    text += "\n"
+                    if desc:
+                        text += f"  {str(desc)[:300]}\n"
+                elif 'companyName' in item:
+                    # LinkedIn company profile (from Apify)
+                    name = item.get('companyName', '')
+                    tagline = item.get('tagline', '')
+                    desc = item.get('description', '')
+                    followers = item.get('followerCount', '')
+                    text += f"\n**{name}**"
+                    if tagline:
+                        text += f" — \"{tagline}\""
+                    text += "\n"
+                    if followers:
+                        text += f"  LinkedIn followers: {followers}\n"
+                    if desc:
+                        text += f"  Positioning: {str(desc)[:300]}\n"
+        return text
+
+    def _summarize_leaders(rows):
+        if not rows:
+            return "\n### Industry Leader Intelligence\nNo recent scrape data. Opus should use its own knowledge of these leaders.\n"
+        text = "\n### Industry Leader Intelligence\n"
+        success_count = 0
+        for row in rows:
+            items = json.loads(row['data'] or '[]')
+            for item in items:
+                if not isinstance(item, dict) or item.get('error'):
+                    continue
+                success_count += 1
+                item_type = item.get('type', '')
+                if item_type == 'news_article':
+                    # Google News article about a leader
+                    title = item.get('title', '')
+                    source = item.get('source', '')
+                    leader = item.get('leader', '')
+                    company = item.get('company', '')
+                    pub = item.get('published_at', '')[:10]
+                    text += f"- **{title}**"
+                    if leader:
+                        text += f" [about {leader}"
+                        if company:
+                            text += f", {company}"
+                        text += "]"
+                    if source:
+                        text += f" — {source}"
+                    if pub:
+                        text += f" ({pub})"
+                    text += "\n"
+                    desc = item.get('description', '')
+                    if desc:
+                        text += f"  {str(desc)[:250]}\n"
+                else:
+                    # LinkedIn profile (from Apify)
+                    name = item.get('fullName', item.get('name', ''))
+                    headline = item.get('headline', '')
+                    about = item.get('about', item.get('summary', ''))
+                    text += f"- **{name}**: {headline}\n"
+                    if about:
+                        text += f"  Bio: {str(about)[:200]}\n"
+        if success_count == 0:
+            text += "No leader data available. Opus should use its own knowledge.\n"
+        return text
+
+    def _summarize_forums(rows):
+        if not rows:
+            return "\n### Forum & Community Intelligence\nNo recent scrape data. Opus should use its own knowledge.\n"
+        text = "\n### Forum & Community Intelligence\n"
+        useful_count = 0
+        for row in rows:
+            items = json.loads(row['data'] or '[]')
+            for item in items:
+                if not isinstance(item, dict) or item.get('error'):
+                    continue
+                item_type = item.get('type', '')
+                if item_type == 'reddit_post':
+                    # Reddit post
+                    title = item.get('title', '')
+                    source = item.get('source', '')
+                    score = item.get('score', 0)
+                    comments = item.get('num_comments', 0)
+                    desc = item.get('description', '')
+                    useful_count += 1
+                    text += f"\n- **{title}** ({source}, {score} upvotes, {comments} comments)\n"
+                    if desc:
+                        text += f"  {str(desc)[:300]}\n"
+                elif item_type in ('news_article', 'rss_article'):
+                    # News article found for forum topic
+                    useful_count += 1
+                    title = item.get('title', '')
+                    source = item.get('source', '')
+                    text += f"\n- **{title}** — {source}\n"
+                    desc = item.get('description', '')
+                    if desc:
+                        text += f"  {str(desc)[:250]}\n"
+                elif item_type in ('web_page', 'web_link'):
+                    # Web page content
+                    page_text = item.get('text', item.get('description', ''))
+                    if not page_text or len(page_text) < 100:
+                        continue
+                    skip_phrases = ['sign in', 'log in', 'page not found', 'create an account']
+                    if any(p in page_text.lower()[:200] for p in skip_phrases):
+                        continue
+                    useful_count += 1
+                    title = item.get('title', item.get('url', ''))
+                    text += f"\n- **{str(title)[:100]}**\n"
+                    text += f"  {str(page_text)[:400]}\n"
+        if useful_count == 0:
+            text += "No useful forum data scraped. Opus should use its own knowledge of restaurant tech community discussions.\n"
+        return text
+
+    # Also fetch industry news if available
+    news_data = db.execute("""
+        SELECT data, source_name, created_at FROM scrape_results
+        WHERE brand_id=? AND source_type='industry_news' AND created_at >= ?
+        ORDER BY created_at DESC LIMIT 3
+    """, (brand_id, seven_days)).fetchall()
+
+    def _summarize_news(rows):
+        if not rows:
+            return ""
+        text = "\n### Industry News & Trends (from RSS feeds)\n"
+        for row in rows:
+            items = json.loads(row['data'] or '[]')
+            for item in items[:20]:
+                if not isinstance(item, dict) or item.get('error'):
+                    continue
+                title = item.get('title', '')
+                source = item.get('source', '')
+                pub = item.get('published_at', '')[:10]
+                text += f"- **{title}** — {source}"
+                if pub:
+                    text += f" ({pub})"
+                text += "\n"
+        return text
+
+    comp_summary = _summarize_competitors(comp_data)
+    leader_summary = _summarize_leaders(leader_data)
+    forum_summary = _summarize_forums(forum_data)
+    news_summary = _summarize_news(news_data)
+
+    own_summary = "\n### Own Content Performance (last 60 days)\n"
+    if own_posts:
+        for p in own_posts:
+            own_summary += f"- [{p['status']}] {p['title']} ({p['content_type']}, {p['publish_date'] or 'no date'})\n"
+    else:
+        own_summary += "No published content in the last 60 days.\n"
+
+    # Add engagement analytics
+    if post_engagement:
+        own_summary += "\n### Engagement Analytics (per post)\n"
+        # Sort by total engagement (likes + comments + shares)
+        sorted_posts = sorted(post_engagement.items(),
+            key=lambda x: sum(x[1]['metrics'].get(m, 0) for m in ('likes', 'comments', 'shares')), reverse=True)
+        for title, data in sorted_posts[:15]:
+            m = data['metrics']
+            own_summary += f"- \"{title}\" ({data['type']}, pillar: {data['pillar']}, {data['date'] or 'N/A'}): "
+            own_summary += ', '.join(f"{k}={int(v)}" for k, v in m.items())
+            own_summary += "\n"
+
+    if pillar_perf:
+        own_summary += "\n### Performance by Content Pillar\n"
+        for pname, stats in sorted(pillar_perf.items(), key=lambda x: x[1].get('impressions', 0), reverse=True):
+            own_summary += f"- **{pname}** ({len(stats['posts'])} posts): "
+            own_summary += f"impressions={int(stats.get('impressions', 0))}, likes={int(stats.get('likes', 0))}, comments={int(stats.get('comments', 0))}, shares={int(stats.get('shares', 0))}\n"
+
+    if latest_insight:
+        own_summary += f"\n### AI Performance Analysis (latest)\n{latest_insight['insight_text'][:2000]}\n"
+
+    # Count what data we actually have
+    data_quality = {
+        'competitors_scraped': sum(1 for r in comp_data for i in json.loads(r['data'] or '[]') if isinstance(i, dict) and not i.get('error')),
+        'leaders_scraped': sum(1 for r in leader_data for i in json.loads(r['data'] or '[]') if isinstance(i, dict) and not i.get('error')),
+        'forums_useful': sum(1 for r in forum_data for i in json.loads(r['data'] or '[]') if isinstance(i, dict) and not i.get('error')),
+        'news_articles': sum(1 for r in news_data for i in json.loads(r['data'] or '[]') if isinstance(i, dict) and not i.get('error')),
+    }
+
+    # ── Step 2: Opus 4.6 synthesizes the brief ──
+    synthesis_prompt = f"""You are the content intelligence director for {brand['name']}, an enterprise F&B technology company building POSTAP — a unified restaurant operating platform with cloud POS, AI-powered analytics, smart kitchen systems, self-order kiosks, and multi-channel order unification. Headquartered in Singapore with operations in Japan, Vietnam, and expanding into Australia.
+
+## DIQIT'S CONTENT PILLARS (must inform all recommendations)
+1. Unified operations / eliminating system fragmentation
+2. AI-powered restaurant intelligence (demand forecasting, inventory optimization, labor planning)
+3. APAC F&B technology landscape and trends
+4. Multi-store scaling and operational excellence
+5. Self-service kiosks and customer experience innovation
+6. Digital transformation for traditional F&B operators
+
+## DIQIT'S KEY DIFFERENTIATORS (use to find competitive angles)
+- Unified architecture: one database, one order flow vs competitors' fragmented patchwork
+- Built for APAC complexity: 8+ languages, 12+ currencies, 20+ payment methods
+- Scalable infrastructure for multi-store chains
+- Unlimited users (no per-user licensing unlike Toast/Square)
+- AI-powered demand forecasting and labor optimization
+- Powers 1,000+ stores across 8 APAC countries
+
+## TARGET AUDIENCE
+- CxOs and VPs of Operations/Digital/IT at multi-branch F&B brands (5+ outlets)
+- QSR chains, casual dining, cloud kitchens, convenience/specialty retail
+- Primary market: Singapore. Secondary: Australia. Established: Japan.
+
+## INTELLIGENCE FROM MONITORING
+{comp_summary}
+{leader_summary}
+{forum_summary}
+{news_summary}
+{own_summary}
+
+## DATA QUALITY NOTE
+- Competitor profiles scraped: {data_quality['competitors_scraped']} (LinkedIn company profiles — static positioning data, not recent posts)
+- Leader profiles scraped: {data_quality['leaders_scraped']} (many failed — use your own knowledge of these leaders' typical content themes)
+- Forum content scraped: {data_quality['forums_useful']} useful pages (many forums require auth — use your own knowledge of restaurant tech community discussions)
+
+## TRACKED SOURCES
+Competitors: {', '.join(c['competitor_name'] for c in competitors)}
+Industry leaders: {', '.join(f"{l['name']} ({l['title']}, {l['company']})" for l in leaders)}
+Forums/communities: {', '.join(f['name'] for f in forums)}
+
+## YOUR TASK
+Using the scraped data above PLUS your own extensive knowledge of these companies, leaders, and the F&B tech industry, create a DEEP RESEARCH BRIEF that:
+
+1. **COMPETITOR POSITIONING ANALYSIS** — Based on scraped company descriptions AND your knowledge of what Toast, Square, Lightspeed, Eats365, etc. have been doing recently: What are they messaging? What product moves are they making? Where is DIQIT's positioning stronger/weaker?
+
+2. **LEADER DISCOURSE THEMES** — Based on your knowledge of what Chris Comparato, Deepinder Goyal, and other tracked leaders typically talk about: What themes are they pushing? What does this signal about where the industry is heading?
+
+3. **COMMUNITY PAIN POINTS** — Based on your knowledge of r/RestaurantTech, Restaurant Technology Network, restaurant operator communities: What are operators struggling with? What questions keep coming up? Where is nobody providing good answers?
+
+4. **CONTENT GAPS** — Topics competitors cover that DIQIT doesn't, and vice versa. Topics the audience is searching for that nobody is addressing well.
+
+5. **TREND FORECAST (next 30-60 days)** — Based on industry events, seasonal patterns, regulatory changes, and technology adoption curves: What topics will be trending next month? What should DIQIT publish BEFORE competitors?
+
+6. **OUR CONTENT EVALUATION** — What's working in our content? What's missing? What adjustments?
+
+7. **10 SPECIFIC CONTENT RECOMMENDATIONS** ranked by urgency (HIGH/MEDIUM/LOW):
+For each:
+- TOPIC and HEADLINE suggestion
+- WHY NOW (timing rationale)
+- TARGET ANGLE (how DIQIT frames it differently using our differentiators)
+- FORMAT (LinkedIn post, carousel, video, blog, case study)
+- DATA POINTS to include
+- HOOK (opening line that stops the scroll)
+- CTA (what we want the reader to do)
+
+Write this as an actionable brief. Be specific, not generic. Reference actual competitors by name. Reference actual industry events and trends."""
+
+    brief_result = generate_text(synthesis_prompt, max_tokens=4096, model='claude-opus-4-6')
+    if not brief_result['ok']:
+        return jsonify(brief_result), 500
+
+    brief_content = brief_result['text']
+
+    # ── Step 3: Generate Gemini Deep Research prompt ──
+    # Build performance summary for Gemini context
+    _perf_lines = []
+    if pillar_perf:
+        _perf_lines.append("Our content performance by pillar:")
+        for pname, stats in sorted(pillar_perf.items(), key=lambda x: x[1].get('impressions', 0), reverse=True):
+            _perf_lines.append(f"- {pname}: {len(stats['posts'])} posts, {int(stats.get('impressions', 0))} impressions, {int(stats.get('likes', 0))} likes, {int(stats.get('comments', 0))} comments")
+    if post_engagement:
+        top_posts = sorted(post_engagement.items(),
+            key=lambda x: sum(x[1]['metrics'].get(m, 0) for m in ('likes', 'comments', 'shares')), reverse=True)[:5]
+        if top_posts:
+            _perf_lines.append("Our top-performing posts:")
+            for title, data in top_posts:
+                m = data['metrics']
+                _perf_lines.append(f"- \"{title}\" ({data['type']}): {', '.join(f'{k}={int(v)}' for k, v in m.items())}")
+    _perf_summary = '\n'.join(_perf_lines) if _perf_lines else "No engagement analytics data available yet."
+
+    # Build specific research gaps based on what scraping missed
+    research_gaps = []
+    if data_quality['competitors_scraped'] > 0:
+        research_gaps.append("We have competitor PROFILES but NOT their recent LinkedIn posts, blog articles, or product announcements. Find their latest content and messaging from the past 2 weeks.")
+    else:
+        research_gaps.append("Find recent LinkedIn posts, blog articles, product announcements, and messaging from these competitors in the past 2 weeks.")
+    if data_quality['leaders_scraped'] == 0:
+        research_gaps.append("We could not scrape leader profiles. Find recent LinkedIn posts, conference talks, podcast appearances, and quotes from these industry leaders in the past 2 weeks.")
+    if data_quality['forums_useful'] == 0:
+        research_gaps.append("We could not scrape forum content (auth-gated). Find recent trending discussions on Reddit r/RestaurantTech, r/restaurateur, Restaurant Technology Network, and other F&B tech communities.")
+
+    comp_names_str = ', '.join(c['competitor_name'] for c in competitors[:8])
+    leader_names_str = ', '.join(f"{l['name']} ({l['company']})" for l in leaders[:8])
+
+    gemini_prompt_gen = f"""You are generating a research prompt for Google Gemini Deep Research. The goal: produce a report that fills the gaps our scraping missed and adds real-time market intelligence.
+
+## CONTEXT
+We are {brand['name']}, an F&B technology company (unified restaurant operating platform, cloud POS, AI analytics) in APAC. We need Gemini to research what we couldn't scrape.
+
+## WHAT WE ALREADY HAVE (from our brief — do NOT duplicate)
+{brief_content[:2000]}
+
+## WHAT WE'RE MISSING (Gemini must fill these gaps)
+{chr(10).join(f"- {g}" for g in research_gaps)}
+
+## SPECIFIC RESEARCH TARGETS
+Competitors to research: {comp_names_str}
+Industry leaders to research: {leader_names_str}
+Geographic focus: Singapore, Japan, Australia, Southeast Asia (APAC)
+Time window: Last 14 days (2 weeks)
+
+## OUR CONTENT PERFORMANCE DATA
+{_perf_summary}
+
+## REQUIREMENTS FOR THE PROMPT
+The Gemini Deep Research prompt must ask for:
+1. **Recent competitor activity** — latest LinkedIn posts, blog posts, product launches, partnership announcements, earnings calls from the named competitors (last 2 weeks)
+2. **Industry leader discourse** — what the named leaders have been posting/saying about restaurant tech, POS, AI in F&B, digital transformation (last 2 weeks)
+3. **Community trending topics** — what restaurant operators are discussing on Reddit, industry forums, LinkedIn groups (last 2 weeks)
+4. **Breaking news & events** — any regulatory changes, major acquisitions, industry events, conferences in the F&B tech space (last 2 weeks + upcoming month)
+5. **Market data & statistics** — recent reports, surveys, or data on restaurant tech adoption, POS market share, AI in F&B, APAC digital transformation
+6. **Trending content formats** — what types of content (video, carousel, long-form) are performing best in the restaurant tech space right now
+7. **Performance benchmarking** — typical engagement rates for F&B tech companies on LinkedIn, what post formats and topics drive the highest engagement in this industry
+
+Write the complete Gemini Deep Research prompt. Make it detailed and specific — reference companies and people by name. The output should be a comprehensive report that we can use to create 30-60 days of targeted content."""
+
+    gemini_result = generate_text(gemini_prompt_gen, max_tokens=4096, model='claude-opus-4-6')
+    gemini_prompt = gemini_result['text'] if gemini_result['ok'] else 'Error generating Gemini prompt'
+
+    # ── Step 4: Save everything ──
+    brief_title = f"Research Brief — {now.strftime('%Y-%m-%d')}"
+    db.execute("""
+        INSERT INTO research_briefs (brand_id, title, brief_content, gemini_prompt, status)
+        VALUES (?, ?, ?, ?, 'awaiting_research')
+    """, (brand_id, brief_title, brief_content, gemini_prompt))
+    brief_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.commit()
+
+    # Save brief file to 08_Research
+    if brand['folder_path']:
+        research_dir = os.path.join(brand['folder_path'], '08_Research')
+        os.makedirs(research_dir, exist_ok=True)
+        brief_filename = f"deep_research_brief_{now.strftime('%Y%m%d')}.md"
+        with open(os.path.join(research_dir, brief_filename), 'w') as f:
+            f.write(f"# {brief_title}\n**Generated:** {now.strftime('%Y-%m-%d %H:%M')}\n\n{brief_content}")
+
+        gemini_filename = f"gemini_research_prompt_{now.strftime('%Y%m%d')}.md"
+        with open(os.path.join(research_dir, gemini_filename), 'w') as f:
+            f.write(f"# Gemini Deep Research Prompt\n**For:** {brief_title}\n**Generated:** {now.strftime('%Y-%m-%d %H:%M')}\n\n{gemini_prompt}")
+
+    # Create notification
+    db.execute("""
+        INSERT INTO notifications (brand_id, notification_type, title, message, due_date,
+            action_type, action_url, action_label)
+        VALUES (?, 'task', ?, ?, ?, 'go_to_page', ?, 'View Brief')
+    """, (brand_id, f'Research Brief Ready',
+          f'Deep research brief generated. Run the Gemini prompt in Deep Research, then upload the report.',
+          now.strftime('%Y-%m-%d'), f'/brands/{brand_id}/planning'))
+    db.commit()
+
+    return jsonify({
+        'ok': True,
+        'brief_id': brief_id,
+        'brief_preview': brief_content[:800],
+        'gemini_prompt_preview': gemini_prompt[:800],
+        'data_quality': data_quality,
+        'has_scrape_data': {
+            'competitors': len(comp_data) > 0,
+            'leaders': len(leader_data) > 0,
+            'forums': len(forum_data) > 0,
+            'own_posts': len(own_posts) > 0
+        }
+    })
+
+
+@app.route('/api/brands/<int:brand_id>/research-brief/<int:brief_id>/upload-report', methods=['POST'])
+def upload_gemini_report(brand_id, brief_id):
+    """Step 5: After Gemini report is uploaded, Opus generates content angles + formats."""
+    db = get_db()
+    brief = db.execute("SELECT * FROM research_briefs WHERE id=? AND brand_id=?",
+                       (brief_id, brand_id)).fetchone()
+    if not brief:
+        return jsonify({'ok': False, 'error': 'Brief not found'}), 404
+
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    gemini_report = request.json.get('report', '')
+    if not gemini_report:
+        return jsonify({'ok': False, 'error': 'No report content provided'}), 400
+
+    # Save report
+    db.execute("UPDATE research_briefs SET gemini_report=?, status='analyzing' WHERE id=?",
+               (gemini_report, brief_id))
+    db.commit()
+
+    # ── Step 6: Opus generates content angles ──
+    angles_prompt = f"""You are the content strategist for {brand['name']}, an F&B technology company.
+
+You have two intelligence sources:
+1. INTERNAL BRIEF (from our monitoring data):
+{brief['brief_content'][:3000]}
+
+2. GEMINI DEEP RESEARCH REPORT (external market intelligence):
+{gemini_report[:4000]}
+
+Cross-reference BOTH sources and produce a CONTENT EXECUTION PLAN:
+
+For each content piece (aim for 10-15), specify:
+1. **Title**: Clear, compelling working title
+2. **Angle**: The specific perspective {brand['name']} should take (not generic)
+3. **Format**: linkedin_post / carousel / blog / video / reel / email
+4. **Urgency**: high (this week) / medium (next 2 weeks) / low (this month)
+5. **Key data points**: 2-3 specific stats or facts from the research to include
+6. **Hook**: The opening line or hook for the piece
+7. **CTA**: What action should the reader take
+8. **Tools**: What tools to use for creation (e.g., "Imagen 3 for hero image", "Nano Banana for infographic", "Carousel template")
+
+Return as a JSON array:
+[{{"title":"...","angle":"...","format":"linkedin_post","urgency":"high","data_points":["..."],"hook":"...","cta":"...","tools":["..."]}}]"""
+
+    angles_result = generate_text(angles_prompt, max_tokens=4096, model='claude-opus-4-6')
+    if not angles_result['ok']:
+        db.execute("UPDATE research_briefs SET status='error' WHERE id=?", (brief_id,))
+        db.commit()
+        return jsonify(angles_result), 500
+
+    import re
+    angles_text = angles_result['text']
+    try:
+        match = re.search(r'\[.*\]', angles_text, re.DOTALL)
+        content_angles = json.loads(match.group()) if match else []
+    except Exception:
+        content_angles = []
+
+    # Save angles and mark complete
+    db.execute("""
+        UPDATE research_briefs SET content_angles=?, status='complete', completed_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (json.dumps(content_angles), brief_id))
+
+    # Auto-create content items from high-urgency angles
+    created_items = 0
+    for angle in content_angles:
+        if angle.get('urgency') in ('high', 'medium'):
+            existing = db.execute("SELECT 1 FROM content_items WHERE brand_id=? AND title=?",
+                                  (brand_id, angle['title'])).fetchone()
+            if not existing:
+                db.execute("""
+                    INSERT INTO content_items (brand_id, title, content_type, status, notes, body_text)
+                    VALUES (?, ?, ?, 'backlog', ?, ?)
+                """, (brand_id, angle['title'], angle.get('format', 'linkedin_post'),
+                      f"Angle: {angle.get('angle', '')}\nHook: {angle.get('hook', '')}\nCTA: {angle.get('cta', '')}\nTools: {', '.join(angle.get('tools', []))}",
+                      f"Data points:\n" + '\n'.join(f"- {dp}" for dp in angle.get('data_points', []))))
+                created_items += 1
+
+    db.commit()
+
+    # Create notification
+    db.execute("""
+        INSERT INTO notifications (brand_id, notification_type, title, message, due_date,
+            action_type, action_url, action_label)
+        VALUES (?, 'system', ?, ?, ?, 'go_to_page', ?, 'View Pipeline')
+    """, (brand_id, f'Content Plan: {len(content_angles)} angles generated',
+          f'Research brief complete. {created_items} new content items created from high/medium urgency angles.',
+          datetime.now().strftime('%Y-%m-%d'), f'/brands/{brand_id}/pipeline'))
+    db.commit()
+
+    return jsonify({
+        'ok': True,
+        'content_angles': content_angles,
+        'total_angles': len(content_angles),
+        'items_created': created_items,
+        'brief_status': 'complete'
+    })
+
+
+@app.route('/api/brands/<int:brand_id>/research-briefs')
+def list_research_briefs(brand_id):
+    """List all research briefs for a brand."""
+    db = get_db()
+    briefs = [dict(r) for r in db.execute("""
+        SELECT id, title, status, created_at, completed_at FROM research_briefs
+        WHERE brand_id=? ORDER BY created_at DESC
+    """, (brand_id,)).fetchall()]
+    return jsonify({'ok': True, 'briefs': briefs})
+
+
+@app.route('/api/brands/<int:brand_id>/research-briefs/<int:brief_id>')
+def get_research_brief(brand_id, brief_id):
+    """Get a specific research brief with all details."""
+    db = get_db()
+    brief = db.execute("SELECT * FROM research_briefs WHERE id=? AND brand_id=?",
+                       (brief_id, brand_id)).fetchone()
+    if not brief:
+        return jsonify({'ok': False, 'error': 'Brief not found'}), 404
+    b = dict(brief)
+    if b.get('content_angles'):
+        try:
+            b['content_angles'] = json.loads(b['content_angles'])
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'brief': b})
 
 
 # ─── Folder ↔ Database Sync ──────────────────────────────────────────
@@ -4857,6 +6798,61 @@ def start_file_watcher():
                                                   fw_action_type, step['linked_folder'],
                                                   fw_action_label, step['id'], step['step_type']))
                                             db_conn.commit()
+
+                        # Watch registry files in 08_Research for bi-directional sync
+                        registry_files = {
+                            'competitor_registry.md': 'competitors',
+                            'forum_registry.md': 'forums',
+                            'leader_registry.md': 'leaders',
+                        }
+                        research_dir = os.path.join(folder, '08_Research')
+                        if os.path.exists(research_dir):
+                            for reg_file, sync_type in registry_files.items():
+                                fp = os.path.join(research_dir, reg_file)
+                                if not os.path.isfile(fp):
+                                    continue
+                                try:
+                                    mtime = os.path.getmtime(fp)
+                                except OSError:
+                                    continue
+                                prev = known.get(fp)
+                                known[fp] = mtime
+                                if prev is None:
+                                    continue
+                                if mtime > prev:
+                                    # Registry file changed → sync to DB
+                                    if sync_type == 'competitors':
+                                        items = _read_competitor_registry(fp)
+                                        existing = {r['competitor_name'].lower() for r in
+                                                    db_conn.execute("SELECT competitor_name FROM competitor_profiles WHERE brand_id=?",
+                                                                    (brand['id'],)).fetchall()}
+                                        for item in items:
+                                            if item['active'] != 'yes' or item['name'].lower() in existing:
+                                                continue
+                                            db_conn.execute("INSERT INTO competitor_profiles (brand_id, competitor_name, linkedin_url, notes) VALUES (?,?,?,?)",
+                                                            (brand['id'], item['name'], item['linkedin_url'], f"{item['region']} — {item['category']}"))
+                                    elif sync_type == 'forums':
+                                        items = _read_forum_registry(fp)
+                                        existing = {r['name'].lower() for r in
+                                                    db_conn.execute("SELECT name FROM tracked_forums WHERE brand_id=?",
+                                                                    (brand['id'],)).fetchall()}
+                                        for item in items:
+                                            if item['name'].lower() in existing:
+                                                continue
+                                            db_conn.execute("INSERT INTO tracked_forums (brand_id, name, url, platform, notes) VALUES (?,?,?,?,?)",
+                                                            (brand['id'], item['name'], item['url'], item['platform'], item['notes']))
+                                    elif sync_type == 'leaders':
+                                        items = _read_leader_registry(fp)
+                                        existing = {r['name'].lower() for r in
+                                                    db_conn.execute("SELECT name FROM tracked_leaders WHERE brand_id=?",
+                                                                    (brand['id'],)).fetchall()}
+                                        for item in items:
+                                            if item['name'].lower() in existing:
+                                                continue
+                                            db_conn.execute("INSERT INTO tracked_leaders (brand_id, name, linkedin_url, title, company, notes) VALUES (?,?,?,?,?,?)",
+                                                            (brand['id'], item['name'], item['linkedin_url'], item['title'], item['company'], item['notes']))
+                                    db_conn.commit()
+
                     db_conn.close()
             except Exception:
                 pass  # Silently handle watcher errors
@@ -5609,6 +7605,8 @@ def brand_onboarding(brand_id):
         'website': {'label': 'Website', 'done': bool(brand['website']), 'weight': 5},
         'colors': {'label': 'Brand Colors', 'done': brand['primary_color'] != '#000000' or brand['accent_color'] != '#6366f1', 'weight': 5},
         'workflow': {'label': 'Workflow Template', 'done': bool(db.execute("SELECT 1 FROM workflow_templates WHERE brand_id=?", (brand_id,)).fetchone()), 'weight': 5},
+        'baseline_scrape': {'label': 'LinkedIn Baseline', 'done': bool(db.execute(
+            "SELECT 1 FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0", (brand_id,)).fetchone()), 'weight': 10},
     }
 
     # Check files organization
@@ -5984,6 +7982,120 @@ def onboard_sync_from_folders(brand_id):
 
     db.commit()
     return jsonify({'ok': True, 'synced': synced, 'changes': len(synced)})
+
+
+@app.route('/api/brands/<int:brand_id>/onboard/baseline-scrape', methods=['POST'])
+def onboard_baseline_scrape(brand_id):
+    """Trigger Apify baseline scrape of 6 months of LinkedIn posts for personal & company accounts.
+    This runs during onboarding to establish historical performance data."""
+    import threading
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    data = request.json or {}
+    company_url = data.get('company_url', '')
+    profile_url = data.get('profile_url', '')
+    api_key = get_setting('apify_api_key')
+    if not api_key:
+        return jsonify({'ok': False, 'error': 'Apify API key not configured. Add it in Settings.'}), 400
+
+    if not company_url and not profile_url:
+        return jsonify({'ok': False, 'error': 'Provide at least one LinkedIn URL (company or personal).'}), 400
+
+    runs_started = []
+    db_path = app.config.get('DATABASE', os.path.join(app.root_path, 'digitalize_me.db'))
+
+    def _run_apify_scrape(actor_id, input_config, source_type, label):
+        """Run an Apify scrape and store results."""
+        try:
+            actor_path = actor_id.replace('/', '~')
+            url = f'https://api.apify.com/v2/acts/{actor_path}/runs?token={api_key}'
+            req_body = json.dumps(input_config).encode('utf-8')
+            req = urllib.request.Request(url, data=req_body, headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'DigitalizeMe/1.0'
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode())
+            run_id = result.get('data', {}).get('id', '')
+            if not run_id:
+                return
+
+            # Wait for run to complete (poll every 15s, up to 5 minutes)
+            for _ in range(20):
+                _time.sleep(15)
+                status_url = f'https://api.apify.com/v2/actor-runs/{run_id}?token={api_key}'
+                status_req = urllib.request.Request(status_url, headers={'User-Agent': 'DigitalizeMe/1.0'})
+                with urllib.request.urlopen(status_req, timeout=30) as resp:
+                    run_data = json.loads(resp.read().decode())
+                status = run_data.get('data', {}).get('status', '')
+                if status in ('SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'):
+                    break
+
+            if status != 'SUCCEEDED':
+                return
+
+            # Fetch results
+            items_url = f'https://api.apify.com/v2/actor-runs/{run_id}/dataset/items?token={api_key}'
+            items_req = urllib.request.Request(items_url, headers={'User-Agent': 'DigitalizeMe/1.0'})
+            with urllib.request.urlopen(items_req, timeout=60) as resp:
+                items = json.loads(resp.read().decode())
+
+            # Store in DB
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            conn.execute("""INSERT INTO scrape_results
+                (brand_id, run_id, source_type, source_name, data, item_count)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (brand_id, f"baseline-{run_id}", source_type, label,
+                 json.dumps(items[:200]), len(items)))
+            conn.commit()
+            conn.close()
+
+        except Exception as e:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            conn.execute("""INSERT INTO scrape_results
+                (brand_id, run_id, source_type, source_name, data, item_count)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (brand_id, f"baseline-error-{int(_time.time())}", 'error', label,
+                 json.dumps([{'error': str(e)}]), 0))
+            conn.commit()
+            conn.close()
+
+    if company_url:
+        run_id = f"baseline-company-{int(_time.time())}"
+        t = threading.Thread(target=_run_apify_scrape, args=(
+            'dev_fusion/Linkedin-Company-Scraper',
+            {'profileUrls': [company_url], 'maxPosts': 100},
+            'linkedin_company',
+            f'{brand["name"]} Company LinkedIn (baseline)'
+        ), daemon=True)
+        t.start()
+        runs_started.append({'type': 'company', 'url': company_url, 'run_id': run_id})
+
+    if profile_url:
+        run_id = f"baseline-profile-{int(_time.time())}"
+        t = threading.Thread(target=_run_apify_scrape, args=(
+            'dev_fusion/Linkedin-Profile-Scraper',
+            {'profileUrls': [profile_url], 'maxPosts': 100},
+            'linkedin_profile',
+            f'{brand["name"]} Personal LinkedIn (baseline)'
+        ), daemon=True)
+        t.start()
+        runs_started.append({'type': 'profile', 'url': profile_url, 'run_id': run_id})
+
+    # Create notification
+    db.execute("""INSERT INTO notifications (brand_id, notification_type, message, action_type, action_data)
+        VALUES (?, 'system', ?, 'go_to_page', ?)""",
+        (brand_id,
+         f'LinkedIn baseline scrape started for {len(runs_started)} account(s). Results in ~3-5 minutes.',
+         json.dumps({'url': f'/brands/{brand_id}/scraping'})))
+    db.commit()
+
+    return jsonify({'ok': True, 'runs': runs_started, 'message': f'Baseline scrape started for {len(runs_started)} LinkedIn account(s). This scrapes up to 100 recent posts per account. Results will appear in Data Enrichment in 3-5 minutes.'})
 
 
 # ─── Canva Integration ─────────────────────────────────────────────

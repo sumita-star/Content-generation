@@ -17,6 +17,9 @@
             <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Content performance and production metrics</p>
         </div>
         <div class="flex gap-2">
+            <button onclick="withLoading(this, () => generateDeepInsights())" class="px-3 py-1.5 text-xs rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 text-white">
+                <i class="fas fa-microscope mr-1"></i>Deep Insights
+            </button>
             <button onclick="withLoading(this, () => analyzePerformance())" class="px-3 py-1.5 text-xs rounded-lg transition-colors bg-purple-600 hover:bg-purple-700 text-white">
                 <i class="fas fa-brain mr-1"></i>Weekly Analysis
             </button>
@@ -367,6 +370,31 @@ async function deleteCompetitor(id) {
     await fetch(`/api/competitors/${id}`, { method: 'DELETE' });
     toast('Competitor removed', 'info');
     location.reload();
+}
+
+async function generateDeepInsights() {
+    toast('Generating deep performance insights via Opus 4.6... (2-3 minutes)', 'info');
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 300000);
+    try {
+        const res = await fetch('/api/brands/{{ brand.id }}/analytics/generate-insights', {
+            method: 'POST',
+            signal: controller.signal
+        });
+        const data = await res.json();
+        if (data.ok) {
+            toast(`Deep insights generated from ${data.post_count} posts & ${data.metric_count} metrics`, 'success');
+            location.reload();
+        } else {
+            toast('Insights failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            toast('Request timed out — try again', 'error');
+        } else {
+            toast('Error: ' + e.message, 'error');
+        }
+    }
 }
 
 async function analyzePerformance() {

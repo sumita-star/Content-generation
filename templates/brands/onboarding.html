@@ -242,6 +242,51 @@
         </div>
     </div>
 
+    <!-- Step 4: LinkedIn Baseline Scrape -->
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 4 ? 0 : 4"
+            style="background: {{ theme_colors['bg-tertiary'] }}">
+            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+                    {% if steps.baseline_scrape.done %}bg-green-600/20 text-green-400{% else %}text-white{% endif %}"
+                    style="{% if not steps.baseline_scrape.done %}background: {{ theme_colors['accent-primary'] }}{% endif %}">4</span>
+                <i class="fab fa-linkedin" style="color: #0077B5"></i>
+                LinkedIn Baseline Data
+                {% if steps.baseline_scrape.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
+            </h3>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 4 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </div>
+        <div x-show="openStep === 4" x-collapse class="px-5 py-4 space-y-3">
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                Scrape up to 100 historical posts from your LinkedIn company page and/or personal profile. This baseline data powers performance analytics and feeds into your content strategy.
+            </p>
+            <div class="rounded-lg p-3 text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                <p class="font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-info-circle mr-1" style="color: {{ theme_colors['accent-primary'] }}"></i>What happens:</p>
+                <p>Apify scrapes your LinkedIn posts (titles, text, engagement metrics, dates). After the baseline, subsequent scrapes only fetch new posts since the last run (delta scraping).</p>
+            </div>
+            <div class="space-y-2">
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Company LinkedIn URL</label>
+                    <input x-model="baselineCompanyUrl" type="url" placeholder="https://www.linkedin.com/company/diqit/"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Personal LinkedIn URL (optional)</label>
+                    <input x-model="baselineProfileUrl" type="url" placeholder="https://www.linkedin.com/in/neerajkumar/"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+            </div>
+            <button @click="runBaselineScrape($event.currentTarget)" class="px-4 py-2 text-sm rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
+                <i class="fab fa-linkedin mr-1"></i> Run Baseline Scrape
+            </button>
+            <div x-show="baselineStatus" class="text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <p x-text="baselineStatus"></p>
+            </div>
+        </div>
+    </div>
+
     <!-- What's Next -->
     <div class="rounded-xl p-5 border" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <h3 class="font-semibold text-sm mb-3 flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
@@ -268,9 +313,12 @@
 <script>
 function onboardingApp() {
     return {
-        openStep: {{ 1 if not steps.folder.done else (2 if not (steps.brand_voice.done and steps.pillars.done) else 3) }},
+        openStep: {{ 1 if not steps.folder.done else (2 if not (steps.brand_voice.done and steps.pillars.done) else (4 if not steps.baseline_scrape.done else 3)) }},
         analyzing: false,
         recommendations: null,
+        baselineCompanyUrl: 'https://www.linkedin.com/company/diqit/',
+        baselineProfileUrl: '',
+        baselineStatus: '',
 
         async runAnalysis() {
             this.analyzing = true;
@@ -325,6 +373,33 @@ function onboardingApp() {
             }
         }
     };
+}
+
+async function runBaselineScrape(btn) {
+    const app = Alpine.$data(btn.closest('[x-data]'));
+    if (!app.baselineCompanyUrl && !app.baselineProfileUrl) {
+        toast('Enter at least one LinkedIn URL', 'error');
+        return;
+    }
+    await withLoading(btn, async () => {
+        app.baselineStatus = 'Starting baseline scrape... This takes 3-5 minutes.';
+        const res = await fetch('/api/brands/{{ brand.id }}/onboard/baseline-scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                company_url: app.baselineCompanyUrl,
+                profile_url: app.baselineProfileUrl
+            })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            app.baselineStatus = data.message;
+            toast('Baseline scrape started — results in 3-5 minutes. Check Data Enrichment.', 'success');
+        } else {
+            app.baselineStatus = 'Error: ' + (data.error || 'Unknown');
+            toast(data.error || 'Baseline scrape failed', 'error');
+        }
+    });
 }
 
 async function scanFolder(btn) {

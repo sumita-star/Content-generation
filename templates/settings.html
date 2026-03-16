@@ -64,20 +64,29 @@
             <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-palette mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Appearance</h2>
         </div>
         <div class="p-4">
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3">
                 <button @click="setTheme('light')"
                     class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
-                    style="background: #F8F6F3; border-color: {{ 'var(--dm-accent-primary)' if theme_mode == 'light' else '#E0D8CE' }}">
+                    style="background: #F8F6F3; border-color: {{ 'var(--dm-accent-primary)' if theme_pref == 'light' else '#E0D8CE' }}">
                     <i class="fas fa-sun text-2xl mb-2" style="color: #B37A30"></i>
                     <div class="text-sm font-medium" style="color: #1A1008">Light</div>
                 </button>
                 <button @click="setTheme('dark')"
                     class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
-                    style="background: #120000; border-color: {{ '#D99549' if theme_mode == 'dark' else '#2A1A1A' }}">
+                    style="background: #120000; border-color: {{ '#D99549' if theme_pref == 'dark' else '#2A1A1A' }}">
                     <i class="fas fa-moon text-2xl mb-2" style="color: #D99549"></i>
                     <div class="text-sm font-medium" style="color: #FFFFFF">Dark</div>
                 </button>
+                <button @click="setTheme('auto')"
+                    class="flex-1 p-4 rounded-xl border-2 transition-all text-center"
+                    style="background: linear-gradient(135deg, #F8F6F3 50%, #120000 50%); border-color: {{ 'var(--dm-accent-primary)' if theme_pref == 'auto' else '#555' }}">
+                    <i class="fas fa-adjust text-2xl mb-2" style="color: #D99549"></i>
+                    <div class="text-sm font-medium" style="color: {{ '#1A1008' if theme_mode == 'light' else '#FFFFFF' }}">Auto</div>
+                </button>
             </div>
+            <p class="text-xs mt-2 text-center" style="color: {{ theme_colors['text-muted'] }}">
+                {% if theme_pref == 'auto' %}Auto switches to light at 7 AM and dark at 7 PM{% endif %}
+            </p>
         </div>
     </div>
 
@@ -389,49 +398,34 @@
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
             <div>
                 <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fab fa-google-drive mr-2 text-green-400"></i>Google Drive Sync</h2>
-                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Sync each brand's local folder structure with Google Drive. Configure per brand.</p>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Link a brand folder to Google Drive — paste the folder URL or ID and connect.</p>
             </div>
             <button @click="showDriveForm = !showDriveForm" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
-                <i class="fas fa-plus mr-1"></i>Add Folder
+                <i class="fas fa-plus mr-1"></i>Connect Drive
             </button>
         </div>
         <div class="p-4 space-y-3">
-            <!-- Add Form -->
-            <div x-show="showDriveForm" x-transition class="rounded-lg p-3 space-y-2" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
-                <div class="grid grid-cols-3 gap-2">
+            <!-- Simplified Add Form -->
+            <div x-show="showDriveForm" x-transition class="rounded-lg p-4 space-y-3" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="flex gap-2">
                     <select x-model="driveForm.brand_id"
-                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                        class="rounded-lg px-3 py-2 text-sm outline-none w-48"
                         style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
                         <option value="">Select Brand</option>
                         {% for b in brands %}
                         <option value="{{ b.id }}">{{ b.name }}</option>
                         {% endfor %}
                     </select>
-                    <input type="text" x-model="driveForm.folder_id" placeholder="Google Drive Folder ID"
-                        class="rounded-lg px-3 py-2 text-sm outline-none"
+                    <input type="text" x-model="driveForm.folder_id" placeholder="Paste Google Drive folder URL or ID"
+                        class="rounded-lg px-3 py-2 text-sm outline-none flex-1"
                         style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
-                    <input type="text" x-model="driveForm.folder_name" placeholder="Folder display name"
-                        class="rounded-lg px-3 py-2 text-sm outline-none"
-                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <input type="text" x-model="driveForm.local_path" placeholder="Local path (e.g. 04_Content)"
-                        class="rounded-lg px-3 py-2 text-sm outline-none"
-                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
-                    <select x-model="driveForm.sync_direction"
-                        class="rounded-lg px-3 py-2 text-sm outline-none"
-                        style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
-                        <option value="both">Bi-directional</option>
-                        <option value="upload">Upload only</option>
-                        <option value="download">Download only</option>
-                    </select>
-                </div>
-                <div class="flex gap-2">
-                    <button @click="addDriveSync()" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors">
-                        <i class="fas fa-save mr-1"></i>Save Config
+                    <button @click="addDriveSync()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
+                        <i class="fas fa-link mr-1"></i>Connect
                     </button>
-                    <button @click="showDriveForm = false" class="px-3 py-1.5 text-xs rounded-lg" style="background: {{ theme_colors['bg-secondary'] }}; color: {{ theme_colors['text-muted'] }}">Cancel</button>
                 </div>
+                <p class="text-xs" style="color: {{ theme_colors['text-disabled'] }}">
+                    <i class="fas fa-info-circle mr-1"></i>Open your brand folder in Google Drive, copy the URL from the address bar, and paste it above. Syncs the entire brand folder bi-directionally.
+                </p>
             </div>
 
             <!-- Existing Configs -->
@@ -441,19 +435,18 @@
                 <div class="flex items-center gap-3 py-3">
                     <i class="fab fa-google-drive text-lg" style="color: {% if sync.enabled %}#34A853{% else %}{{ theme_colors['text-disabled'] }}{% endif %}"></i>
                     <div class="flex-1">
-                        <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ sync.folder_name or sync.folder_id }}</p>
+                        <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ sync.folder_name or sync.brand_name or sync.folder_id }}</p>
                         <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">
-                            {% if sync.brand_name %}<span class="px-1.5 py-0.5 rounded text-[10px]" style="background: {{ theme_colors['bg-tertiary'] }}">{{ sync.brand_name }}</span> &middot; {% endif %}
-                            {{ sync.local_path or '(root)' }} &middot; {{ sync.sync_direction }} &middot;
                             {% if sync.last_synced_at %}Last synced: {{ sync.last_synced_at[:16] }}{% else %}Never synced{% endif %}
+                            &middot; {{ sync.sync_direction }}
                         </p>
                     </div>
                     <button onclick="toggleDriveSync({{ sync.id }})" class="text-xs px-2 py-1 rounded-lg transition-colors"
                         style="background: {{ theme_colors['bg-tertiary'] }}; color: {% if sync.enabled %}{{ theme_colors['status-success'] }}{% else %}{{ theme_colors['text-muted'] }}{% endif %}">
                         <i class="fas fa-{% if sync.enabled %}toggle-on{% else %}toggle-off{% endif %} mr-1"></i>
-                        {{ 'Enabled' if sync.enabled else 'Disabled' }}
+                        {{ 'On' if sync.enabled else 'Off' }}
                     </button>
-                    <button onclick="deleteDriveSync({{ sync.id }})" class="text-xs text-red-400 hover:text-red-300 px-2">
+                    <button onclick="deleteDriveSync({{ sync.id }})" class="text-xs text-red-400 hover:text-red-300 px-2" title="Remove">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -461,8 +454,8 @@
             </div>
             {% else %}
             <div class="text-center py-4">
-                <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No Drive folders configured.</p>
-                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Link Google Drive folders to keep content in sync.</p>
+                <p class="text-sm" style="color: {{ theme_colors['text-muted'] }}">No Drive folders connected.</p>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Click "Connect Drive" to link a brand folder.</p>
             </div>
             {% endif %}
         </div>
@@ -560,7 +553,7 @@ function settingsApp() {
         showDriveForm: false,
         defaultTextModel: '{{ default_text_model | default("claude-sonnet-4-20250514") }}',
         modelStatus: '',
-        driveForm: { brand_id: '', folder_id: '', folder_name: '', local_path: '', sync_direction: 'both' },
+        driveForm: { brand_id: '', folder_id: '' },
 
         setTheme(mode) {
             fetch('/api/settings/theme', {
@@ -678,15 +671,28 @@ function settingsApp() {
 
         async addDriveSync() {
             if (!this.driveForm.brand_id) return toast('Select a brand first', 'warning');
-            if (!this.driveForm.folder_id.trim()) return toast('Enter a Drive folder ID', 'warning');
+            let raw = this.driveForm.folder_id.trim();
+            if (!raw) return toast('Paste a Drive folder URL or ID', 'warning');
+            // Extract folder ID from full URL if pasted
+            const urlMatch = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+            const folderId = urlMatch ? urlMatch[1] : raw;
+            // Get brand name for display
+            const sel = this.$refs?.brandSelect || document.querySelector('[x-model="driveForm.brand_id"]');
+            const brandName = sel?.selectedOptions?.[0]?.text || '';
             const res = await fetch('/api/drive-sync', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(this.driveForm)
+                body: JSON.stringify({
+                    brand_id: this.driveForm.brand_id,
+                    folder_id: folderId,
+                    folder_name: brandName,
+                    sync_direction: 'both',
+                    local_path: ''
+                })
             });
             const data = await res.json();
             if (data.ok) {
-                toast('Drive sync config saved', 'success');
+                toast('Drive connected for ' + brandName, 'success');
                 this.showDriveForm = false;
                 location.reload();
             }

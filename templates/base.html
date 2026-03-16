@@ -74,11 +74,12 @@
 <body class="h-full" style="background: {{ theme_colors['bg-primary'] }}; color: {{ theme_colors['text-secondary'] }}" x-data="{
     sidebarOpen: window.innerWidth >= 768, notifOpen: false, brandPickerOpen: false,
     toggleTheme() {
-        const newMode = '{{ theme_mode }}' === 'dark' ? 'light' : 'dark';
+        const pref = '{{ theme_pref | default("auto") }}';
+        const next = pref === 'auto' ? 'light' : pref === 'light' ? 'dark' : 'auto';
         fetch('/api/settings/theme', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({mode: newMode})
+            body: JSON.stringify({mode: next})
         }).then(() => location.reload());
     }
 }">
@@ -127,6 +128,12 @@
                         <i class="fas fa-home w-5 text-center"></i><span>Overview</span>
                     </a>
                     <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Plan</p>
+                    <a href="/brands/{{ b.id }}/scraping" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-database w-5 text-center"></i><span>Data Enrichment</span>
+                    </a>
+                    <a href="/brands/{{ b.id }}/analytics" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
+                        <i class="fas fa-chart-line w-5 text-center"></i><span>Analytics</span>
+                    </a>
                     <a href="/brands/{{ b.id }}/planning" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
                         <i class="fas fa-lightbulb w-5 text-center"></i><span>Planning</span>
                     </a>
@@ -152,9 +159,6 @@
                     <p class="px-3 text-[9px] uppercase tracking-wider mt-3 mb-1" style="color: {{ theme_colors['text-muted'] }}">Publish</p>
                     <a href="/brands/{{ b.id }}/calendar" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
                         <i class="fas fa-calendar-alt w-5 text-center"></i><span>Calendar</span>
-                    </a>
-                    <a href="/brands/{{ b.id }}/analytics" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
-                        <i class="fas fa-chart-line w-5 text-center"></i><span>Analytics</span>
                     </a>
                     <a href="/brands/{{ b.id }}/folders" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'" onmouseleave="this.style.background=''">
                         <i class="fas fa-folder-open w-5 text-center"></i><span>Folders</span>
@@ -246,6 +250,8 @@
                         </a>
                         {% endmacro %}
                         <!-- Plan -->
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/scraping', 'Data Enrichment', 'database', 'scraping') }}
+                        {{ nav_icon('/brands/' ~ brand.id ~ '/analytics', 'Analytics', 'chart-line', 'analytics') }}
                         {{ nav_icon('/brands/' ~ brand.id ~ '/planning', 'Planning', 'lightbulb', 'planning') }}
                         {{ nav_icon('/brands/' ~ brand.id ~ '/templates', 'Templates', 'copy', 'templates') }}
                         <span class="w-px h-4 mx-0.5" style="background: {{ theme_colors['border-primary'] }}"></span>
@@ -258,7 +264,6 @@
                         <span class="w-px h-4 mx-0.5" style="background: {{ theme_colors['border-primary'] }}"></span>
                         <!-- Publish -->
                         {{ nav_icon('/brands/' ~ brand.id ~ '/calendar', 'Calendar', 'calendar-alt', 'calendar') }}
-                        {{ nav_icon('/brands/' ~ brand.id ~ '/analytics', 'Analytics', 'chart-line', 'analytics') }}
                         {{ nav_icon('/brands/' ~ brand.id ~ '/folders', 'Folders', 'folder-open', 'folders') }}
                     </div>
                     {% endif %}
@@ -299,8 +304,8 @@
                     <button @click="toggleTheme()"
                         class="w-8 h-8 rounded-lg flex items-center justify-center transition-all text-sm"
                         style="color: {{ theme_colors['text-muted'] }}; background: {{ theme_colors['bg-tertiary'] }}"
-                        title="Switch to {{ 'dark' if theme_mode == 'light' else 'light' }} mode">
-                        <i class="fas fa-{{ 'moon' if theme_mode == 'light' else 'sun' }}"></i>
+                        title="Theme: {{ theme_pref | default('auto') | title }} (click to cycle)">
+                        <i class="fas fa-{{ 'adjust' if (theme_pref | default('auto')) == 'auto' else ('moon' if theme_mode == 'light' else 'sun') }}"></i>
                     </button>
                     <span class="hidden sm:inline text-xs" style="color: {{ theme_colors['text-muted'] }}">{{ now.strftime('%A, %B %d') if now is defined else '' }}</span>
                 </div>

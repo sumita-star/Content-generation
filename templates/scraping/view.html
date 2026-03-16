@@ -1,13 +1,13 @@
 {% extends "brands/detail.html" %}
-{% block title %}Scraping — {{ brand.name }} — DigitalAIzeme{% endblock %}
-{% block page_title %}{{ brand.name }} &rsaquo; Scraping{% endblock %}
+{% block title %}Data Enrichment — {{ brand.name }} — DigitalAIzeme{% endblock %}
+{% block page_title %}{{ brand.name }} &rsaquo; Data Enrichment{% endblock %}
 
 {% block content %}
 <div class="max-w-5xl mx-auto space-y-6" x-data="scrapingApp()">
 
     <div class="flex items-center justify-between">
         <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">
-            <i class="fas fa-spider mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Scraping Dashboard
+            <i class="fas fa-database mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Data Enrichment
         </h1>
         <button @click="showAddForm = !showAddForm" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
             <i class="fas fa-plus mr-1"></i>Add Target
@@ -55,38 +55,79 @@
     </div>
 
     <!-- Preset Quick-Launch Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <!-- APIFY: Own LinkedIn only -->
         <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fab fa-linkedin text-2xl text-blue-400 mb-2"></i>
-            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Company Posts</h4>
-            <p class="text-[10px] mb-3" style="color: {{ theme_colors['text-muted'] }}">DIQIT LinkedIn page</p>
+            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Own LinkedIn</h4>
+            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">DIQIT profile <span class="text-blue-400">(Apify)</span></p>
+            {% if last_scrapes.get('linkedin_company') %}
+            <p class="text-[9px] mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-clock mr-1"></i>{{ last_scrapes['linkedin_company']['at'][:16] }} ({{ last_scrapes['linkedin_company']['count'] }} items)</p>
+            {% else %}
+            <p class="text-[9px] mb-2 text-yellow-500"><i class="fas fa-exclamation-circle mr-1"></i>Never scraped</p>
+            {% endif %}
             <button @click="quickScrape('linkedin_company', 'https://www.linkedin.com/company/diqit/')"
                 class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg w-full transition-colors">
                 <i class="fas fa-play mr-1"></i>Run Now
             </button>
         </div>
+        <!-- LOCAL: Competitor Intel -->
         <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-            <i class="fas fa-users text-2xl text-purple-400 mb-2"></i>
-            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Competitors</h4>
-            <p class="text-[10px] mb-3" style="color: {{ theme_colors['text-muted'] }}">{{ competitors | length }} tracked</p>
-            <button @click="scrapeCompetitors()"
+            <i class="fas fa-newspaper text-2xl text-purple-400 mb-2"></i>
+            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Competitor Intel</h4>
+            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">{{ competitors | length }} tracked <span class="text-green-400">(Free)</span></p>
+            {% if last_scrapes.get('competitors') %}
+            <p class="text-[9px] mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-clock mr-1"></i>{{ last_scrapes['competitors']['at'][:16] }} ({{ last_scrapes['competitors']['count'] }} items)</p>
+            {% else %}
+            <p class="text-[9px] mb-2 text-yellow-500"><i class="fas fa-exclamation-circle mr-1"></i>Never scraped</p>
+            {% endif %}
+            <button @click="scrapeCompetitorsLocal()"
                 class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg w-full transition-colors">
                 <i class="fas fa-play mr-1"></i>Run Now
             </button>
         </div>
+        <!-- LOCAL: Forums & Reddit -->
         <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fas fa-comments text-2xl text-teal-400 mb-2"></i>
-            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Industry Forums</h4>
-            <p class="text-[10px] mb-3" style="color: {{ theme_colors['text-muted'] }}">F&B tech discussions</p>
-            <button @click="quickScrape('web', '')" class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs rounded-lg w-full transition-colors">
+            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Forums & Reddit</h4>
+            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">{{ forums | length }} tracked <span class="text-green-400">(Free)</span></p>
+            {% if last_scrapes.get('forums') %}
+            <p class="text-[9px] mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-clock mr-1"></i>{{ last_scrapes['forums']['at'][:16] }} ({{ last_scrapes['forums']['count'] }} items)</p>
+            {% else %}
+            <p class="text-[9px] mb-2 text-yellow-500"><i class="fas fa-exclamation-circle mr-1"></i>Never scraped</p>
+            {% endif %}
+            <button @click="scrapeForumsLocal()"
+                class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs rounded-lg w-full transition-colors">
                 <i class="fas fa-play mr-1"></i>Run Now
             </button>
         </div>
+        <!-- LOCAL: Leader News -->
         <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fas fa-user-tie text-2xl text-amber-400 mb-2"></i>
-            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Industry Leaders</h4>
-            <p class="text-[10px] mb-3" style="color: {{ theme_colors['text-muted'] }}">Key LinkedIn profiles</p>
-            <button @click="quickScrape('linkedin_profile', '')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded-lg w-full transition-colors">
+            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Leader News</h4>
+            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">{{ leaders | length }} tracked <span class="text-green-400">(Free)</span></p>
+            {% if last_scrapes.get('leaders') %}
+            <p class="text-[9px] mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-clock mr-1"></i>{{ last_scrapes['leaders']['at'][:16] }} ({{ last_scrapes['leaders']['count'] }} items)</p>
+            {% else %}
+            <p class="text-[9px] mb-2 text-yellow-500"><i class="fas fa-exclamation-circle mr-1"></i>Never scraped</p>
+            {% endif %}
+            <button @click="scrapeLeadersLocal()"
+                class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded-lg w-full transition-colors">
+                <i class="fas fa-play mr-1"></i>Run Now
+            </button>
+        </div>
+        <!-- LOCAL: Industry News -->
+        <div class="border rounded-xl p-4 text-center" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+            <i class="fas fa-globe text-2xl text-pink-400 mb-2"></i>
+            <h4 class="text-sm font-medium mb-1" style="color: {{ theme_colors['text-primary'] }}">Industry News</h4>
+            <p class="text-[10px] mb-1" style="color: {{ theme_colors['text-muted'] }}">RSS feeds <span class="text-green-400">(Free)</span></p>
+            {% if last_scrapes.get('industry_news') %}
+            <p class="text-[9px] mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-clock mr-1"></i>{{ last_scrapes['industry_news']['at'][:16] }} ({{ last_scrapes['industry_news']['count'] }} items)</p>
+            {% else %}
+            <p class="text-[9px] mb-2 text-yellow-500"><i class="fas fa-exclamation-circle mr-1"></i>Never scraped</p>
+            {% endif %}
+            <button @click="scrapeIndustryNews()"
+                class="px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs rounded-lg w-full transition-colors">
                 <i class="fas fa-play mr-1"></i>Run Now
             </button>
         </div>
@@ -94,8 +135,13 @@
 
     <!-- Configured Scrape Targets -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
             <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-cog mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Configured Targets & Schedule</h2>
+            {% if not configs %}
+            <button @click="setupDefaults($event.currentTarget)" class="px-3 py-1.5 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-magic mr-1"></i>Auto-Setup
+            </button>
+            {% endif %}
         </div>
         <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
             {% for cfg in configs %}
@@ -130,37 +176,100 @@
             <div class="p-6 text-center" style="color: {{ theme_colors['text-muted'] }}">
                 <i class="fas fa-spider text-2xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
                 <p class="text-sm">No scrape targets configured yet.</p>
-                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Click "Add Target" or use the quick-launch cards above.</p>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-disabled'] }}">Click "Auto-Setup" to create defaults, or "Add Target" for custom ones.</p>
             </div>
             {% endif %}
+        </div>
+        <!-- AI Adjustment -->
+        <div class="p-4 border-t" style="border-color: {{ theme_colors['border-primary'] }}">
+            <div class="flex gap-2">
+                <input type="text" x-model="aiAdjustment" placeholder="Ask AI to adjust targets & schedule (e.g. 'scrape competitors weekly instead of monthly', 'add Reddit r/restaurateur')"
+                    class="flex-1 rounded-lg px-3 py-2 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"
+                    @keydown.enter="adjustWithAI($event.currentTarget.closest('div').querySelector('button'))">
+                <button @click="adjustWithAI($event.currentTarget)" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
+                    <i class="fas fa-robot mr-1"></i>Adjust
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Recent Results -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
             <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-database mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Recent Results</h2>
+            <button x-show="results.length" @click="analyzeResults()" class="px-3 py-1 bg-dm-primary hover:bg-dm-secondary text-white text-xs rounded-lg transition-colors">
+                <i class="fas fa-brain mr-1"></i>Analyze All with AI
+            </button>
         </div>
-        <div class="p-4">
-            <div x-show="!results.length" class="text-center py-4" style="color: {{ theme_colors['text-muted'] }}">
+        <div class="p-4 space-y-3">
+            <!-- Pending runs indicator -->
+            <template x-for="run in pendingRuns" :key="run.runId">
+                <div class="flex items-center gap-2 p-2 rounded-lg text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                    <i class="fas fa-spinner fa-spin" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                    <span style="color: {{ theme_colors['text-secondary'] }}" x-text="'Scraping ' + run.label + '... (results arriving shortly)'"></span>
+                </div>
+            </template>
+
+            <!-- No results -->
+            <div x-show="!resultGroups.length && !pendingRuns.length" class="text-center py-4" style="color: {{ theme_colors['text-muted'] }}">
                 <p class="text-sm">Run a scrape to see results here.</p>
             </div>
-            <div x-show="results.length" class="space-y-2">
-                <div class="flex items-center justify-between text-xs mb-2" style="color: {{ theme_colors['text-muted'] }}">
-                    <span x-text="results.length + ' items scraped'"></span>
-                    <button @click="analyzeResults()" class="px-3 py-1 bg-dm-primary hover:bg-dm-secondary text-white rounded-lg transition-colors">
-                        <i class="fas fa-brain mr-1"></i>Analyze with AI
-                    </button>
-                </div>
-                <div class="max-h-96 overflow-y-auto space-y-1">
-                    <template x-for="(item, idx) in results.slice(0, 20)" :key="idx">
-                        <div class="rounded-lg p-3 text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
-                            <p class="font-medium truncate" style="color: {{ theme_colors['text-primary'] }}" x-text="item.title || item.text?.substring(0, 100) || JSON.stringify(item).substring(0, 100)"></p>
-                            <p class="mt-1 truncate" style="color: {{ theme_colors['text-muted'] }}" x-text="item.url || item.link || ''"></p>
+
+            <!-- Result groups from current session -->
+            <template x-for="(group, gIdx) in resultGroups" :key="gIdx">
+                <div class="border rounded-lg overflow-hidden" style="border-color: {{ theme_colors['border-primary'] }}">
+                    <div class="flex items-center justify-between p-3 cursor-pointer" style="background: {{ theme_colors['bg-tertiary'] }}"
+                         @click="group.expanded = !group.expanded">
+                        <div class="flex items-center gap-2">
+                            <i class="fas" :class="{
+                                'fa-building text-purple-400': group.sourceType === 'competitors',
+                                'fa-comments text-teal-400': group.sourceType === 'forums',
+                                'fa-user-tie text-amber-400': group.sourceType === 'leaders',
+                                'fa-linkedin text-blue-400': group.sourceType === 'linkedin_company' || group.sourceType === 'linkedin_profile',
+                                'fa-globe text-gray-400': !['competitors','forums','leaders','linkedin_company','linkedin_profile'].includes(group.sourceType)
+                            }"></i>
+                            <span class="text-xs font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="group.sourceName || group.sourceType"></span>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full" style="background: {{ theme_colors['accent-primary'] }}20; color: {{ theme_colors['accent-primary'] }}" x-text="group.count + ' items'"></span>
                         </div>
-                    </template>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}" x-text="group.timestamp"></span>
+                            <i class="fas fa-chevron-down text-[10px] transition-transform" :class="{'rotate-180': group.expanded}" style="color: {{ theme_colors['text-muted'] }}"></i>
+                        </div>
+                    </div>
+                    <div x-show="group.expanded" x-transition class="p-2 space-y-1">
+                        <template x-for="(item, idx) in group.items.slice(0, 20)" :key="idx">
+                            <div class="rounded-lg p-3 text-xs" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                                <p class="font-medium truncate" style="color: {{ theme_colors['text-primary'] }}" x-text="item.title || item.name || item.fullName || item.text?.substring(0, 100) || JSON.stringify(item).substring(0, 100)"></p>
+                                <p class="mt-1 truncate" style="color: {{ theme_colors['text-muted'] }}" x-text="item.description || item.about || item.headline || ''"></p>
+                                <p class="mt-0.5 truncate text-[10px]" style="color: {{ theme_colors['text-disabled'] }}" x-text="item.url || item.link || item.linkedinUrl || item.profileUrl || ''"></p>
+                            </div>
+                        </template>
+                        <p x-show="group.items.length > 20" class="text-[10px] text-center py-1" style="color: {{ theme_colors['text-muted'] }}" x-text="'... and ' + (group.items.length - 20) + ' more'"></p>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Saved results from previous sessions -->
+            {% if recent_results %}
+            <div class="border-t pt-3 mt-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                <h4 class="text-xs font-medium mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-history mr-1"></i>Previous Scrape Runs</h4>
+                <div class="space-y-1">
+                    {% for sr in recent_results %}
+                    <div class="flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer hover:opacity-80" style="background: {{ theme_colors['bg-tertiary'] }}"
+                         @click="loadSavedResult({{ sr.id }})">
+                        <div class="flex items-center gap-2">
+                            <i class="fas {% if sr.source_type == 'competitors' %}fa-building text-purple-400{% elif sr.source_type == 'forums' %}fa-comments text-teal-400{% elif sr.source_type == 'leaders' %}fa-user-tie text-amber-400{% else %}fa-globe text-blue-400{% endif %}"></i>
+                            <span style="color: {{ theme_colors['text-primary'] }}">{{ sr.source_name or sr.source_type }}</span>
+                            <span class="px-1.5 py-0.5 rounded-full" style="background: {{ theme_colors['accent-primary'] }}20; color: {{ theme_colors['accent-primary'] }}">{{ sr.item_count }} items</span>
+                        </div>
+                        <span style="color: {{ theme_colors['text-disabled'] }}">{{ sr.created_at }}</span>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
+            {% endif %}
+
+            <!-- AI Analysis -->
             <div x-show="analysisResult" x-transition class="mt-4 rounded-lg p-4" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
                 <h4 class="text-xs font-medium mb-2" style="color: {{ theme_colors['accent-primary'] }}"><i class="fas fa-brain mr-1"></i>AI Analysis</h4>
                 <div class="text-sm prose prose-sm prose-invert max-w-none" style="color: {{ theme_colors['text-secondary'] }}" x-html="analysisResult"></div>
@@ -205,11 +314,143 @@
         </div>
     </div>
 
+    <!-- Tracked Forums -->
+    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-comments mr-2 text-teal-400"></i>Tracked Forums</h2>
+            <button @click="syncRegistry('forums', $event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Sync with 08_Research/forum_registry.md">
+                <i class="fas fa-sync mr-1"></i>Sync Registry
+            </button>
+        </div>
+        <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for forum in forums %}
+            <div class="p-3 flex items-center gap-3">
+                <i class="fas fa-globe text-teal-400"></i>
+                <div class="flex-1">
+                    <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ forum.name }}</p>
+                    <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ forum.url or 'No URL' }}{% if forum.platform %} &middot; {{ forum.platform }}{% endif %}</p>
+                </div>
+                <button onclick="deleteForum({{ forum.id }})" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+            </div>
+            {% endfor %}
+            {% if not forums %}
+            <div class="p-4 text-center text-sm" style="color: {{ theme_colors['text-muted'] }}">No forums tracked yet. Use AI Discovery below to find relevant communities.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tracked Leaders -->
+    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-user-tie mr-2 text-amber-400"></i>Tracked Leaders</h2>
+            <button @click="syncRegistry('leaders', $event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Sync with 08_Research/leader_registry.md">
+                <i class="fas fa-sync mr-1"></i>Sync Registry
+            </button>
+        </div>
+        <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
+            {% for leader in leaders %}
+            <div class="p-3 flex items-center gap-3">
+                <i class="fas fa-user text-amber-400"></i>
+                <div class="flex-1">
+                    <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ leader.name }}</p>
+                    <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{% if leader.title %}{{ leader.title }}{% endif %}{% if leader.company %} @ {{ leader.company }}{% endif %}{% if leader.linkedin_url %} &middot; {{ leader.linkedin_url }}{% endif %}</p>
+                </div>
+                <button onclick="deleteLeader({{ leader.id }})" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+            </div>
+            {% endfor %}
+            {% if not leaders %}
+            <div class="p-4 text-center text-sm" style="color: {{ theme_colors['text-muted'] }}">No leaders tracked yet. Use AI Discovery below to find key influencers.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Research Brief Pipeline -->
+    <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <div>
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-flask mr-2 text-pink-400"></i>Research Brief Pipeline</h2>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Opus 4.6 synthesizes scraping data into a deep research brief → Gemini Deep Research → Content angles</p>
+            </div>
+            <div class="flex gap-2">
+                <button @click="generateBrief($event.currentTarget)" class="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-brain mr-1"></i>Generate Brief
+                </button>
+            </div>
+        </div>
+        <div class="p-4 space-y-3">
+            <!-- Brief generation status -->
+            <div x-show="briefStatus" x-transition class="rounded-lg p-4" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="flex items-center gap-2 mb-2">
+                    <i class="fas fa-check-circle text-green-400" x-show="briefStatus === 'ready'"></i>
+                    <i class="fas fa-spinner fa-spin text-pink-400" x-show="briefStatus === 'generating'"></i>
+                    <span class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="briefStatus === 'generating' ? 'Opus 4.6 is synthesizing the research brief... (2-3 minutes, please wait)' : 'Brief ready'"></span>
+                </div>
+                <!-- Data quality indicators -->
+                <div x-show="dataQuality" class="flex gap-3 text-[10px] mt-1 mb-2">
+                    <span :class="dataQuality?.competitors_scraped > 0 ? 'text-green-400' : 'text-yellow-400'">
+                        <i class="fas" :class="dataQuality?.competitors_scraped > 0 ? 'fa-check' : 'fa-exclamation-triangle'"></i>
+                        Competitors: <span x-text="(dataQuality?.competitors_scraped || 0) + ' profiles'"></span>
+                    </span>
+                    <span :class="dataQuality?.leaders_scraped > 0 ? 'text-green-400' : 'text-yellow-400'">
+                        <i class="fas" :class="dataQuality?.leaders_scraped > 0 ? 'fa-check' : 'fa-exclamation-triangle'"></i>
+                        Leaders: <span x-text="(dataQuality?.leaders_scraped || 0) + ' profiles'"></span>
+                    </span>
+                    <span :class="dataQuality?.forums_useful > 0 ? 'text-green-400' : 'text-yellow-400'">
+                        <i class="fas" :class="dataQuality?.forums_useful > 0 ? 'fa-check' : 'fa-exclamation-triangle'"></i>
+                        Forums: <span x-text="(dataQuality?.forums_useful || 0) + ' pages'"></span>
+                    </span>
+                    <span class="text-gray-400">(Opus uses its own knowledge to fill gaps)</span>
+                </div>
+                <div x-show="briefPreview" class="text-xs mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap" style="color: {{ theme_colors['text-secondary'] }}" x-text="briefPreview"></div>
+                <div x-show="geminiPromptPreview" class="mt-3">
+                    <p class="text-[10px] uppercase tracking-wider mb-1" style="color: {{ theme_colors['text-muted'] }}">Gemini Deep Research Prompt</p>
+                    <div class="text-xs max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg p-2" style="background: {{ theme_colors['input-bg'] }}; color: {{ theme_colors['text-secondary'] }}" x-text="geminiPromptPreview"></div>
+                    <div class="mt-2 flex gap-2">
+                        <button @click="copyGeminiPrompt()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg">
+                            <i class="fas fa-copy mr-1"></i>Copy Prompt
+                        </button>
+                    </div>
+                </div>
+                <div x-show="briefId && briefStatus === 'ready'" class="mt-3 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                    <p class="text-xs mb-2" style="color: {{ theme_colors['text-muted'] }}">Paste the Gemini Deep Research report below:</p>
+                    <textarea x-model="geminiReport" rows="6" class="w-full rounded-lg px-3 py-2 text-sm outline-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Paste the full Gemini Deep Research report here..."></textarea>
+                    <button @click="uploadReport($event.currentTarget)" class="mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
+                        <i class="fas fa-upload mr-1"></i>Upload & Generate Content Angles
+                    </button>
+                </div>
+                <div x-show="contentAngles.length" class="mt-3 border-t pt-3" style="border-color: {{ theme_colors['border-primary'] }}">
+                    <p class="text-xs font-medium mb-2" style="color: {{ theme_colors['accent-primary'] }}"><i class="fas fa-lightbulb mr-1"></i>Content Angles (<span x-text="contentAngles.length"></span> generated, <span x-text="itemsCreated"></span> added to pipeline)</p>
+                    <div class="space-y-1 max-h-64 overflow-y-auto">
+                        <template x-for="(angle, idx) in contentAngles" :key="idx">
+                            <div class="rounded-lg p-2 text-xs" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold" :class="angle.urgency === 'high' ? 'bg-red-600 text-white' : angle.urgency === 'medium' ? 'bg-yellow-600 text-white' : 'bg-gray-600 text-white'" x-text="angle.urgency"></span>
+                                    <span class="px-1.5 py-0.5 rounded text-[9px]" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" x-text="angle.format"></span>
+                                    <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="angle.title"></span>
+                                </div>
+                                <p class="mt-1" style="color: {{ theme_colors['text-muted'] }}" x-text="angle.angle"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+            <div x-show="!briefStatus" class="text-center py-3" style="color: {{ theme_colors['text-muted'] }}">
+                <p class="text-xs">Click "Generate Brief" to synthesize competitor, leader, and forum scraping data into content strategy.</p>
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Uses: Competitors (7d) + Leaders (14d) + Forums (7d) + Own posts (60d)</p>
+            </div>
+        </div>
+    </div>
+
     <!-- AI Discovery -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
-            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-radar mr-2 text-cyan-400"></i>AI Discovery</h2>
-            <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Use AI to discover lookalike competitors, industry forums, and key leaders</p>
+        <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
+            <div>
+                <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-radar mr-2 text-cyan-400"></i>AI Discovery</h2>
+                <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Use AI to discover lookalike competitors, industry forums, and key leaders</p>
+            </div>
+            <button @click="recursiveDiscovery($event.currentTarget)" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-xs rounded-lg transition-colors" title="Opus 4.6 analyzes gaps and runs multi-round discovery">
+                <i class="fas fa-magic mr-1"></i>Smart Discovery
+            </button>
         </div>
         <div class="p-4 grid grid-cols-3 gap-3">
             <button @click="runDiscovery('competitors', $event.currentTarget)" class="border rounded-xl p-4 text-center transition-all hover:scale-[1.02]" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
@@ -238,11 +479,11 @@
                         <span x-text="discoveryType === 'competitors' ? 'Discovered Competitors' : discoveryType === 'forums' ? 'Discovered Forums & Communities' : 'Discovered Industry Leaders'"></span>
                         <span class="text-xs font-normal ml-1" style="color: {{ theme_colors['text-muted'] }}" x-text="'(' + discoveryResults.length + ' found)'"></span>
                     </h4>
-                    <template x-if="discoveryType === 'competitors'">
+                    <div class="flex gap-2">
                         <button @click="applyDiscoveries()" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors">
                             <i class="fas fa-plus mr-1"></i>Add All to Tracked
                         </button>
-                    </template>
+                    </div>
                 </div>
                 <div class="space-y-2 max-h-96 overflow-y-auto">
                     <template x-for="(item, idx) in discoveryResults" :key="idx">
@@ -263,11 +504,9 @@
                                     <a :href="item.linkedin_url || item.url || item.website" target="_blank" class="text-[10px] text-dm-accent hover:underline mt-1 inline-block" x-text="item.linkedin_url || item.url || item.website"></a>
                                 </template>
                             </div>
-                            <template x-if="discoveryType === 'competitors'">
-                                <button @click="addDiscoveredCompetitor(item)" class="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] rounded-lg flex-shrink-0">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                            </template>
+                            <button @click="addDiscoveredCompetitor(item)" class="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] rounded-lg flex-shrink-0" :title="'Add to tracked ' + discoveryType">
+                                <i class="fas fa-plus"></i>
+                            </button>
                         </div>
                     </template>
                 </div>
@@ -282,9 +521,21 @@ function scrapingApp() {
         showAddForm: false,
         showCompetitorForm: false,
         results: [],
+        resultGroups: [],
+        pendingRuns: [],
         analysisResult: '',
         discoveryResults: [],
         discoveryType: '',
+        aiAdjustment: '',
+        briefStatus: '',
+        briefId: null,
+        briefPreview: '',
+        dataQuality: null,
+        geminiPromptPreview: '',
+        geminiPromptFull: '',
+        geminiReport: '',
+        contentAngles: [],
+        itemsCreated: 0,
         newConfig: { target_name: '', target_type: 'linkedin_company', url: '', schedule: 'weekly' },
         newCompetitor: { name: '', linkedin_url: '' },
 
@@ -313,42 +564,177 @@ function scrapingApp() {
                 if (!url) return;
             }
             toast('Starting scrape...', 'info');
+            // Build actor-specific input format
+            let actor_id, input;
+            if (type === 'linkedin_company') {
+                actor_id = 'dev_fusion/Linkedin-Company-Scraper';
+                input = { profileUrls: [url] };
+            } else if (type === 'linkedin_profile') {
+                actor_id = 'dev_fusion/Linkedin-Profile-Scraper';
+                input = { profileUrls: [url] };
+            } else {
+                actor_id = 'apify/website-content-crawler';
+                input = { startUrls: [{ url }] };
+            }
             const res = await fetch('/api/apify/scrape', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    brand_id: {{ brand.id }},
-                    actor_id: type === 'linkedin_company' ? 'apify/linkedin-company-posts-scraper' : 'apify/web-scraper',
-                    input: { startUrls: [{ url }] }
-                })
+                body: JSON.stringify({ brand_id: {{ brand.id }}, actor_id, input })
             });
             const data = await res.json();
             if (data.ok) {
+                this.pendingRuns.push({ runId: data.run_id, source: type, label: 'Company Profile' });
                 toast(`Scrape started! Run ID: ${data.run_id}. Fetching results in 30s...`, 'success');
-                setTimeout(() => this.fetchResults(data.run_id), 30000);
+                setTimeout(() => this.fetchResults(data.run_id, type, 'quick_scrape'), 30000);
             } else {
                 toast(data.error || 'Scrape failed', 'error');
             }
         },
 
-        async scrapeCompetitors() {
-            const competitors = {{ competitors | tojson | safe }};
-            if (competitors.length === 0) return toast('No competitors tracked. Add some first.', 'warning');
-            for (const comp of competitors) {
-                if (comp.linkedin_url) {
-                    await this.quickScrape('linkedin_company', comp.linkedin_url);
-                }
+        // ── Local scrapers (free, no Apify) ──
+
+        async scrapeCompetitorsLocal() {
+            toast('Scraping competitor news & blogs (local, free)...', 'info');
+            const res = await fetch('/api/local/scrape/competitors', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ brand_id: {{ brand.id }} })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                this.pendingRuns.push({ runId: data.run_id, source: 'competitors', label: `${data.count} Competitors (News + Blogs)` });
+                toast(`Searching news & RSS for ${data.count} competitors... Results in ~30s`, 'success');
+                this.pollLocalResults(data.run_id, 'competitors', 'competitor_intel');
+            } else {
+                toast(data.error || 'Scrape failed', 'error');
             }
         },
 
-        async fetchResults(runId) {
-            const res = await fetch(`/api/apify/results/${runId}`);
+        async scrapeForumsLocal() {
+            toast('Scraping forums & Reddit (local, free)...', 'info');
+            const res = await fetch('/api/local/scrape/forums', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ brand_id: {{ brand.id }} })
+            });
             const data = await res.json();
             if (data.ok) {
-                this.results = data.items || [];
-                toast(`Fetched ${data.count} results`, 'success');
+                this.pendingRuns.push({ runId: data.run_id, source: 'forums', label: `${data.count} Forums & Reddit` });
+                toast(`Scraping ${data.count} forums... Results in ~20s`, 'success');
+                this.pollLocalResults(data.run_id, 'forums', 'forums_and_reddit');
+            } else {
+                toast(data.error || 'Scrape failed', 'error');
+            }
+        },
+
+        async scrapeLeadersLocal() {
+            toast('Searching leader news & mentions (local, free)...', 'info');
+            const res = await fetch('/api/local/scrape/leaders', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ brand_id: {{ brand.id }} })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                this.pendingRuns.push({ runId: data.run_id, source: 'leaders', label: `${data.count} Leaders (Google News)` });
+                toast(`Searching news for ${data.count} leaders... Results in ~30s`, 'success');
+                this.pollLocalResults(data.run_id, 'leaders', 'leader_news');
+            } else {
+                toast(data.error || 'Scrape failed', 'error');
+            }
+        },
+
+        async scrapeIndustryNews() {
+            toast('Fetching industry news RSS feeds (local, free)...', 'info');
+            const res = await fetch('/api/local/scrape/news', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ brand_id: {{ brand.id }} })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                this.pendingRuns.push({ runId: data.run_id, source: 'industry_news', label: 'Industry RSS Feeds' });
+                toast('Fetching industry news... Results in ~15s', 'success');
+                this.pollLocalResults(data.run_id, 'industry_news', 'industry_feeds');
+            } else {
+                toast(data.error || 'Scrape failed', 'error');
+            }
+        },
+
+        async pollLocalResults(runId, sourceType, sourceName) {
+            // Poll every 5 seconds for up to 2 minutes
+            for (let i = 0; i < 24; i++) {
+                await new Promise(r => setTimeout(r, 5000));
+                try {
+                    const res = await fetch(`/api/local/results/${runId}`);
+                    if (res.status === 200) {
+                        const data = await res.json();
+                        if (data.ok) {
+                            const items = data.items || [];
+                            this.resultGroups.unshift({
+                                sourceType: sourceType,
+                                sourceName: sourceName,
+                                items: items,
+                                count: data.count || items.length,
+                                timestamp: new Date().toLocaleString(),
+                                runId: runId,
+                                expanded: true
+                            });
+                            this.results = this.resultGroups.flatMap(g => g.items);
+                            this.pendingRuns = this.pendingRuns.filter(r => r.runId !== runId);
+                            toast(`Fetched ${data.count} results from ${sourceName}`, 'success');
+                            return;
+                        }
+                    }
+                } catch (e) { /* continue polling */ }
+            }
+            this.pendingRuns = this.pendingRuns.filter(r => r.runId !== runId);
+            toast(`Scrape timed out for ${sourceName}`, 'warning');
+        },
+
+        async fetchResults(runId, sourceType, sourceName) {
+            const params = new URLSearchParams({ brand_id: {{ brand.id }} });
+            if (sourceType) params.set('source_type', sourceType);
+            if (sourceName) params.set('source_name', sourceName);
+            const res = await fetch(`/api/apify/results/${runId}?${params}`);
+            const data = await res.json();
+            if (data.ok) {
+                const items = data.items || [];
+                // Accumulate results by source instead of overwriting
+                this.resultGroups.unshift({
+                    sourceType: sourceType || 'unknown',
+                    sourceName: sourceName || runId,
+                    items: items,
+                    count: data.count || items.length,
+                    timestamp: new Date().toLocaleString(),
+                    runId: runId,
+                    expanded: true
+                });
+                // Also update flat results for analyze
+                this.results = this.resultGroups.flatMap(g => g.items);
+                // Remove from pending
+                this.pendingRuns = this.pendingRuns.filter(r => r.runId !== runId);
+                toast(`Fetched ${data.count} results from ${sourceName || sourceType}`, 'success');
             } else {
                 toast('Results not ready yet. Try again in a minute.', 'info');
+            }
+        },
+
+        async loadSavedResult(resultId) {
+            const res = await fetch(`/api/scrape-results/${resultId}`);
+            const data = await res.json();
+            if (data.ok) {
+                this.resultGroups.unshift({
+                    sourceType: data.source_type,
+                    sourceName: data.source_name,
+                    items: data.items || [],
+                    count: data.count,
+                    timestamp: data.created_at,
+                    saved: true,
+                    expanded: true
+                });
+                this.results = this.resultGroups.flatMap(g => g.items);
+                toast(`Loaded ${data.count} saved results`, 'success');
             }
         },
 
@@ -380,17 +766,32 @@ function scrapingApp() {
                     linkedin_url: this.newCompetitor.linkedin_url
                 })
             });
-            toast('Competitor added', 'success');
+            // Sync registry file after adding
+            await fetch('/api/brands/{{ brand.id }}/sync-registry', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ type: 'competitors' })
+            });
+            toast('Competitor added & synced to registry', 'success');
             location.reload();
         },
 
         async syncFromRegistry(btn) {
+            this.syncRegistry('competitors', btn);
+        },
+
+        async syncRegistry(type, btn) {
             withLoading(btn, async () => {
-                const res = await fetch('/api/brands/{{ brand.id }}/sync-competitors', { method: 'POST' });
+                const res = await fetch('/api/brands/{{ brand.id }}/sync-registry', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ type })
+                });
                 const data = await res.json();
                 if (data.ok) {
-                    toast(`Synced: ${data.added} added, ${data.skipped} already existed`, 'success');
-                    if (data.added > 0) location.reload();
+                    const s = data.stats[type] || {};
+                    toast(`Synced ${type}: ${s.added_to_db || 0} imported, ${s.added_to_file || 0} written to file`, 'success');
+                    if (s.added_to_db > 0) location.reload();
                 } else {
                     toast(data.error || 'Sync failed', 'error');
                 }
@@ -420,7 +821,7 @@ function scrapingApp() {
             await fetch('/api/brands/{{ brand.id }}/discover/apply', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ items: [item] })
+                body: JSON.stringify({ items: [item], type: this.discoveryType || 'competitors' })
             });
             toast(`Added ${item.name}`, 'success');
             location.reload();
@@ -430,13 +831,192 @@ function scrapingApp() {
             const res = await fetch('/api/brands/{{ brand.id }}/discover/apply', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ items: this.discoveryResults })
+                body: JSON.stringify({ items: this.discoveryResults, type: this.discoveryType || 'competitors' })
             });
             const data = await res.json();
             if (data.ok) {
-                toast(`Added ${data.added} competitors`, 'success');
+                toast(`Added ${data.added} ${this.discoveryType || 'items'}`, 'success');
                 location.reload();
             }
+        },
+
+        async addOneAsTarget(item) {
+            const url = item.url || item.linkedin_url || item.website || '';
+            const targetType = (item.linkedin_url && item.linkedin_url.includes('linkedin.com'))
+                ? (item.linkedin_url.includes('/company/') ? 'linkedin_company' : 'linkedin_profile')
+                : 'web';
+            const res = await fetch('/api/scrape-configs', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    brand_id: {{ brand.id }},
+                    target_name: item.name,
+                    target_type: targetType,
+                    input_config: { profileUrls: targetType !== 'web' ? [url] : undefined, startUrls: targetType === 'web' ? [{ url }] : undefined },
+                    schedule: 'weekly'
+                })
+            });
+            if ((await res.json()).ok) {
+                toast(`Added "${item.name}" as scrape target`, 'success');
+            }
+        },
+
+        async addDiscoveredAsTargets() {
+            let added = 0;
+            for (const item of this.discoveryResults) {
+                const url = item.url || item.linkedin_url || item.website || '';
+                if (!url) continue;
+                const targetType = (url.includes('linkedin.com'))
+                    ? (url.includes('/company/') ? 'linkedin_company' : 'linkedin_profile')
+                    : 'web';
+                const res = await fetch('/api/scrape-configs', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        brand_id: {{ brand.id }},
+                        target_name: item.name,
+                        target_type: targetType,
+                        input_config: { profileUrls: targetType !== 'web' ? [url] : undefined, startUrls: targetType === 'web' ? [{ url }] : undefined },
+                        schedule: 'weekly'
+                    })
+                });
+                if ((await res.json()).ok) added++;
+            }
+            toast(`Added ${added} scrape targets`, 'success');
+            location.reload();
+        },
+
+        async setupDefaults(btn) {
+            withLoading(btn, async () => {
+                const defaults = [
+                    { target_name: '{{ brand.name }} LinkedIn', target_type: 'linkedin_company', input_config: { profileUrls: ['https://www.linkedin.com/company/diqit/'] }, schedule: 'weekly' },
+                    { target_name: 'All Competitors', target_type: 'linkedin_company', input_config: { profileUrls: {{ competitors | map(attribute='linkedin_url') | select | list | tojson }} }, schedule: 'monthly' },
+                ];
+                let added = 0;
+                for (const cfg of defaults) {
+                    if (!cfg.input_config.profileUrls?.length && !cfg.input_config.startUrls?.length) continue;
+                    const res = await fetch('/api/scrape-configs', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, ...cfg })
+                    });
+                    if ((await res.json()).ok) added++;
+                }
+                toast(`Created ${added} default targets`, 'success');
+                location.reload();
+            });
+        },
+
+        async generateBrief(btn) {
+            this.briefStatus = 'generating';
+            this.briefPreview = '';
+            this.geminiPromptPreview = '';
+            this.contentAngles = [];
+            // Opus 4.6 makes 2 sequential API calls — takes 2-3 minutes total
+            toast('Generating research brief with Opus 4.6... This takes 2-3 minutes (2 AI calls). Please wait.', 'info');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Opus thinking... ~2-3 min';
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout
+                const res = await fetch('/api/brands/{{ brand.id }}/research-brief/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({}),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                const data = await res.json();
+                if (data.ok) {
+                    this.briefId = data.brief_id;
+                    this.briefPreview = data.brief_preview;
+                    this.geminiPromptPreview = data.gemini_prompt_preview;
+                    this.dataQuality = data.data_quality || null;
+                    this.briefStatus = 'ready';
+                    toast('Research brief generated! Copy the Gemini prompt and run Deep Research.', 'success');
+                } else {
+                    this.briefStatus = '';
+                    toast(data.error || 'Brief generation failed', 'error');
+                }
+            } catch (e) {
+                this.briefStatus = '';
+                toast(e.name === 'AbortError' ? 'Request timed out. Try again.' : 'Brief generation failed: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-brain mr-1"></i>Generate Brief';
+            }
+        },
+
+        async copyGeminiPrompt() {
+            if (!this.briefId) return;
+            const res = await fetch(`/api/brands/{{ brand.id }}/research-briefs/${this.briefId}`);
+            const data = await res.json();
+            if (data.ok) {
+                await navigator.clipboard.writeText(data.brief.gemini_prompt || this.geminiPromptPreview);
+                toast('Gemini prompt copied to clipboard!', 'success');
+            }
+        },
+
+        async uploadReport(btn) {
+            if (!this.geminiReport.trim()) return toast('Paste the Gemini report first', 'warning');
+            if (!this.briefId) return toast('No brief to upload to', 'warning');
+            withLoading(btn, async () => {
+                const res = await fetch(`/api/brands/{{ brand.id }}/research-brief/${this.briefId}/upload-report`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ report: this.geminiReport })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.contentAngles = data.content_angles || [];
+                    this.itemsCreated = data.items_created || 0;
+                    toast(`${data.total_angles} content angles generated, ${data.items_created} added to pipeline!`, 'success');
+                } else {
+                    toast(data.error || 'Report processing failed', 'error');
+                }
+            });
+        },
+
+        async recursiveDiscovery(btn) {
+            withLoading(btn, async () => {
+                toast('Running smart discovery (2 rounds with Opus 4.6)...', 'info');
+                const res = await fetch('/api/brands/{{ brand.id }}/discover/recursive', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ type: 'all', rounds: 2 })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    const parts = [];
+                    for (const [k, v] of Object.entries(data.discoveries)) {
+                        if (v > 0) parts.push(`${v} ${k}`);
+                    }
+                    toast(`Smart Discovery complete: ${parts.join(', ')} found. ${data.total_added} new added.`, 'success');
+                    if (data.total_added > 0) location.reload();
+                } else {
+                    toast(data.error || 'Smart discovery failed', 'error');
+                }
+            });
+        },
+
+        async adjustWithAI(btn) {
+            const request = this.aiAdjustment.trim();
+            if (!request) return toast('Type what you want to change', 'warning');
+            withLoading(btn, async () => {
+                const res = await fetch('/api/brands/{{ brand.id }}/scraping/adjust', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ request })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    toast(data.message || 'Scraping config updated', 'success');
+                    this.aiAdjustment = '';
+                    location.reload();
+                } else {
+                    toast(data.error || 'AI adjustment failed', 'error');
+                }
+            });
         }
     };
 }
@@ -467,6 +1047,18 @@ async function deleteConfig(configId) {
 async function deleteCompetitor(compId) {
     if (!confirm('Remove this competitor?')) return;
     await fetch(`/api/competitors/${compId}`, { method: 'DELETE' });
+    location.reload();
+}
+
+async function deleteForum(forumId) {
+    if (!confirm('Remove this forum?')) return;
+    await fetch(`/api/forums/${forumId}`, { method: 'DELETE' });
+    location.reload();
+}
+
+async function deleteLeader(leaderId) {
+    if (!confirm('Remove this leader?')) return;
+    await fetch(`/api/leaders/${leaderId}`, { method: 'DELETE' });
     location.reload();
 }
 </script>
