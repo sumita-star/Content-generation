@@ -7787,7 +7787,7 @@ Documents found:
 {'---'.join(context_texts[:10]) if context_texts else 'No text documents found in folders.'}"""
 
     # ── Incorporate LinkedIn baseline data weighted by influence level ──
-    influence_level = data.get('influence_level', brand.get('baseline_influence_level') or 3)
+    influence_level = data.get('influence_level', brand['baseline_influence_level'] or 3)
     baseline_posts = []
     baseline_rows = db.execute(
         "SELECT data FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0 ORDER BY created_at DESC",
