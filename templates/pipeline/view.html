@@ -59,8 +59,10 @@
     </div>
     {% endif %}
 
+    <!-- Kanban + Audit Trail -->
+    <div class="flex gap-4">
     <!-- Kanban Board -->
-    <div class="flex gap-3 overflow-x-auto pb-4 -mx-3 px-3 md:mx-0 md:px-0" style="min-height: 500px;">
+    <div class="flex-1 flex gap-3 overflow-x-auto pb-4" style="min-height: 500px;">
         {% for col in columns %}
         <div class="flex-shrink-0 w-64 border rounded-xl overflow-hidden"
              style="background: {{ theme_colors['bg-secondary'] }}80; border-color: {{ theme_colors['border-primary'] }}"
@@ -188,6 +190,65 @@
         </div>
         {% endfor %}
     </div>
+
+    <!-- Audit Trail Sidebar -->
+    <div class="w-72 flex-shrink-0 rounded-xl overflow-hidden hidden md:block" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}"
+         x-data="auditTrail()" x-init="startPolling()">
+        <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <h3 class="text-sm font-medium flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <i class="fas fa-stream" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                Activity Trail
+            </h3>
+            <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}" x-text="logs.length + ' events'"></span>
+        </div>
+
+        <!-- Pending Actions -->
+        <template x-if="pendingActions.length > 0">
+            <div class="p-2" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}; background: rgba(245,158,11,0.05)">
+                <div class="text-[10px] uppercase tracking-wider font-medium mb-1" style="color: #f59e0b">
+                    <i class="fas fa-hand-paper mr-1"></i>Needs Your Action
+                </div>
+                <template x-for="a in pendingActions" :key="a.id">
+                    <div class="text-xs p-1.5 rounded mb-1 cursor-pointer hover:opacity-80" style="background: rgba(245,158,11,0.1); color: {{ theme_colors['text-secondary'] }}">
+                        <span x-text="a.item_title" class="font-medium truncate block" style="color: {{ theme_colors['text-primary'] }}"></span>
+                        <span x-text="a.event_title" class="text-[10px]"></span>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <!-- Scrolling Event Log -->
+        <div class="overflow-y-auto scrollbar-thin" style="max-height: 500px;" x-ref="activityScroll">
+            <template x-for="log in logs" :key="log.id">
+                <div class="px-3 py-2 text-xs" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}20">
+                    <div class="flex items-center gap-1.5">
+                        <i class="fas text-[10px]"
+                            :class="{
+                                'fa-arrow-right text-blue-400': log.event_type === 'status_change',
+                                'fa-robot text-amber-400': log.event_type === 'draft_generated',
+                                'fa-toolbox text-teal-400': log.event_type === 'tool_run',
+                                'fa-check text-green-400': log.event_type === 'step_completed',
+                                'fa-hand-paper text-yellow-400': log.event_type === 'human_needed',
+                                'fa-comment text-purple-400': log.event_type === 'feedback',
+                                'fa-exclamation-triangle text-red-400': log.event_type === 'error'
+                            }"></i>
+                        <span style="color: {{ theme_colors['text-primary'] }}" x-text="log.event_title" class="font-medium truncate"></span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5" style="color: {{ theme_colors['text-disabled'] }}">
+                        <span x-text="log.item_title" class="truncate"></span>
+                        <span class="ml-auto flex-shrink-0" x-text="formatTime(log.created_at)"></span>
+                    </div>
+                </div>
+            </template>
+            <template x-if="logs.length === 0">
+                <div class="p-6 text-center">
+                    <i class="fas fa-stream text-xl mb-2" style="color: {{ theme_colors['text-disabled'] }}"></i>
+                    <p class="text-xs" style="color: {{ theme_colors['text-muted'] }}">No activity yet. Generate drafts or advance steps to see events here.</p>
+                </div>
+            </template>
+        </div>
+    </div>
+    </div>
 </div>
 
 <!-- Add Content Modal -->
@@ -278,6 +339,44 @@
 </div>
 
 <script>
+function auditTrail() {
+    return {
+        logs: {{ recent_activity | tojson | safe }},
+        pendingActions: {{ pending_actions | tojson | safe }},
+        pollInterval: null,
+
+        startPolling() {
+            this.pollInterval = setInterval(() => this.refresh(), 10000);
+        },
+
+        async refresh() {
+            try {
+                const res = await fetch('/api/brands/{{ brand.id }}/pipeline-activity?limit=50');
+                const data = await res.json();
+                if (data.ok) {
+                    const oldCount = this.logs.length;
+                    this.logs = data.logs;
+                    this.pendingActions = data.logs.filter(l => l.requires_human && l.event_type === 'human_needed');
+                    if (data.logs.length > oldCount && this.$refs.activityScroll) {
+                        this.$nextTick(() => { this.$refs.activityScroll.scrollTop = 0; });
+                    }
+                }
+            } catch(e) {}
+        },
+
+        formatTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            const now = new Date();
+            const diff = (now - d) / 1000;
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            return d.toLocaleDateString();
+        }
+    };
+}
+
 let currentFeedbackItemId = null;
 
 async function dropItem(event, newStatus) {

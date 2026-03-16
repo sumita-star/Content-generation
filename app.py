@@ -174,11 +174,13 @@ def _migrate_notifications(db):
 
 
 def _migrate_brands(db):
-    """Add baseline_influence_level column to brands table if missing."""
+    """Add baseline_influence_level and baseline_confidence_level columns to brands table if missing."""
     cols = {row[1] for row in db.execute("PRAGMA table_info(brands)").fetchall()}
     if 'baseline_influence_level' not in cols:
         db.execute("ALTER TABLE brands ADD COLUMN baseline_influence_level INTEGER DEFAULT 3")
-        db.commit()
+    if 'baseline_confidence_level' not in cols:
+        db.execute("ALTER TABLE brands ADD COLUMN baseline_confidence_level INTEGER DEFAULT 0")
+    db.commit()
 
 
 # ─── Schema ─────────────────────────────────────────────────────────
@@ -196,6 +198,7 @@ CREATE TABLE IF NOT EXISTS brands (
     website TEXT,
     canva_brand_kit_id TEXT,
     baseline_influence_level INTEGER DEFAULT 3,
+    baseline_confidence_level INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -556,6 +559,21 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     log TEXT,  -- JSON array of step results
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    FOREIGN KEY (content_item_id) REFERENCES content_items(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    content_item_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    event_title TEXT NOT NULL,
+    event_detail TEXT,
+    from_status TEXT,
+    to_status TEXT,
+    requires_human BOOLEAN DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
     FOREIGN KEY (content_item_id) REFERENCES content_items(id) ON DELETE CASCADE
 );
@@ -1371,9 +1389,29 @@ def pipeline_view(brand_id):
         status = item['status'] if item['status'] in columns else 'backlog'
         pipeline[status].append(item)
 
+    # Pipeline activity for audit trail sidebar
+    pending_actions = db.execute("""
+        SELECT pal.*, ci.title as item_title
+        FROM pipeline_activity_log pal
+        JOIN content_items ci ON pal.content_item_id = ci.id
+        WHERE pal.brand_id=? AND pal.requires_human=1
+        AND ci.status IN ('review')
+        ORDER BY pal.created_at DESC LIMIT 20
+    """, (brand_id,)).fetchall()
+
+    recent_activity = db.execute("""
+        SELECT pal.*, ci.title as item_title
+        FROM pipeline_activity_log pal
+        JOIN content_items ci ON pal.content_item_id = ci.id
+        WHERE pal.brand_id=?
+        ORDER BY pal.created_at DESC LIMIT 50
+    """, (brand_id,)).fetchall()
+
     return render_template('pipeline/view.html',
         brand=brand, pipeline=pipeline, columns=columns,
-        pillars=pillars, unread_notifications=unread_notifications)
+        pillars=pillars, unread_notifications=unread_notifications,
+        pending_actions=[dict(r) for r in pending_actions],
+        recent_activity=[dict(r) for r in recent_activity])
 
 
 @app.route('/api/content-items', methods=['POST'])
@@ -1405,8 +1443,18 @@ def create_content_item():
 def update_content_status(item_id):
     db = get_db()
     data = request.json
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    old_status = item['status'] if item else None
     db.execute("UPDATE content_items SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
                (data['status'], item_id))
+    if item:
+        _log_pipeline_activity(db, item['brand_id'], item_id, 'status_change',
+            f'Moved to {data["status"]}', 'Manual status change',
+            from_status=old_status, to_status=data['status'])
+        if data['status'] == 'review':
+            _log_pipeline_activity(db, item['brand_id'], item_id, 'human_needed',
+                'Human review required', 'Approve, revise, or reject this content',
+                to_status='review', requires_human=True)
     db.commit()
     return jsonify({'ok': True})
 
@@ -1461,13 +1509,54 @@ Write the content now. Output ONLY the final content — no preamble, no "here's
     draft_text = result['text']
 
     # Save the draft and advance status to 'visuals' (drafting is complete, move to visuals)
+    old_status = item['status']
     new_status = 'visuals' if item['status'] in ('backlog', 'research', 'drafting') else item['status']
     db.execute("""
         UPDATE content_items SET body_text=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
     """, (draft_text, new_status, item_id))
-    db.commit()
 
+    # Log draft generation
+    _log_pipeline_activity(db, item['brand_id'], item_id, 'draft_generated',
+        f'Draft generated for "{item["title"]}"',
+        f'Generated {len(draft_text)} chars of {item["content_type"]} content',
+        from_status=old_status, to_status=new_status)
+
+    # Auto-run tools for the new status
+    tool_results = _auto_run_tools_for_status(item_id, new_status, db)
+    for tr in tool_results:
+        _log_pipeline_activity(db, item['brand_id'], item_id, 'tool_run',
+            f'Tool "{tr["tag"]}" {tr["status"]}', tr.get('error', ''),
+            from_status=new_status, to_status=new_status)
+
+    # Auto-progress: if at visuals and tools done (or no tools), advance to review
+    if new_status == 'visuals':
+        all_done = not tool_results or all(r['status'] in ('completed', 'skipped') for r in tool_results)
+        if all_done:
+            db.execute("UPDATE content_items SET status='review', updated_at=CURRENT_TIMESTAMP WHERE id=?", (item_id,))
+            _log_pipeline_activity(db, item['brand_id'], item_id, 'status_change',
+                'Auto-advanced to Review',
+                'All visual tools completed' if tool_results else 'No visual tools configured',
+                from_status='visuals', to_status='review')
+            _log_pipeline_activity(db, item['brand_id'], item_id, 'human_needed',
+                'Human review required', 'Approve, revise, or reject this content',
+                to_status='review', requires_human=True)
+            new_status = 'review'
+
+    db.commit()
     return jsonify({'ok': True, 'draft': draft_text, 'status': new_status})
+
+
+def _log_pipeline_activity(db, brand_id, content_item_id, event_type, title, detail=None, from_status=None, to_status=None, requires_human=False):
+    """Log an event to the pipeline activity log."""
+    db.execute("""
+        INSERT INTO pipeline_activity_log (brand_id, content_item_id, event_type, event_title, event_detail, from_status, to_status, requires_human)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (brand_id, content_item_id, event_type, title, detail, from_status, to_status, 1 if requires_human else 0))
+
+
+def _should_auto_progress(to_status):
+    """Check if a status transition should auto-progress without human intervention."""
+    return to_status not in ('review', 'ready', 'published')
 
 
 def _step_to_status(step_name):
@@ -1575,8 +1664,24 @@ def complete_step_and_chain(item_id):
     db.execute("UPDATE content_items SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
                (new_status, item_id))
 
+    # Log step completion
+    _log_pipeline_activity(db, item['brand_id'], item_id, 'step_completed',
+        f'Step completed: {current_step["name"]}',
+        f'Advanced to {next_step["name"]}' if next_step else 'All steps complete',
+        from_status=item['status'], to_status=new_status)
+
     # Auto-run tools that are triggered at this status
     tool_results = _auto_run_tools_for_status(item_id, new_status, db)
+    for tr in tool_results:
+        _log_pipeline_activity(db, item['brand_id'], item_id, 'tool_run',
+            f'Tool "{tr["tag"]}" {tr["status"]}', tr.get('error', ''),
+            from_status=new_status, to_status=new_status)
+
+    # Auto-progress if the new status doesn't need human input
+    if new_status == 'review':
+        _log_pipeline_activity(db, item['brand_id'], item_id, 'human_needed',
+            'Human review required', 'Approve, revise, or reject this content',
+            to_status='review', requires_human=True)
 
     # Create task notification for next step if it exists
     if next_step:
@@ -3360,12 +3465,22 @@ def run_pipeline():
                    (new_status, content_item_id))
         final_status = new_status
 
+        _log_pipeline_activity(db, brand_id, content_item_id, 'step_completed',
+            f'Pipeline step {i+1}/{len(steps)}: {step["name"]}',
+            from_status=new_status, to_status=new_status)
+
         log_entries.append(step_result)
 
         # Update run progress
         db.execute("UPDATE pipeline_runs SET current_step=?, log=? WHERE id=?",
                    (i + 1, json.dumps(log_entries), run_id))
         db.commit()
+
+    # Log final status
+    if final_status == 'review':
+        _log_pipeline_activity(db, brand_id, content_item_id, 'human_needed',
+            'Human review required', 'Pipeline run complete — approve, revise, or reject',
+            to_status='review', requires_human=True)
 
     # Mark run as completed
     db.execute("""
@@ -3380,6 +3495,33 @@ def run_pipeline():
         'steps_completed': len(log_entries),
         'final_status': final_status
     })
+
+
+@app.route('/api/brands/<int:brand_id>/pipeline-activity')
+def get_pipeline_activity(brand_id):
+    """Get pipeline activity log for audit trail sidebar."""
+    db = get_db()
+    content_item_id = request.args.get('content_item_id')
+    limit = int(request.args.get('limit', 50))
+
+    if content_item_id:
+        logs = db.execute("""
+            SELECT pal.*, ci.title as item_title
+            FROM pipeline_activity_log pal
+            JOIN content_items ci ON pal.content_item_id = ci.id
+            WHERE pal.brand_id=? AND pal.content_item_id=?
+            ORDER BY pal.created_at DESC LIMIT ?
+        """, (brand_id, int(content_item_id), limit)).fetchall()
+    else:
+        logs = db.execute("""
+            SELECT pal.*, ci.title as item_title
+            FROM pipeline_activity_log pal
+            JOIN content_items ci ON pal.content_item_id = ci.id
+            WHERE pal.brand_id=?
+            ORDER BY pal.created_at DESC LIMIT ?
+        """, (brand_id, limit)).fetchall()
+
+    return jsonify({'ok': True, 'logs': [dict(l) for l in logs]})
 
 
 # ─── Routes: Template Library ─────────────────────────────────────
@@ -7767,6 +7909,14 @@ def brand_onboarding(brand_id):
             "SELECT 1 FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0", (brand_id,)).fetchone()), 'weight': 10},
     }
 
+    # Auto-calculate confidence if baseline exists but confidence not yet set
+    if steps['baseline_scrape']['done'] and not brand['baseline_confidence_level']:
+        confidence = _calculate_baseline_confidence(brand_id, db)
+        db.execute("UPDATE brands SET baseline_confidence_level=? WHERE id=?", (confidence, brand_id))
+        db.commit()
+        # Refresh brand row to pick up new value
+        brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+
     # Check files organization
     if folder_exists:
         organized_count = 0
@@ -7936,6 +8086,10 @@ Documents found:
 
     # ── Incorporate LinkedIn baseline data weighted by influence level ──
     influence_level = data.get('influence_level', brand['baseline_influence_level'] or 3)
+    confidence_level = brand['baseline_confidence_level'] or 3
+    # Effective weight combines user intent (influence) with data quality (confidence)
+    effective_weight = (influence_level * confidence_level) / 5
+    effective_weight_pct = int(effective_weight * 20)  # percentage 0-100
     baseline_posts = []
     baseline_rows = db.execute(
         "SELECT data FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0 ORDER BY created_at DESC",
@@ -7951,7 +8105,8 @@ Documents found:
 
     baseline_context = ""
     if baseline_posts:
-        sample_count = {1: 3, 2: 5, 3: 8, 4: 12, 5: 15}.get(influence_level, 8)
+        base_count = {1: 3, 2: 5, 3: 8, 4: 12, 5: 15}.get(influence_level, 8)
+        sample_count = max(3, int(base_count * confidence_level / 5))
         post_samples = []
         for p in baseline_posts[:sample_count]:
             if not isinstance(p, dict):
@@ -7983,7 +8138,7 @@ Sample posts ({len(post_samples)} of {len(baseline_posts)} total):
     if analysis_type in ('all', 'voice'):
         voice_weight_note = ""
         if baseline_posts:
-            voice_weight_note = f"\nIMPORTANT: Weight the historical LinkedIn voice at {influence_level * 20}% influence when generating the voice summary and tone keywords."
+            voice_weight_note = f"\nIMPORTANT: Weight the historical LinkedIn voice at {effective_weight_pct}% influence when generating the voice summary and tone keywords. (Influence={influence_level}/5, Data Confidence={confidence_level}/5)"
         prompts['voice'] = f"""Analyze this brand and generate brand voice guidelines.
 
 {full_context}
@@ -8035,7 +8190,7 @@ Return ONLY valid JSON, no markdown."""
         except Exception as e:
             results[key] = {'error': str(e)}
 
-    return jsonify({'ok': True, 'recommendations': results})
+    return jsonify({'ok': True, 'recommendations': results, 'confidence_level': confidence_level, 'effective_weight_pct': effective_weight_pct})
 
 
 @app.route('/api/brands/<int:brand_id>/onboard/apply', methods=['POST'])
@@ -8189,6 +8344,69 @@ def onboard_sync_from_folders(brand_id):
 
     db.commit()
     return jsonify({'ok': True, 'synced': synced, 'changes': len(synced)})
+
+
+def _calculate_baseline_confidence(brand_id, db):
+    """Auto-calculate confidence level (1-5) based on quality/quantity of scraped LinkedIn data."""
+    rows = db.execute(
+        "SELECT data, created_at FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0 ORDER BY created_at DESC",
+        (brand_id,)
+    ).fetchall()
+
+    if not rows:
+        return 0
+
+    all_posts = []
+    for row in rows:
+        try:
+            posts = json.loads(row['data'])
+            if isinstance(posts, list):
+                all_posts.extend(posts)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if not all_posts:
+        return 1
+
+    score = 0.0
+
+    # Factor 1: Post count (0-2 points)
+    count = len(all_posts)
+    if count >= 50:
+        score += 2.0
+    elif count >= 20:
+        score += 1.5
+    elif count >= 10:
+        score += 1.0
+    elif count >= 5:
+        score += 0.5
+
+    # Factor 2: Recency — ratio of posts from last 6 months (0-1.5 points)
+    cutoff = (datetime.now() - timedelta(days=180)).isoformat()
+    recent_count = 0
+    for p in all_posts:
+        post_date = p.get('postedAt', p.get('date', p.get('publishedAt', '')))
+        if post_date and str(post_date) >= cutoff:
+            recent_count += 1
+    recency_ratio = recent_count / max(len(all_posts), 1)
+    score += recency_ratio * 1.5
+
+    # Factor 3: Engagement data availability (0-1 point)
+    has_engagement = 0
+    for p in all_posts[:20]:
+        if any(p.get(k) for k in ('numLikes', 'likes', 'numComments', 'comments', 'numShares', 'shares')):
+            has_engagement += 1
+    if has_engagement > 10:
+        score += 1.0
+    elif has_engagement > 5:
+        score += 0.5
+
+    # Factor 4: Content consistency — posts with actual text (0-0.5 points)
+    has_text = sum(1 for p in all_posts if p.get('text', p.get('postText', p.get('content', ''))))
+    text_ratio = has_text / max(len(all_posts), 1)
+    score += text_ratio * 0.5
+
+    return max(1, min(5, round(score)))
 
 
 @app.route('/api/brands/<int:brand_id>/onboard/set-influence-level', methods=['POST'])

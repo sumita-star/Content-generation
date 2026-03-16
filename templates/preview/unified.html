@@ -8,7 +8,9 @@
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Content Studio</h1>
+            <h1 class="text-xl font-bold" style="color: {{ theme_colors['text-primary'] }}">Content Studio
+                <span class="help-tip ml-1" data-tip="Review, edit, and send feedback on your content items. Select an item from the left panel."><i class="fas fa-question-circle text-sm font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+            </h1>
             <p class="text-sm hidden sm:block" style="color: {{ theme_colors['text-secondary'] }}">Review content, open folders, and send feedback</p>
         </div>
         <div class="flex gap-2">
@@ -26,11 +28,14 @@
         <!-- Left: Content list -->
         <div class="md:col-span-3 rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
             <div class="p-3 flex items-center justify-between" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
-                <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">Items</h3>
+                <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">Items
+                    <span class="help-tip" data-tip="All content items for this brand. Use status filters to narrow the list."><i class="fas fa-question-circle text-[10px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                </h3>
                 <span class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ content_items | length }}</span>
             </div>
             <!-- Filter bar -->
-            <div class="p-2 flex gap-1 flex-wrap" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+            <div class="p-2 flex gap-1 flex-wrap items-center" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
+                <span class="help-tip" data-tip="Filter items by pipeline status."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
                 <button @click="filterStatus = ''" :class="filterStatus === '' ? 'bg-dm-primary text-white' : ''" :style="filterStatus !== '' ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}' : ''" class="text-[10px] px-2 py-0.5 rounded-lg">All</button>
                 <template x-for="s in ['drafting','review','ready','published']">
                     <button @click="filterStatus = s" :class="filterStatus === s ? 'bg-dm-primary text-white' : ''" :style="filterStatus !== s ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}' : ''" class="text-[10px] px-2 py-0.5 rounded-lg capitalize" x-text="s"></button>
@@ -106,6 +111,7 @@
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-[10px] uppercase tracking-wider font-medium" style="color: {{ theme_colors['text-muted'] }}">
                                     <i class="fas fa-folder mr-1"></i>Files
+                                    <span class="help-tip" data-tip="Files in this item's folder. Open Folder launches Finder. Create Folder sets up subfolders for images, videos, documents."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
                                 </span>
                                 <span class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}" x-text="folderFiles.length + ' files'"></span>
                             </div>
@@ -161,19 +167,25 @@
                     <div class="p-4 space-y-3 max-h-[60vh] overflow-y-auto scrollbar-thin">
                         <div>
                             <div class="flex items-center justify-between mb-1">
-                                <label class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Content Body</label>
+                                <label class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Content Body
+                                    <span class="help-tip ml-1" data-tip="The main content text — post copy, carousel slides, or article body. Edit directly or use Generate Draft from Pipeline."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                                </label>
                                 <span class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}" x-text="(currentItem.body_text || '').length + ' chars / ' + (currentItem.body_text || '').split(/\s+/).filter(w=>w).length + ' words'"></span>
                             </div>
                             <textarea x-model="currentItem.body_text" rows="12"
                                 class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50 resize-none font-mono leading-relaxed" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"></textarea>
                         </div>
                         <div>
-                            <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Visual Prompt</label>
+                            <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Visual Prompt
+                                <span class="help-tip ml-1" data-tip="Describe the image or visual you want. Sent to AI image tools when visual generation runs."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                            </label>
                             <textarea x-model="currentItem.visual_prompt" rows="2"
                                 class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50 resize-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}"></textarea>
                         </div>
                         <div>
-                            <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Notes</label>
+                            <label class="text-[10px] uppercase tracking-wider mb-1 block" style="color: {{ theme_colors['text-muted'] }}">Notes
+                                <span class="help-tip ml-1" data-tip="Internal notes for your team. Not published. Included when AI generates drafts."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                            </label>
                             <textarea x-model="currentItem.notes" rows="2"
                                 class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50 resize-none" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}" placeholder="Internal notes..."></textarea>
                         </div>
@@ -193,6 +205,7 @@
                             <button @click="createBrief()" class="px-3 py-1.5 text-xs rounded-lg transition-colors" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['accent-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
                                 <i class="fas fa-file-export mr-1"></i>Create Brief
                             </button>
+                            <span class="help-tip" data-tip="Export as a structured brief file in the item's folder for sharing with writers or designers."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
                         </div>
                     </div>
                 </div>
@@ -201,7 +214,9 @@
                 <div class="space-y-4">
                     <!-- Quick Status Changer -->
                     <div class="rounded-xl p-3" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
-                        <label class="text-[10px] uppercase tracking-wider mb-2 block" style="color: {{ theme_colors['text-muted'] }}">Status</label>
+                        <label class="text-[10px] uppercase tracking-wider mb-2 block" style="color: {{ theme_colors['text-muted'] }}">Status
+                            <span class="help-tip ml-1" data-tip="Move this item through the pipeline: backlog, research, drafting, visuals, review, ready, published."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                        </label>
                         <div class="flex flex-wrap gap-1">
                             <template x-for="s in ['backlog','research','drafting','visuals','review','ready','published']">
                                 <button @click="changeStatus(s)" class="text-[10px] px-2.5 py-1 rounded-lg transition-colors capitalize"
@@ -214,7 +229,9 @@
                     <!-- Feedback Form -->
                     <div class="rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
                         <div class="p-3" style="border-bottom: 1px solid {{ theme_colors['border-primary'] }}">
-                            <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-robot mr-1 text-dm-accent"></i>Feedback &rarr; Claude</h3>
+                            <h3 class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-robot mr-1 text-dm-accent"></i>Feedback &rarr; Claude
+                                <span class="help-tip ml-1" data-tip="Submit feedback, generate a Claude prompt for revisions, then paste and apply the revised content."><i class="fas fa-question-circle text-[9px] font-normal" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                            </h3>
                         </div>
                         <div class="p-4 space-y-3">
                             <select x-model="feedbackType" class="w-full rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-dm-primary/50" style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
@@ -238,7 +255,9 @@
                             <!-- Claude Prompt -->
                             <div x-show="claudePrompt" x-cloak class="rounded-lg p-3" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-hover'] }}">
                                 <div class="flex items-center justify-between mb-2">
-                                    <span class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Claude Prompt</span>
+                                    <span class="text-[10px] uppercase tracking-wider" style="color: {{ theme_colors['text-muted'] }}">Claude Prompt
+                                        <span class="help-tip ml-1" data-tip="Copy this prompt into Claude or any AI to get revised content based on your feedback."><i class="fas fa-question-circle text-[9px]" style="color: {{ theme_colors['text-disabled'] }}"></i></span>
+                                    </span>
                                     <button @click="copyPrompt()" class="text-[10px] text-dm-accent hover:underline">
                                         <i class="fas fa-copy mr-1"></i>Copy
                                     </button>

@@ -124,6 +124,20 @@
                 <p x-text="baselineStatus"></p>
             </div>
 
+            <!-- Data Confidence Display (auto-calculated) -->
+            {% if steps.baseline_scrape.done %}
+            <div class="mt-3 rounded-lg p-3 flex items-center gap-3" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-medium" style="color: {{ theme_colors['text-secondary'] }}">Data Confidence:</span>
+                    {% for i in range(1, 6) %}
+                    <div class="w-2.5 h-2.5 rounded-full" style="background: {% if i <= (brand.baseline_confidence_level or 0) %}{{ theme_colors['accent-secondary'] }}{% else %}{{ theme_colors['border-primary'] }}{% endif %}"></div>
+                    {% endfor %}
+                    <span class="text-xs ml-1" style="color: {{ theme_colors['text-muted'] }}">{{ brand.baseline_confidence_level or 0 }}/5</span>
+                </div>
+                <span class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}">Auto-calculated from post count, recency, and engagement data</span>
+            </div>
+            {% endif %}
+
             <!-- Influence Level Selector (shows after baseline scrape completes) -->
             {% if steps.baseline_scrape.done %}
             <div class="mt-4 rounded-lg p-4 border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
@@ -192,7 +206,7 @@
 
             <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
                 Claude will analyze your brand documents
-                {% if steps.baseline_scrape.done %}<span class="text-blue-400">+ LinkedIn baseline data (influence level <span x-text="influenceLevel"></span>/5)</span>{% endif %}
+                {% if steps.baseline_scrape.done %}<span class="text-blue-400">+ LinkedIn baseline data (influence <span x-text="influenceLevel"></span>/5, confidence {{ brand.baseline_confidence_level or 0 }}/5, effective weight <span x-text="Math.round(influenceLevel * {{ brand.baseline_confidence_level or 3 }} / 5 * 20)"></span>%)</span>{% endif %}
                 and generate recommendations for brand voice, content pillars, and publishing cadence.
             </p>
             <button @click="runAnalysis()" :disabled="analyzing" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
