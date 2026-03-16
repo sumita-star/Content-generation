@@ -61,6 +61,32 @@
             word-wrap: break-word;
             display: none;
         }
+        {% if theme_mode == 'light' %}
+        /* Light mode: darken Tailwind badge/status colors for WCAG AA readability */
+        .text-green-400 { color: #059669 !important; }
+        .text-blue-400 { color: #2563eb !important; }
+        .text-yellow-400 { color: #d97706 !important; }
+        .text-yellow-500 { color: #b45309 !important; }
+        .text-purple-400 { color: #7c3aed !important; }
+        .text-cyan-400 { color: #0891b2 !important; }
+        .text-red-400 { color: #dc2626 !important; }
+        .text-orange-400 { color: #c2410c !important; }
+        .text-white { color: #FFFFFF !important; } /* keep white text on colored bg buttons */
+        .bg-dm-primary .text-white,
+        [style*="background"] .text-white,
+        button.text-white,
+        a.text-white { color: #FFFFFF !important; }
+        /* Slightly darken badge backgrounds for contrast */
+        .bg-green-500\/10 { background-color: rgba(5, 150, 105, 0.12) !important; }
+        .bg-blue-500\/10 { background-color: rgba(37, 99, 235, 0.12) !important; }
+        .bg-yellow-500\/10 { background-color: rgba(217, 119, 6, 0.12) !important; }
+        .bg-purple-500\/10 { background-color: rgba(124, 58, 237, 0.12) !important; }
+        .bg-red-500\/10 { background-color: rgba(220, 38, 38, 0.12) !important; }
+        .bg-green-600\/20 { background-color: rgba(5, 150, 105, 0.2) !important; }
+        .bg-purple-600\/20 { background-color: rgba(124, 58, 237, 0.2) !important; }
+        .bg-orange-600\/20 { background-color: rgba(194, 65, 12, 0.2) !important; }
+        .bg-cyan-600\/20 { background-color: rgba(8, 145, 178, 0.2) !important; }
+        {% endif %}
         #helpTipFloat.visible { display: block; }
     </style>
 </head>
@@ -172,7 +198,7 @@
                     <i class="fas fa-cog w-5 text-center"></i><span>Settings</span>
                 </a>
                 <div class="text-xs text-center mt-2" style="color: {{ theme_colors['text-disabled'] }}">
-                    DigitalAIzeme v2.9<br>
+                    DigitalAIzeme v3.0<br>
                     <span style="color: {{ theme_colors['text-disabled'] }}">Local deployment</span>
                 </div>
             </div>

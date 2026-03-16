@@ -4391,6 +4391,7 @@ def notifications_view():
         SELECT n.*, b.name as brand_name FROM notifications n
         LEFT JOIN brands b ON n.brand_id=b.id
         WHERE n.is_done=0 AND n.notification_type IN ('task', 'system')
+          AND COALESCE(n.step_type, 'manual') != 'automated'
         ORDER BY n.due_date ASC, n.created_at DESC
     """).fetchall()
     done_today = db.execute("""
@@ -5326,11 +5327,28 @@ def settings_view():
 
     default_text_model = get_setting(db, 'default_text_model', 'claude-sonnet-4-20250514')
 
+    git_repos = {
+        'app_repo_path': get_setting(db, 'app_repo_path', ''),
+        'prompts_repo_path': get_setting(db, 'prompts_repo_path', ''),
+    }
+
     return render_template('settings.html',
         unread_notifications=unread_notifications, api_keys=api_keys,
         theme_mode=theme_mode, locked=False, password_set=password_set,
         dynamic_keys=dynamic_keys, drive_syncs=drive_syncs_list, last_brand=last_brand,
-        brands=brands, default_text_model=default_text_model)
+        brands=brands, default_text_model=default_text_model, git_repos=git_repos)
+
+
+@app.route('/api/settings/git-repos', methods=['POST'])
+def save_git_repos():
+    db = get_db()
+    data = request.json
+    if data.get('app_repo_path') is not None:
+        set_setting(db, 'app_repo_path', data['app_repo_path'].strip())
+    if data.get('prompts_repo_path') is not None:
+        set_setting(db, 'prompts_repo_path', data['prompts_repo_path'].strip())
+    db.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/brands/quick-create', methods=['POST'])

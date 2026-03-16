@@ -578,6 +578,42 @@
         </div>
     </div>
 
+    <!-- Source Control / Git Repositories -->
+    <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
+        <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fab fa-git-alt mr-2" style="color: {{ theme_colors['accent-primary'] }}"></i>Source Control</h2>
+            <p class="text-xs mt-1" style="color: {{ theme_colors['text-muted'] }}">Configure Git repository paths for app code and prompt files.</p>
+        </div>
+        <div class="p-4 space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-code-branch mr-1" style="color: {{ theme_colors['accent-primary'] }}"></i>App Repository
+                </label>
+                <input type="text" x-model="gitRepos.app_repo_path"
+                    placeholder="/path/to/app/repo (e.g., /Users/.../digitalize-me)"
+                    class="w-full rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Main application code repository. Commits pushed via <code>git push</code>.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}">
+                    <i class="fas fa-file-code mr-1" style="color: {{ theme_colors['accent-secondary'] }}"></i>Prompts Repository
+                </label>
+                <input type="text" x-model="gitRepos.prompts_repo_path"
+                    placeholder="/path/to/prompts/repo (separate repo for prompt files)"
+                    class="w-full rounded-lg px-3 py-2 text-sm outline-none font-mono"
+                    style="background: {{ theme_colors['input-bg'] }}; border: 1px solid {{ theme_colors['input-border'] }}; color: {{ theme_colors['text-primary'] }}">
+                <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Separate repository for prompt version control. Synced via bi-directional prompt registry.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button @click="saveGitRepos()" class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
+                    <i class="fas fa-save mr-1"></i>Save Repositories
+                </button>
+                <span x-show="gitRepoStatus" x-transition class="text-xs text-green-400" x-text="gitRepoStatus"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- App Info -->
     <div style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}" class="border rounded-xl overflow-hidden">
         <div class="p-4 border-b" style="border-color: {{ theme_colors['border-primary'] }}">
@@ -591,7 +627,7 @@
                 </div>
                 <div>
                     <span style="color: {{ theme_colors['text-muted'] }}">Version</span>
-                    <p style="color: {{ theme_colors['text-primary'] }}">2.9.0 <span class="text-xs text-green-400">Sprint 19b</span></p>
+                    <p style="color: {{ theme_colors['text-primary'] }}">3.0.0 <span class="text-xs text-green-400">Sprint 20</span></p>
                 </div>
                 <div>
                     <span style="color: {{ theme_colors['text-muted'] }}">Database</span>
@@ -660,6 +696,11 @@ function settingsApp() {
         defaultTextModel: '{{ default_text_model | default("claude-sonnet-4-20250514") }}',
         modelStatus: '',
         driveForm: { brand_id: '', folder_id: '' },
+        gitRepos: {
+            app_repo_path: '{{ git_repos.app_repo_path or "" }}',
+            prompts_repo_path: '{{ git_repos.prompts_repo_path or "" }}'
+        },
+        gitRepoStatus: '',
 
         async addQuickBrand() {
             if (!this.quickBrand.name.trim()) return toast('Brand name is required', 'warning');
@@ -812,6 +853,23 @@ function settingsApp() {
             setTimeout(() => this.dailyStatus = '', 4000);
         },
 
+        async saveGitRepos() {
+            try {
+                const res = await fetch('/api/settings/git-repos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.gitRepos)
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.gitRepoStatus = 'Saved!';
+                    toast('Git repository paths saved', 'success');
+                    setTimeout(() => this.gitRepoStatus = '', 3000);
+                }
+            } catch (e) {
+                toast('Failed to save: ' + e.message, 'error');
+            }
+        },
         async addDriveSync() {
             if (!this.driveForm.brand_id) return toast('Select a brand first', 'warning');
             let raw = this.driveForm.folder_id.trim();
