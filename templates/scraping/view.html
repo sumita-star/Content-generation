@@ -280,8 +280,13 @@
     <!-- Competitors -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
-            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-users mr-2 text-purple-400"></i>Tracked Competitors</h2>
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-users mr-2 text-purple-400"></i>Tracked Competitors <span class="text-xs font-normal" style="color: {{ theme_colors['text-muted'] }}">({{ competitors|length }})</span></h2>
             <div class="flex gap-2">
+                {% if competitors %}
+                <button onclick="clearAllDiscovery('competitors')" class="px-3 py-1.5 text-xs rounded-lg transition-colors border" style="color: {{ theme_colors['status-error'] }}; border-color: {{ theme_colors['status-error'] }}40" onmouseenter="this.style.background='{{ theme_colors['status-error'] }}15'" onmouseleave="this.style.background='transparent'" title="Delete all competitors">
+                    <i class="fas fa-trash mr-1"></i>Clear All
+                </button>
+                {% endif %}
                 <button @click="syncFromRegistry($event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Import from 08_Research/competitor_registry.md">
                     <i class="fas fa-sync mr-1"></i>Sync from Registry
                 </button>
@@ -305,7 +310,7 @@
                     <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ comp.competitor_name }}</p>
                     <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ comp.linkedin_url or 'No LinkedIn URL' }}{% if comp.notes %} &middot; {{ comp.notes }}{% endif %}</p>
                 </div>
-                <button onclick="deleteCompetitor({{ comp.id }})" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                <button onclick="deleteCompetitor({{ comp.id }}, this)" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
             </div>
             {% endfor %}
             {% if not competitors %}
@@ -317,10 +322,17 @@
     <!-- Tracked Forums -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
-            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-comments mr-2 text-teal-400"></i>Tracked Forums</h2>
-            <button @click="syncRegistry('forums', $event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Sync with 08_Research/forum_registry.md">
-                <i class="fas fa-sync mr-1"></i>Sync Registry
-            </button>
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-comments mr-2 text-teal-400"></i>Tracked Forums <span class="text-xs font-normal" style="color: {{ theme_colors['text-muted'] }}">({{ forums|length }})</span></h2>
+            <div class="flex gap-2">
+                {% if forums %}
+                <button onclick="clearAllDiscovery('forums')" class="px-3 py-1.5 text-xs rounded-lg transition-colors border" style="color: {{ theme_colors['status-error'] }}; border-color: {{ theme_colors['status-error'] }}40" onmouseenter="this.style.background='{{ theme_colors['status-error'] }}15'" onmouseleave="this.style.background='transparent'" title="Delete all forums">
+                    <i class="fas fa-trash mr-1"></i>Clear All
+                </button>
+                {% endif %}
+                <button @click="syncRegistry('forums', $event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Sync with 08_Research/forum_registry.md">
+                    <i class="fas fa-sync mr-1"></i>Sync Registry
+                </button>
+            </div>
         </div>
         <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
             {% for forum in forums %}
@@ -330,7 +342,7 @@
                     <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ forum.name }}</p>
                     <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{{ forum.url or 'No URL' }}{% if forum.platform %} &middot; {{ forum.platform }}{% endif %}</p>
                 </div>
-                <button onclick="deleteForum({{ forum.id }})" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                <button onclick="deleteForum({{ forum.id }}, this)" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
             </div>
             {% endfor %}
             {% if not forums %}
@@ -342,10 +354,17 @@
     <!-- Tracked Leaders -->
     <div class="border rounded-xl overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="p-4 border-b flex items-center justify-between" style="border-color: {{ theme_colors['border-primary'] }}">
-            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-user-tie mr-2 text-amber-400"></i>Tracked Leaders</h2>
-            <button @click="syncRegistry('leaders', $event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Sync with 08_Research/leader_registry.md">
-                <i class="fas fa-sync mr-1"></i>Sync Registry
-            </button>
+            <h2 class="font-semibold" style="color: {{ theme_colors['text-primary'] }}"><i class="fas fa-user-tie mr-2 text-amber-400"></i>Tracked Leaders <span class="text-xs font-normal" style="color: {{ theme_colors['text-muted'] }}">({{ leaders|length }})</span></h2>
+            <div class="flex gap-2">
+                {% if leaders %}
+                <button onclick="clearAllDiscovery('leaders')" class="px-3 py-1.5 text-xs rounded-lg transition-colors border" style="color: {{ theme_colors['status-error'] }}; border-color: {{ theme_colors['status-error'] }}40" onmouseenter="this.style.background='{{ theme_colors['status-error'] }}15'" onmouseleave="this.style.background='transparent'" title="Delete all leaders">
+                    <i class="fas fa-trash mr-1"></i>Clear All
+                </button>
+                {% endif %}
+                <button @click="syncRegistry('leaders', $event.currentTarget)" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors" title="Sync with 08_Research/leader_registry.md">
+                    <i class="fas fa-sync mr-1"></i>Sync Registry
+                </button>
+            </div>
         </div>
         <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
             {% for leader in leaders %}
@@ -355,7 +374,7 @@
                     <p class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}">{{ leader.name }}</p>
                     <p class="text-[10px]" style="color: {{ theme_colors['text-muted'] }}">{% if leader.title %}{{ leader.title }}{% endif %}{% if leader.company %} @ {{ leader.company }}{% endif %}{% if leader.linkedin_url %} &middot; {{ leader.linkedin_url }}{% endif %}</p>
                 </div>
-                <button onclick="deleteLeader({{ leader.id }})" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                <button onclick="deleteLeader({{ leader.id }}, this)" class="text-xs text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
             </div>
             {% endfor %}
             {% if not leaders %}
@@ -1041,22 +1060,48 @@ async function deleteConfig(configId) {
     location.reload();
 }
 
-async function deleteCompetitor(compId) {
+async function deleteCompetitor(compId, btn) {
     if (!confirm('Remove this competitor?')) return;
     await fetch(`/api/competitors/${compId}`, { method: 'DELETE' });
-    location.reload();
+    const row = btn ? btn.closest('.p-3') : null;
+    if (row) row.remove();
+    else location.reload();
+    toast('Competitor removed', 'success');
 }
 
-async function deleteForum(forumId) {
+async function deleteForum(forumId, btn) {
     if (!confirm('Remove this forum?')) return;
     await fetch(`/api/forums/${forumId}`, { method: 'DELETE' });
-    location.reload();
+    const row = btn ? btn.closest('.p-3') : null;
+    if (row) row.remove();
+    else location.reload();
+    toast('Forum removed', 'success');
 }
 
-async function deleteLeader(leaderId) {
+async function deleteLeader(leaderId, btn) {
     if (!confirm('Remove this leader?')) return;
     await fetch(`/api/leaders/${leaderId}`, { method: 'DELETE' });
-    location.reload();
+    const row = btn ? btn.closest('.p-3') : null;
+    if (row) row.remove();
+    else location.reload();
+    toast('Leader removed', 'success');
+}
+
+async function clearAllDiscovery(type) {
+    const labels = { competitors: 'competitors', forums: 'forums', leaders: 'leaders' };
+    if (!confirm(`Delete ALL ${labels[type] || type}? This cannot be undone.`)) return;
+    const res = await fetch(`/api/brands/{{ brand.id }}/discovery/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ types: [type] })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        toast(`Cleared ${data.total} ${labels[type]}`, 'success');
+        location.reload();
+    } else {
+        toast(data.error || 'Failed to clear', 'error');
+    }
 }
 </script>
 {% endblock %}

@@ -2864,6 +2864,45 @@ def delete_leader(leader_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/brands/<int:brand_id>/discovery/clear', methods=['POST'])
+def clear_discovery_list(brand_id):
+    """Mass-delete all competitors, forums, and/or leaders for a brand."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    data = request.json or {}
+    types = data.get('types', [])  # e.g. ['competitors', 'forums', 'leaders']
+    if not types:
+        return jsonify({'ok': False, 'error': 'Specify types to clear'}), 400
+
+    deleted = {}
+    for t in types:
+        if t == 'competitors':
+            count = db.execute("SELECT COUNT(*) FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchone()[0]
+            db.execute("DELETE FROM competitor_profiles WHERE brand_id=?", (brand_id,))
+            if brand['folder_path']:
+                _write_competitor_registry(brand['folder_path'], [])
+            deleted['competitors'] = count
+        elif t == 'forums':
+            count = db.execute("SELECT COUNT(*) FROM tracked_forums WHERE brand_id=?", (brand_id,)).fetchone()[0]
+            db.execute("DELETE FROM tracked_forums WHERE brand_id=?", (brand_id,))
+            if brand['folder_path']:
+                _write_forum_registry(brand['folder_path'], [])
+            deleted['forums'] = count
+        elif t == 'leaders':
+            count = db.execute("SELECT COUNT(*) FROM tracked_leaders WHERE brand_id=?", (brand_id,)).fetchone()[0]
+            db.execute("DELETE FROM tracked_leaders WHERE brand_id=?", (brand_id,))
+            if brand['folder_path']:
+                _write_leader_registry(brand['folder_path'], [])
+            deleted['leaders'] = count
+
+    db.commit()
+    total = sum(deleted.values())
+    return jsonify({'ok': True, 'deleted': deleted, 'total': total})
+
+
 @app.route('/api/brands/<int:brand_id>/fix-media-names', methods=['POST'])
 def fix_media_names(brand_id):
     """Rename existing media files to follow item-{id}_##.{ext} convention and update DB."""
