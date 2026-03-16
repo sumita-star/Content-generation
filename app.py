@@ -6479,12 +6479,15 @@ def ai_discover(brand_id):
         "SELECT competitor_name, linkedin_url, notes FROM competitor_profiles WHERE brand_id=?", (brand_id,)).fetchall()]
     existing_names = [c['competitor_name'] for c in existing_competitors]
 
+    # Build brand context dynamically from actual brand data
+    pillars = db.execute("SELECT name, description FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()
+    pillar_list = ', '.join(p['name'] for p in pillars) if pillars else 'Not yet defined'
+
     brand_context = f"""Brand: {brand['name']}
-Industry: F&B / Retail Technology (POS, CRM, AI, Digital Transformation)
-Tagline: {brand['tagline'] or ''}
-Markets: Singapore, Japan, Vietnam, Australia, APAC
-Products: Cloud POS, Unified Restaurant Operating Platform, AI-powered analytics, Self-service kiosks
-Target customers: Multi-store F&B chains, QSR, cloud kitchens, retail chains (5+ outlets)"""
+Tagline: {brand['tagline'] or 'N/A'}
+Website: {brand['website'] or 'N/A'}
+Voice Summary: {brand['voice_summary'] or 'Not yet defined'}
+Content Pillars: {pillar_list}"""
 
     if existing_competitors:
         brand_context += f"\n\nKnown competitors: {', '.join(existing_names)}"
@@ -6492,25 +6495,24 @@ Target customers: Multi-store F&B chains, QSR, cloud kitchens, retail chains (5+
     if discover_type == 'competitors':
         prompt = f"""{brand_context}
 
-Find 8-10 additional competitors or lookalike companies that {brand['name']} should monitor. Focus on:
-- Companies in similar space (F&B POS, restaurant tech, retail DX) in APAC
+Based on the brand description, voice, and content pillars above, identify the industry and space this brand operates in.
+Then find 8-10 additional competitors or lookalike companies/individuals that {brand['name']} should monitor. Focus on:
+- Companies or individuals operating in the SAME industry and niche as {brand['name']}
 - Both direct competitors and adjacent players
-- Include companies the brand may not be tracking yet
-- DO NOT include these already-tracked companies: {', '.join(existing_names) if existing_names else 'none'}
+- Include ones the brand may not be tracking yet
+- DO NOT include these already-tracked names: {', '.join(existing_names) if existing_names else 'none'}
 
 Return ONLY a JSON array:
-[{{"name": "Company Name", "linkedin_url": "https://linkedin.com/company/slug", "website": "https://example.com", "region": "Country/Region", "category": "What they do (brief)", "why": "Why they're relevant to monitor"}}]"""
+[{{"name": "Company/Person Name", "linkedin_url": "https://linkedin.com/company/slug or /in/slug", "website": "https://example.com", "region": "Country/Region", "category": "What they do (brief)", "why": "Why they're relevant to monitor"}}]"""
 
     elif discover_type == 'forums':
         prompt = f"""{brand_context}
 
-Find 10-12 industry forums, communities, subreddits, Slack groups, and online communities where {brand['name']}'s target audience (F&B operators, restaurant owners, retail chain managers) actively discuss:
-- POS systems and restaurant technology
-- Digital transformation in F&B
-- Multi-store operations and scaling
-- AI in hospitality/retail
+Based on the brand description, voice, and content pillars above, identify the industry and target audience for this brand.
+Then find 10-12 industry forums, communities, subreddits, Slack groups, and online communities where {brand['name']}'s target audience actively discusses topics related to:
+{chr(10).join(f'- {p["name"]}: {(p["description"] or "")[:80]}' for p in pillars) if pillars else '- Topics related to this brand'}
 
-Include both APAC-specific and global communities.
+Include both region-specific and global communities relevant to this brand's industry.
 
 Return ONLY a JSON array:
 [{{"name": "Forum/Community Name", "url": "https://...", "platform": "reddit/slack/discord/forum/linkedin_group/facebook_group", "audience": "Who participates", "activity_level": "high/medium/low", "why": "Why this community matters for {brand['name']}"}}]"""
@@ -6518,11 +6520,12 @@ Return ONLY a JSON array:
     elif discover_type == 'leaders':
         prompt = f"""{brand_context}
 
-Find 10-12 key industry leaders and influencers in the F&B technology, restaurant tech, and retail DX space across APAC that {brand['name']} should follow and engage with. Include:
-- CEOs/founders of competing or complementary companies
-- Industry analysts and thought leaders
-- Conference speakers and content creators in restaurant/retail tech
-- Journalists covering F&B technology in APAC
+Based on the brand description, voice, and content pillars above, identify the industry and space this brand operates in.
+Then find 10-12 key industry leaders and influencers in that SAME space that {brand['name']} should follow and engage with. Include:
+- CEOs/founders of competing or complementary organizations
+- Industry analysts and thought leaders in this specific field
+- Conference speakers and content creators relevant to this brand's niche
+- Journalists or commentators covering this industry
 
 Return ONLY a JSON array:
 [{{"name": "Person Name", "title": "Job Title", "company": "Company", "linkedin_url": "https://linkedin.com/in/slug", "region": "Country", "why": "Why they're influential and worth engaging with"}}]"""
@@ -6646,7 +6649,13 @@ def recursive_discovery(brand_id):
         snippets = [str(item.get('title', item.get('text', '')))[:100] for item in items if isinstance(item, dict)]
         recent_summary += f"\n- {r['source_type']}/{r['source_name']} ({r['item_count']} items, {r['created_at'][:10]}): {'; '.join(snippets[:3])}"
 
-    analysis_prompt = f"""You are an intelligence analyst for {brand['name']}, an F&B technology company (POS, CRM, AI, DX) in APAC.
+    # Build dynamic brand context for gap analysis
+    pillars_ga = db.execute("SELECT name FROM content_pillars WHERE brand_id=?", (brand_id,)).fetchall()
+    pillar_names_ga = ', '.join(p['name'] for p in pillars_ga) if pillars_ga else 'Not yet defined'
+
+    analysis_prompt = f"""You are an intelligence analyst for {brand['name']}.
+Brand context: {brand['tagline'] or ''} | Website: {brand['website'] or 'N/A'} | Voice: {(brand['voice_summary'] or '')[:150]}
+Content pillars: {pillar_names_ga}
 
 Current monitoring sources:
 - {len(competitors)} competitors: {', '.join(c['competitor_name'] for c in competitors[:10])}
@@ -6655,9 +6664,10 @@ Current monitoring sources:
 
 Recent scraping data:{recent_summary or ' No recent scrape data available.'}
 
-Analyze the GAPS in our monitoring:
-1. Which competitor categories are we missing? (e.g., we track POS companies but not delivery-tech, payment-tech, kitchen automation)
-2. Which geographic markets are underrepresented? (we need coverage across SG, JP, AU, VN, broader APAC)
+First, identify what industry and niche {brand['name']} operates in based on the brand context above.
+Then analyze the GAPS in our monitoring for that specific industry:
+1. Which competitor categories are we missing?
+2. Which geographic markets are underrepresented?
 3. Which community types are missing? (e.g., we have Reddit but not Discord, or forums but not LinkedIn groups)
 4. Which leader archetypes are missing? (e.g., we have CEOs but not analysts, journalists, investors)
 5. Based on recent scraping data, what emerging topics/trends should we track with NEW sources?
@@ -6714,9 +6724,10 @@ Return a JSON object:
                 existing_names.append(prev.get('name', ''))
 
             brand_context = f"""Brand: {brand['name']}
-Industry: F&B / Retail Technology (POS, CRM, AI, Digital Transformation)
-Markets: Singapore, Japan, Vietnam, Australia, APAC
-Products: Cloud POS, Unified Restaurant Operating Platform, AI-powered analytics"""
+Tagline: {brand['tagline'] or 'N/A'}
+Website: {brand['website'] or 'N/A'}
+Voice: {(brand['voice_summary'] or 'N/A')[:200]}
+Content Pillars: {pillar_names_ga}"""
 
             if dtype == 'competitors':
                 disc_prompt = f"""{brand_context}
