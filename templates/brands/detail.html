@@ -178,7 +178,7 @@
                                     <i class="fas fa-arrow-down mr-0.5"></i>Weak
                                 </span>
                                 {% else %}
-                                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400" title="No data yet">
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}" title="No data yet">
                                     <i class="fas fa-question mr-0.5"></i>No data
                                 </span>
                                 {% endif %}
@@ -350,15 +350,15 @@
     <div class="grid grid-cols-3 gap-3">
         <a href="/brands/{{ brand.id }}/workflow" class="border rounded-xl p-4 text-center hover:border-dm-primary transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fas fa-project-diagram text-2xl group-hover:text-dm-accent mb-2" style="color: {{ theme_colors['text-muted'] }}"></i>
-            <div class="text-sm text-gray-300">Workflow</div>
+            <div class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Workflow</div>
         </a>
         <a href="/brands/{{ brand.id }}/pipeline" class="border rounded-xl p-4 text-center hover:border-dm-primary transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fas fa-columns text-2xl group-hover:text-dm-accent mb-2" style="color: {{ theme_colors['text-muted'] }}"></i>
-            <div class="text-sm text-gray-300">Pipeline</div>
+            <div class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Pipeline</div>
         </a>
         <a href="/brands/{{ brand.id }}/preview" class="border rounded-xl p-4 text-center hover:border-dm-primary transition-colors group" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
             <i class="fas fa-palette text-2xl group-hover:text-dm-accent mb-2" style="color: {{ theme_colors['text-muted'] }}"></i>
-            <div class="text-sm text-gray-300">Content Studio</div>
+            <div class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">Content Studio</div>
         </a>
     </div>
 

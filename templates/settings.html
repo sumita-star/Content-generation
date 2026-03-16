@@ -325,11 +325,18 @@
                 <p class="text-[10px] mt-1" style="color: {{ theme_colors['text-disabled'] }}">Background removal. Get key at remove.bg/api (50 images/month free).</p>
             </div>
 
-            <!-- Save Button -->
+            <!-- Save + Health Check Buttons -->
             <div class="flex items-center gap-3 pt-2">
                 <button @click="saveKeys()"
                         class="px-4 py-2 bg-dm-primary hover:bg-dm-secondary text-white text-sm rounded-lg transition-colors">
                     <i class="fas fa-save mr-1"></i>Save API Keys
+                </button>
+                <button @click="runHealthCheck()"
+                        class="px-4 py-2 text-sm rounded-lg transition-colors"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}; color: {{ theme_colors['accent-secondary'] }}"
+                        :disabled="healthCheckRunning">
+                    <i :class="healthCheckRunning ? 'fas fa-spinner fa-spin' : 'fas fa-heartbeat'" class="mr-1"></i>
+                    <span x-text="healthCheckRunning ? 'Testing...' : 'Test All Keys'"></span>
                 </button>
                 <span x-show="saveStatus === 'saved'" x-transition class="text-xs text-green-400">
                     <i class="fas fa-check mr-1"></i>Saved (encrypted)
@@ -337,6 +344,21 @@
                 <span x-show="saveStatus === 'error'" x-transition class="text-xs text-red-400">
                     <i class="fas fa-times mr-1"></i>Failed to save
                 </span>
+            </div>
+            <!-- Health Check Results -->
+            <div x-show="Object.keys(healthResults).length > 0" x-cloak class="mt-4 rounded-lg p-3 space-y-2" style="background: {{ theme_colors['bg-tertiary'] }}; border: 1px solid {{ theme_colors['border-primary'] }}">
+                <h4 class="text-xs uppercase tracking-wider font-medium mb-2" style="color: {{ theme_colors['text-muted'] }}"><i class="fas fa-heartbeat mr-1"></i>API Key Health</h4>
+                <template x-for="(result, key) in healthResults" :key="key">
+                    <div class="flex items-center justify-between text-xs py-1.5 px-2 rounded" style="background: {{ theme_colors['bg-secondary'] }}">
+                        <span class="font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="result.name"></span>
+                        <div class="flex items-center gap-2">
+                            <span x-show="result.latency_ms" class="text-[10px]" style="color: {{ theme_colors['text-disabled'] }}" x-text="result.latency_ms + 'ms'"></span>
+                            <span x-show="result.status === 'active'" class="px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 text-[10px]"><i class="fas fa-check mr-0.5"></i>Active</span>
+                            <span x-show="result.status === 'missing'" class="px-2 py-0.5 rounded-full text-[10px]" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}"><i class="fas fa-minus mr-0.5"></i>Not Set</span>
+                            <span x-show="result.status === 'error'" class="px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 text-[10px]" :title="result.error || ''"><i class="fas fa-times mr-0.5"></i>Error</span>
+                        </div>
+                    </div>
+                </template>
             </div>
         </div>
     </div>
@@ -540,6 +562,8 @@ function settingsApp() {
             removebg_api_key: '{{ api_keys.removebg_api_key or "" }}',
         },
         showKeys: { anthropic: false, google: false, gemini: false, apify: false, unsplash: false, pexels: false, elevenlabs: false, removebg: false },
+        healthCheckRunning: false,
+        healthResults: {},
         saveStatus: '',
         dailyStatus: '',
         currentTheme: '{{ theme_mode }}',
@@ -590,6 +614,27 @@ function settingsApp() {
                 this.saveStatus = 'error';
             }
             setTimeout(() => this.saveStatus = '', 3000);
+        },
+
+        async runHealthCheck() {
+            this.healthCheckRunning = true;
+            this.healthResults = {};
+            try {
+                const res = await fetch('/api/settings/health-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    this.healthResults = data.results;
+                    const active = Object.values(data.results).filter(r => r.status === 'active').length;
+                    const total = Object.values(data.results).filter(r => r.status !== 'missing').length;
+                    toast(`${active}/${total} API keys active`, active === total ? 'success' : 'warning');
+                }
+            } catch(e) {
+                toast('Health check failed: ' + e.message, 'error');
+            }
+            this.healthCheckRunning = false;
         },
 
         async setPassword() {

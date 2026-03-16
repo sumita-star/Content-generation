@@ -20,9 +20,16 @@ import threading
 import time as _time
 from cryptography.fernet import Fernet
 from theme import FONTS, get_theme_colors, tailwind_theme_config, css_variables
+from prompt_registry import PromptRegistry, create_sync_route
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'digitalize-me-local-2026'
+
+# ─── Prompt Registry ────────────────────────────────────────────────
+_prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+prompt_registry = PromptRegistry(_prompts_dir)
+prompt_registry.load_all()
+create_sync_route(app, prompt_registry)
 
 
 # ─── Encryption ─────────────────────────────────────────────────────
@@ -97,6 +104,7 @@ def from_json_filter(value):
 @app.context_processor
 def inject_globals():
     """Inject theme config, current time, and all brands into every template."""
+    prompt_registry.check_for_changes()
     db = get_db()
     all_brands = db.execute("SELECT id, name, accent_color FROM brands ORDER BY name").fetchall()
     theme_pref = get_setting(db, 'theme_mode', 'auto')
@@ -737,73 +745,205 @@ def seed_diqit(db):
         {
             'name': 'Research & Deep Dive',
             'description': 'Deep research to ground content in real data and trends',
-            'instructions': '1. Run Gemini Deep Research on the week\'s topics\n2. Check NotebookLM for synthesized themes\n3. Review Apify analytics from last cycle\n4. Review Drive Monitor reports from past week',
+            'instructions': (
+                'You are a content research analyst for DIQIT, a restaurant tech company.\n\n'
+                'INPUT: The content item title and content type tell you what to research.\n'
+                'If the item has notes or body text, use those as additional context.\n\n'
+                'TASKS:\n'
+                '1. Research the topic thoroughly — find current market data, competitor positioning, '
+                'and real customer pain points in the F&B tech / POS / restaurant operations space.\n'
+                '2. Identify 3-5 specific data points, stats, or examples that would make the content credible.\n'
+                '3. Find the "so what" angle — why should a restaurant CTO/COO care about this topic right now?\n'
+                '4. Note any recent news, trends, or competitor moves relevant to this topic.\n\n'
+                'OUTPUT: A structured research brief with:\n'
+                '- Key findings (bullet points with sources)\n'
+                '- Recommended content angle\n'
+                '- Supporting data points to weave into the draft\n'
+                '- Suggested hook/opening line\n\n'
+                'Save the research brief to the item\'s notes field. The next step (Content Drafting) will read it from there.'
+            ),
             'tools': json.dumps(['Gemini Deep Research', 'NotebookLM', 'Apify', 'Google Drive']),
             'day_of_week': 'Monday', 'duration_minutes': 15, 'sort_order': 1,
             'linked_folder': '08_Research',
             'checklist': json.dumps(['Run Deep Research on topics', 'Check NotebookLM notebooks', 'Pull Apify analytics', 'Review Drive Monitor reports']),
             'step_type': 'semi-auto', 'upload_folder': '08_Research/Deep_Research', 'trigger_type': 'claude',
-            'brief_template': 'TOPIC: [topic]\nRESEARCH_SCOPE: market trends, competitor data, customer pain points\nSOURCES: Google Drive DIQIT docs, web, Apify analytics\nOUTPUT: Research brief with key data points and content angles',
+            'brief_template': (
+                'CONTENT_ITEM: {title}\n'
+                'CONTENT_TYPE: {content_type}\n'
+                'MARKET: {market}\n'
+                'EXISTING_NOTES: {notes}\n'
+                'RESEARCH_SCOPE: market trends, competitor data, customer pain points in F&B tech\n'
+                'OUTPUT: Research brief with key data points and content angles — save to notes field'
+            ),
         },
         {
             'name': 'Content Drafting',
-            'description': 'Claude drafts all posts using brand voice, incorporating research insights',
-            'instructions': '1. Claude reads content calendar from Drive\n2. Incorporates Deep Research + Apify insights\n3. Drafts posts using brand voice skill (specify market per post)\n4. Saves drafts to Weekly Drafts folder',
+            'description': 'Claude drafts the content using brand voice, incorporating research from the previous step',
+            'instructions': (
+                'You are a content writer for DIQIT. Your job is to draft compelling content '
+                'using the brand voice and research from the previous step.\n\n'
+                'INPUT:\n'
+                '- The item\'s notes field contains research from the Research & Deep Dive step\n'
+                '- The item\'s content_type tells you the format (linkedin_post, carousel, blog, etc.)\n'
+                '- The item\'s market tells you the geographic focus\n'
+                '- Use the brand voice summary for tone\n\n'
+                'BRAND VOICE: Professional yet approachable. Confident and direct. Operator-empathetic — '
+                'speak to the daily pain of running multi-store operations. Solution-anchored.\n\n'
+                'FORMAT RULES:\n'
+                '- LinkedIn post: 1300-1600 chars, strong hook, line breaks for readability, 3-5 hashtags\n'
+                '- Carousel: 8-10 slides, each slide 20-40 words, slide 1 = hook, last slide = CTA\n'
+                '- Blog: 800-1200 words, H2/H3 structure, intro → problem → solution → CTA\n'
+                '- Video: Write a 30-120 second script with visual cues\n\n'
+                'OUTPUT: Write the draft directly into the item\'s body_text field. '
+                'Add a visual prompt suggestion in the visual_prompt field describing what image would pair well.\n\n'
+                'NEXT STEP: Once the draft is saved, the system auto-advances to Visual Generation.'
+            ),
             'tools': json.dumps(['Claude', 'Brand Voice Skill', 'Buyer-Led Content Writer', 'Google Drive']),
             'day_of_week': 'Monday', 'duration_minutes': 15, 'sort_order': 2,
             'linked_folder': '04_Content',
             'checklist': json.dumps(['Read content calendar', 'Draft all weekly posts', 'Save to Weekly Drafts folder']),
             'step_type': 'automated', 'upload_folder': '04_Content/LinkedIn', 'trigger_type': 'claude',
-            'brief_template': 'TOPIC: [topic]\nMARKET: [Japan/Singapore/APAC]\nCONTENT_TYPE: [linkedin_post/carousel/video]\nPILLAR: [content pillar]\nKEY_POINTS: [main points to cover]\nTONE: Professional yet approachable, operator-empathetic',
+            'brief_template': (
+                'CONTENT_ITEM: {title}\n'
+                'CONTENT_TYPE: {content_type}\n'
+                'MARKET: {market}\n'
+                'PILLAR: {pillar_name}\n'
+                'RESEARCH_NOTES: {notes}\n'
+                'BRAND_VOICE: {voice_summary}\n'
+                'TASK: Write the full draft in the appropriate format. Save to body_text. '
+                'Suggest a visual in visual_prompt.'
+            ),
         },
         {
             'name': 'Visual Generation — Images',
-            'description': 'Generate branded images using AI tools',
-            'instructions': '1. Infographics: Nano Banana Pro generates text-rich visuals from content\n2. Photos: Imagen 3 or ImageFX for hero images\n3. Carousels: Claude → Canva MCP with DIQIT templates\n4. Add DIQIT logo, brand typography, footer bar in Canva',
+            'description': 'Generate branded images from the draft content and visual prompt',
+            'instructions': (
+                'Generate images that complement the drafted content.\n\n'
+                'INPUT:\n'
+                '- The item\'s visual_prompt field has the image description from the drafting step\n'
+                '- The item\'s body_text has the post content (use it for context)\n'
+                '- The item\'s content_type determines the image format:\n'
+                '  - linkedin_post → single hero image (1200x627 or 1080x1080)\n'
+                '  - carousel → multiple slide images (1080x1080 each)\n'
+                '  - blog → header image (1200x627)\n\n'
+                'STYLE: Dark backgrounds with glowing tech elements, subtle blue/orange tones. '
+                'Professional, data-driven aesthetic. DIQIT brand colors: black (#000000), red-orange (#EF4324).\n\n'
+                'OUTPUT: Generated images saved to the item\'s file attachments.\n\n'
+                'NEXT STEP: After images are generated, the system auto-advances to Brand Assembly & Polish.'
+            ),
             'tools': json.dumps(['Nano Banana Pro', 'Imagen 3', 'Google ImageFX', 'Canva']),
             'day_of_week': 'Tuesday', 'duration_minutes': 10, 'sort_order': 3,
             'linked_folder': '10_Pipeline/Briefs',
-            'checklist': json.dumps(['Generate Nano Banana Pro infographics', 'Generate Imagen 3 / ImageFX hero images', 'Create carousel slides in Canva', 'Apply DIQIT branding (logo, colors, footer)']),
+            'checklist': json.dumps(['Generate hero/infographic images', 'Check image dimensions match content type', 'Apply DIQIT branding (logo, colors, footer)']),
             'step_type': 'automated', 'upload_folder': '10_Pipeline/Generated_Images', 'trigger_type': 'gemini',
-            'brief_template': 'TOPIC: [topic]\nMARKET: [market]\nIMAGE_STYLE: single\nVIDEO: no\nPOST_TEXT:\n[post text]',
+            'brief_template': (
+                'CONTENT_ITEM: {title}\n'
+                'CONTENT_TYPE: {content_type}\n'
+                'MARKET: {market}\n'
+                'VISUAL_PROMPT: {visual_prompt}\n'
+                'POST_TEXT: {body_text}\n'
+                'IMAGE_STYLE: DIQIT brand — dark, tech-forward, data-driven. Colors: black + red-orange (#EF4324).\n'
+                'VIDEO: no'
+            ),
         },
         {
             'name': 'Visual Generation — Video',
-            'description': 'Create video content using Google Vids and Veo 3',
-            'instructions': '1. Claude writes video script (30-120s for LinkedIn)\n2. Save script to Google Drive\n3. Open Google Vids → "Help me create" → point at script\n4. Customize avatar, voiceover, visuals\n5. Generate short hook clips via Veo 3/Flow',
+            'description': 'Create video content from the draft — scripts, storyboards, and short clips',
+            'instructions': (
+                'Create video content based on the drafted post.\n\n'
+                'INPUT:\n'
+                '- The item\'s body_text has the written content — adapt it into a video script\n'
+                '- The item\'s visual_prompt has style guidance\n\n'
+                'TASKS:\n'
+                '1. Write a 30-120 second video script with:\n'
+                '   - HOOK (first 3 seconds): Pattern-interrupt question or bold statement\n'
+                '   - BODY: 3-4 key points with visual cues for each\n'
+                '   - CTA: Clear next step for the viewer\n'
+                '2. Create an 8-second hook clip brief for Veo 3\n'
+                '3. Add scene-by-scene visual descriptions\n\n'
+                'FORMAT: Script with timestamps, speaker notes, and visual directions.\n'
+                'For Japan market: minimal text, maximum white space, slower pacing.\n\n'
+                'OUTPUT: Save the video script to the item\'s notes field (append, don\'t overwrite).\n\n'
+                'NEXT STEP: After video assets are ready, system advances to Brand Assembly & Polish.'
+            ),
             'tools': json.dumps(['Google Vids', 'Veo 3 / Flow', 'Claude']),
             'day_of_week': 'Tuesday', 'duration_minutes': 10, 'sort_order': 4,
             'linked_folder': '10_Pipeline/Briefs',
-            'checklist': json.dumps(['Write video scripts', 'Generate storyboard in Google Vids', 'Create 8s hook clips via Veo 3', 'Export final videos']),
+            'checklist': json.dumps(['Write video script with timestamps', 'Create 8s hook clip brief', 'Add visual scene descriptions', 'Export final videos']),
             'step_type': 'manual', 'upload_folder': '10_Pipeline/Generated_Videos', 'trigger_type': 'gemini',
-            'brief_template': 'TOPIC: [topic]\nMARKET: [market]\nIMAGE_STYLE: single\nVIDEO: yes\nPOST_TEXT:\n[post text]',
+            'brief_template': (
+                'CONTENT_ITEM: {title}\n'
+                'CONTENT_TYPE: {content_type}\n'
+                'MARKET: {market}\n'
+                'POST_TEXT: {body_text}\n'
+                'VISUAL_PROMPT: {visual_prompt}\n'
+                'TASK: Write a 30-120s video script. Include hook (3s), body (3-4 points with visuals), CTA.\n'
+                'VIDEO: yes'
+            ),
         },
         {
             'name': 'Brand Assembly & Polish',
-            'description': 'Apply brand kit and polish visuals in Canva via Content Studio',
-            'instructions': '1. Open Content Studio → Canva Polish tab\n2. Select raw images and click "Create Polish Job"\n3. Claude Code runs Canva MCP tools to apply brand kit, logo, typography\n4. Review exported designs and run QC checklist\n5. For Japan market: extra minimal, maximum white space',
+            'description': 'Apply DIQIT brand kit to all visuals — logo, typography, colors, dimensions',
+            'instructions': (
+                'Polish all generated visuals to match DIQIT brand standards.\n\n'
+                'INPUT:\n'
+                '- Generated images/videos from the previous visual steps\n'
+                '- DIQIT brand kit: logo, Roboto font, black (#000000) + red-orange (#EF4324)\n\n'
+                'QC CHECKLIST:\n'
+                '1. DIQIT logo is present and correctly placed (top-right or bottom-left)\n'
+                '2. Brand colors are applied — no off-brand colors\n'
+                '3. Typography uses Roboto family\n'
+                '4. Dimensions match the platform (LinkedIn: 1200x627 or 1080x1080)\n'
+                '5. Footer bar with brand color if applicable\n'
+                '6. Japan market: extra white space, minimal text overlay\n\n'
+                'OUTPUT: Polished images saved to 10_Pipeline/Polished_Images.\n\n'
+                'NEXT STEP: After polishing, system advances to Review & Approve (requires human action).'
+            ),
             'tools': json.dumps(['Canva MCP', 'Content Studio']),
             'day_of_week': 'Tuesday', 'duration_minutes': 10, 'sort_order': 5,
             'linked_folder': '10_Pipeline/Generated_Images',
-            'checklist': json.dumps(['Create polish jobs in Content Studio', 'Run Canva MCP workflow', 'QC: Logo, brand colors, typography, dimensions', 'Export polished images', 'Save to Polished_Images folder']),
+            'checklist': json.dumps(['Check logo placement', 'Verify brand colors', 'Confirm typography (Roboto)', 'Check dimensions for platform', 'QC Japan market assets separately', 'Export polished images']),
             'step_type': 'semi-auto', 'upload_folder': '10_Pipeline/Polished_Images', 'trigger_type': 'none',
             'brief_template': '',
         },
         {
             'name': 'Review & Approve',
-            'description': 'Review all content, make edits, mark as approved',
-            'instructions': '1. Review each post copy + visual/video in Drive\n2. Make any edits (use Gemini in Docs for quick rewrites)\n3. Mark as approved\n4. Create Google Calendar events for scheduled publishing times',
-            'tools': json.dumps(['Google Drive', 'Google Calendar', 'Gemini in Docs']),
+            'description': 'Human reviews all content — copy, visuals, and scheduling. Approve or request revision.',
+            'instructions': (
+                'HUMAN STEP — Review all content before it goes to the client.\n\n'
+                'REVIEW CHECKLIST:\n'
+                '1. Post copy: tone matches brand voice, no factual errors, strong hook\n'
+                '2. Visuals: on-brand, correct dimensions, logo present\n'
+                '3. Content-visual alignment: image matches the post message\n'
+                '4. Market fit: language/tone appropriate for target market\n'
+                '5. Schedule: publish date makes sense in the content calendar\n\n'
+                'ACTIONS:\n'
+                '- Approve → item moves to Client Review\n'
+                '- Request Revision → add feedback, item goes back to Drafting\n'
+                '- Reject → item is shelved with reason noted\n\n'
+                'Use the Feedback button on the card or Content Studio to leave detailed notes.'
+            ),
+            'tools': json.dumps(['Google Drive', 'Google Calendar', 'Content Studio']),
             'day_of_week': 'Tuesday-Wednesday', 'duration_minutes': 5, 'sort_order': 6,
             'linked_folder': '04_Content',
-            'checklist': json.dumps(['Review all post copy', 'Review all visuals/videos', 'Make edits if needed', 'Mark approved', 'Schedule in Calendar']),
+            'checklist': json.dumps(['Review post copy for tone and accuracy', 'Review visuals for brand compliance', 'Check content-visual alignment', 'Verify market appropriateness', 'Approve, revise, or reject']),
             'step_type': 'manual', 'upload_folder': '', 'trigger_type': 'none',
             'brief_template': '',
         },
         {
             'name': 'Client Review',
-            'description': 'Generate review package for client approval — PDF with content, visuals, and schedule',
-            'instructions': '1. Click "Export Review PDF" to generate a client-ready review package\n2. PDF includes all content items in review/ready status with visuals\n3. Share PDF with client for feedback\n4. Record client feedback in the app\n5. Apply revisions if needed, then mark approved',
+            'description': 'Generate a review package for client approval — PDF with content, visuals, and schedule',
+            'instructions': (
+                'SEMI-AUTO STEP — Generate a client-facing review package.\n\n'
+                'TASKS:\n'
+                '1. Click "Export Review PDF" on the Pipeline page to generate the package\n'
+                '2. The PDF auto-includes all items in review/ready status with their visuals\n'
+                '3. Share the PDF with the client via email or messaging\n'
+                '4. Record client feedback in the app (use Feedback button)\n'
+                '5. If revisions needed: feedback goes back to the writer, item returns to Drafting\n'
+                '6. If approved: mark approved, item advances to Ready\n\n'
+                'The review PDF is saved to 10_Pipeline/Client_Review automatically.'
+            ),
             'tools': json.dumps(['Review PDF Export', 'Email']),
             'day_of_week': 'Wednesday', 'duration_minutes': 10, 'sort_order': 7,
             'linked_folder': '10_Pipeline/Client_Review',
@@ -813,23 +953,63 @@ def seed_diqit(db):
         },
         {
             'name': 'Publish',
-            'description': 'Post content to LinkedIn via Claude in Chrome or native scheduler',
-            'instructions': '1. Claude in Chrome opens LinkedIn → composes post → uploads visual\n2. You confirm and click Post (or schedule)\n3. Cadence: 3-4 posts/week DIQIT page, 2-3 for Neeraj\n4. Alternative: batch-upload and schedule via LinkedIn native',
+            'description': 'Post approved content to LinkedIn — compose, attach visual, publish or schedule',
+            'instructions': (
+                'SEMI-AUTO STEP — Publish approved content.\n\n'
+                'INPUT:\n'
+                '- The item\'s body_text has the final approved copy\n'
+                '- The item\'s attached files have the polished visuals\n\n'
+                'PUBLISH FLOW:\n'
+                '1. Open LinkedIn (via Claude in Chrome or manually)\n'
+                '2. Create new post with the body_text content\n'
+                '3. Upload the visual/video attachment\n'
+                '4. Set publish time or post immediately\n'
+                '5. Mark item as "published" in the pipeline\n\n'
+                'CADENCE:\n'
+                '- DIQIT page: 3-4 posts/week\n'
+                '- Neeraj personal: 2-3 posts/week\n'
+                '- Best times: Tue/Wed/Thu 8-10am local market time\n\n'
+                'After publishing, copy the live post URL into the item\'s notes for tracking.'
+            ),
             'tools': json.dumps(['Claude in Chrome', 'LinkedIn Scheduler', 'Make.com']),
             'day_of_week': 'Wednesday-Sunday', 'duration_minutes': 2, 'sort_order': 8,
             'linked_folder': '04_Content/LinkedIn',
-            'checklist': json.dumps(['Open LinkedIn', 'Compose post with copy', 'Upload visual/video', 'Publish or schedule']),
+            'checklist': json.dumps(['Open LinkedIn', 'Compose post with approved copy', 'Upload visual/video', 'Publish or schedule', 'Save post URL to notes']),
             'step_type': 'semi-auto', 'upload_folder': '', 'trigger_type': 'claude',
-            'brief_template': '',
+            'brief_template': (
+                'CONTENT_ITEM: {title}\n'
+                'CONTENT_TYPE: {content_type}\n'
+                'MARKET: {market}\n'
+                'POST_TEXT: {body_text}\n'
+                'TASK: Compose a LinkedIn post with this text. Upload the attached visual. '
+                'Schedule or publish based on the content calendar.'
+            ),
         },
         {
             'name': 'Feedback Loop',
-            'description': 'Apify scrapes performance → Claude analyzes → insights feed next cycle',
-            'instructions': '1. Apify scrapes latest post performance\n2. Claude analyzes: what improved, what dropped\n3. Identify which visual types drove best engagement\n4. Monthly competitor scrape\n5. Insights feed into next week\'s planning',
+            'description': 'Scrape post performance, analyze engagement trends, feed insights into next cycle',
+            'instructions': (
+                'AUTOMATED STEP — Analyze published content performance.\n\n'
+                'FLOW:\n'
+                '1. Apify scrapes LinkedIn post engagement (likes, comments, shares, impressions)\n'
+                '2. Claude analyzes the scraped data and compares with previous cycles\n\n'
+                'ANALYSIS FRAMEWORK:\n'
+                '- Which posts got the most engagement? Why?\n'
+                '- Which content types (text, carousel, video) performed best?\n'
+                '- Which markets showed strongest engagement?\n'
+                '- What posting times correlated with higher reach?\n'
+                '- What topics resonated vs. fell flat?\n\n'
+                'OUTPUT: A performance report with:\n'
+                '- Top 3 performing posts with engagement numbers\n'
+                '- Bottom 3 posts with hypotheses on why they underperformed\n'
+                '- 3-5 actionable recommendations for the next content cycle\n'
+                '- Trend comparison: this cycle vs. last cycle\n\n'
+                'Save the report to 07_Analytics. These insights feed into the next Research & Deep Dive step.'
+            ),
             'tools': json.dumps(['Apify', 'Claude', 'Google Sheets']),
             'day_of_week': 'Bi-weekly Friday', 'duration_minutes': 20, 'sort_order': 9,
             'linked_folder': '07_Analytics',
-            'checklist': json.dumps(['Run Apify scrape on recent posts', 'Analyze engagement trends', 'Compare with baseline', 'Generate recommendations', 'Update content strategy']),
+            'checklist': json.dumps(['Run Apify scrape on published posts', 'Analyze engagement by content type', 'Compare with previous cycle', 'Generate recommendations', 'Save report to 07_Analytics']),
             'step_type': 'automated', 'upload_folder': '07_Analytics', 'trigger_type': 'apify_claude',
             'brief_template': '',
         },
@@ -1485,24 +1665,38 @@ def generate_content_draft(item_id):
     }
     type_guide = type_guides.get(item['content_type'], type_guides['linkedin_post'])
 
-    prompt = f"""You are a content creator for "{brand['name']}".
+    # Load system prompt from registry if available
+    registry_prompt = prompt_registry.get('system-content-draft-generator')
+    system_prompt = registry_prompt['instructions'] if registry_prompt else None
 
-Brand voice: {brand['voice_summary'] or 'Professional yet approachable'}
-{f"Content pillar: {pillar['name']} — {pillar['description'] or ''}" if pillar else ''}
-Target market: {item['market']}
+    prompt = f"""<context>
+<brand name="{brand['name']}">
+<voice>{brand['voice_summary'] or 'Professional yet approachable'}</voice>
+{f'<pillar>{pillar["name"]} — {pillar["description"] or ""}</pillar>' if pillar else ''}
+<market>{item['market']}</market>
+{f'<voice_references>{voice_info}</voice_references>' if voice_info else ''}
+</brand>
+</context>
 
-{f"Brand voice references:{chr(10)}{voice_info}" if voice_info else ''}
+<content_brief>
+<title>{item['title']}</title>
+<type>{item['content_type']}</type>
+<notes>{item['notes'] or 'None'}</notes>
+</content_brief>
 
-Content brief:
-- Title: {item['title']}
-- Type: {item['content_type']}
-- Notes: {item['notes'] or 'None'}
-
+<format_instructions>
 {type_guide}
+</format_instructions>
 
-Write the content now. Output ONLY the final content — no preamble, no "here's the content", just the content itself ready for publishing."""
+<guardrails>
+- Output ONLY the final content — no preamble, no "here's the content"
+- Do not fabricate statistics or data points
+- Match the brand voice exactly
+</guardrails>
 
-    result = generate_text(prompt, max_tokens=4096)
+Write the content now."""
+
+    result = generate_text(prompt, max_tokens=4096, system=system_prompt)
     if not result['ok']:
         return jsonify(result), 500
 
@@ -1542,8 +1736,43 @@ Write the content now. Output ONLY the final content — no preamble, no "here's
                 to_status='review', requires_human=True)
             new_status = 'review'
 
+    # Auto-chain: check if the current workflow step's successor can auto-trigger
+    auto_chaining = False
+    template_id = item['workflow_template_id']
+    if template_id and new_status not in ('review', 'ready', 'published'):
+        steps = db.execute("SELECT * FROM workflow_steps WHERE template_id=? ORDER BY sort_order",
+                           (template_id,)).fetchall()
+        # Find the first non-completed step (this is the one that should run next)
+        for s in steps:
+            progress = db.execute("""
+                SELECT * FROM content_step_progress WHERE content_item_id=? AND workflow_step_id=?
+            """, (item_id, s['id'])).fetchone()
+            if not progress or progress['status'] != 'completed':
+                if _can_auto_trigger(s):
+                    auto_chaining = True
+                    db_path = os.path.join(os.path.dirname(__file__), 'digitalize_me.db')
+                    _log_pipeline_activity(db, item['brand_id'], item_id, 'auto_chain_started',
+                        f'Auto-chain started after draft generation',
+                        f'Next auto-trigger: {s["name"]} ({s["trigger_type"]})',
+                        from_status=new_status, to_status=new_status)
+                    # Find the step BEFORE this one to pass as start_step_id
+                    prev_step_id = None
+                    for j, st in enumerate(steps):
+                        if st['id'] == s['id'] and j > 0:
+                            prev_step_id = steps[j - 1]['id']
+                            break
+                break
+
     db.commit()
-    return jsonify({'ok': True, 'draft': draft_text, 'status': new_status})
+
+    # Spawn background thread for auto-chaining AFTER commit
+    if auto_chaining and prev_step_id is not None:
+        t = threading.Thread(target=_auto_chain,
+                             args=(item_id, prev_step_id, db_path),
+                             daemon=True)
+        t.start()
+
+    return jsonify({'ok': True, 'draft': draft_text, 'status': new_status, 'auto_chaining': auto_chaining})
 
 
 def _log_pipeline_activity(db, brand_id, content_item_id, event_type, title, detail=None, from_status=None, to_status=None, requires_human=False):
@@ -1557,6 +1786,232 @@ def _log_pipeline_activity(db, brand_id, content_item_id, event_type, title, det
 def _should_auto_progress(to_status):
     """Check if a status transition should auto-progress without human intervention."""
     return to_status not in ('review', 'ready', 'published')
+
+
+def _can_auto_trigger(step):
+    """True if this workflow step should auto-fire its AI trigger without human input."""
+    if isinstance(step, sqlite3.Row):
+        step_type = step['step_type'] or ''
+        trigger_type = step['trigger_type'] or ''
+    elif isinstance(step, dict):
+        step_type = step.get('step_type', '')
+        trigger_type = step.get('trigger_type', '')
+    else:
+        return False
+    if step_type == 'manual':
+        return False
+    if not trigger_type or trigger_type == 'none':
+        return False
+    return trigger_type in ('claude', 'gemini', 'apify_claude')
+
+
+def _trigger_step_internal(item_id, step, db):
+    """Execute the AI trigger for a workflow step server-side (no HTTP request needed).
+
+    Returns {'ok': True, 'text': ...} or {'ok': False, 'error': ...}.
+    """
+    item = db.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        return {'ok': False, 'error': 'Content item not found'}
+
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (item['brand_id'],)).fetchone()
+    trigger_type = step['trigger_type'] or 'claude'
+
+    # Build the brief from step's brief_template with item variables
+    brief_template = step['brief_template'] or ''
+    brief = brief_template
+    if brief:
+        try:
+            brief = brief.format(
+                title=item['title'] or '',
+                content_type=item['content_type'] or '',
+                market=item['market'] or '',
+                notes=item['notes'] or '',
+                body_text=item['body_text'] or '',
+                brand_name=brand['name'] if brand else '',
+            )
+        except (KeyError, IndexError):
+            pass  # Use raw template if substitution fails
+
+    # Check prompt registry for matching prompt (match by step name → registry ID)
+    _step_name_to_registry = {
+        'Research & Deep Dive': 'workflow-01-research',
+        'Content Drafting': 'workflow-02-content-drafting',
+        'Visual Generation — Images': 'workflow-03-visual-gen-images',
+        'Visual Generation — Video': 'workflow-04-visual-gen-video',
+        'Brand Assembly & Polish': 'workflow-05-brand-assembly',
+        'Review & Approve': 'workflow-06-review-approve',
+        'Client Review': 'workflow-07-client-review',
+        'Publish': 'workflow-08-publish',
+        'Feedback Loop': 'workflow-09-feedback-loop',
+    }
+    step_name = step['name'] if isinstance(step, sqlite3.Row) else step.get('name', '')
+    registry_id = _step_name_to_registry.get(step_name)
+    registry_prompt = prompt_registry.get(registry_id) if registry_id else None
+
+    # Build full prompt from instructions + brief
+    instructions = (registry_prompt['instructions'] if registry_prompt else None) or step['instructions'] or ''
+    prompt_parts = []
+    if instructions:
+        prompt_parts.append(instructions)
+    if brief:
+        prompt_parts.append(f"\n\nBrief:\n{brief}")
+    if not prompt_parts:
+        prompt_parts.append(f"Process the following content item: {item['title']}")
+    prompt = '\n'.join(prompt_parts)
+
+    # Choose model based on trigger_type
+    if trigger_type == 'gemini':
+        model = 'gemini-2.0-flash'
+    else:
+        model = None  # use default (Claude)
+
+    result = generate_text(prompt, max_tokens=4096, model=model)
+    if not result['ok']:
+        return result
+
+    # Save result to appropriate field
+    step_name = (step['name'] or '').lower()
+    if 'research' in step_name or 'deep dive' in step_name:
+        db.execute("UPDATE content_items SET notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                   (result['text'], item_id))
+    elif 'visual' in step_name or 'image' in step_name or 'design' in step_name:
+        db.execute("UPDATE content_items SET visual_prompt=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                   (result['text'], item_id))
+    else:
+        db.execute("UPDATE content_items SET body_text=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                   (result['text'], item_id))
+
+    return {'ok': True, 'text': result['text']}
+
+
+def _auto_chain(item_id, start_step_id, db_path_str, depth=0):
+    """Recursively auto-progress through workflow steps that have AI triggers.
+
+    Runs in a background thread with its own DB connection.
+    Chains until hitting a manual step, a human-required status, or max depth.
+    """
+    MAX_DEPTH = 10
+    if depth >= MAX_DEPTH:
+        return
+
+    conn = sqlite3.connect(db_path_str)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+
+    try:
+        item = conn.execute("SELECT * FROM content_items WHERE id=?", (item_id,)).fetchone()
+        if not item:
+            return
+
+        template_id = item['workflow_template_id']
+        if not template_id:
+            return
+
+        steps = conn.execute("SELECT * FROM workflow_steps WHERE template_id=? ORDER BY sort_order",
+                             (template_id,)).fetchall()
+
+        # Find the step we just completed (start_step_id) and its successor
+        current_idx = -1
+        for i, s in enumerate(steps):
+            if s['id'] == start_step_id:
+                current_idx = i
+                break
+        if current_idx < 0:
+            return
+
+        # The next step should already be 'in_progress' (set by complete_step_and_chain or prior chain)
+        if current_idx + 1 >= len(steps):
+            return
+        next_step = steps[current_idx + 1]
+
+        # Check if we can auto-trigger
+        if not _can_auto_trigger(next_step):
+            return
+
+        new_status = _step_to_status(next_step['name'])
+        if not _should_auto_progress(new_status):
+            return
+
+        # Log that we're auto-triggering
+        _log_pipeline_activity(conn, item['brand_id'], item_id, 'auto_trigger',
+            f'Auto-triggering step: {next_step["name"]}',
+            f'Chain depth: {depth + 1}, trigger: {next_step["trigger_type"]}',
+            from_status=item['status'], to_status=new_status)
+        conn.commit()
+
+        # Fire the trigger
+        result = _trigger_step_internal(item_id, next_step, conn)
+
+        if result['ok']:
+            # Mark this step as completed
+            existing = conn.execute("""
+                SELECT id FROM content_step_progress WHERE content_item_id=? AND workflow_step_id=?
+            """, (item_id, next_step['id'])).fetchone()
+            if existing:
+                conn.execute("""
+                    UPDATE content_step_progress SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE id=?
+                """, (existing['id'],))
+            else:
+                conn.execute("""
+                    INSERT INTO content_step_progress (content_item_id, workflow_step_id, status, started_at, completed_at)
+                    VALUES (?, ?, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, (item_id, next_step['id']))
+
+            _log_pipeline_activity(conn, item['brand_id'], item_id, 'step_completed',
+                f'Auto-completed step: {next_step["name"]}',
+                f'Generated {len(result["text"])} chars',
+                from_status=item['status'], to_status=new_status)
+
+            # Start the step after next (if any)
+            if current_idx + 2 < len(steps):
+                after_next = steps[current_idx + 2]
+                conn.execute("""
+                    INSERT OR IGNORE INTO content_step_progress (content_item_id, workflow_step_id, status, started_at)
+                    VALUES (?, ?, 'in_progress', CURRENT_TIMESTAMP)
+                """, (item_id, after_next['id']))
+
+                after_status = _step_to_status(after_next['name'])
+                conn.execute("UPDATE content_items SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                             (after_status, item_id))
+
+                # Auto-run tools for the new status
+                tool_results = _auto_run_tools_for_status(item_id, after_status, conn)
+                for tr in tool_results:
+                    _log_pipeline_activity(conn, item['brand_id'], item_id, 'tool_run',
+                        f'Tool "{tr["tag"]}" {tr["status"]}', tr.get('error', ''),
+                        from_status=after_status, to_status=after_status)
+
+                conn.commit()
+
+                # Recurse to continue the chain
+                _auto_chain(item_id, next_step['id'], db_path_str, depth + 1)
+            else:
+                # All steps done
+                conn.execute("UPDATE content_items SET status='ready', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                             (item_id,))
+                _log_pipeline_activity(conn, item['brand_id'], item_id, 'status_change',
+                    'All workflow steps completed', 'Pipeline auto-chain finished',
+                    from_status=new_status, to_status='ready')
+                conn.commit()
+        else:
+            # Trigger failed — log and stop chaining
+            _log_pipeline_activity(conn, item['brand_id'], item_id, 'auto_trigger_failed',
+                f'Auto-trigger failed: {next_step["name"]}',
+                result.get('error', 'Unknown error'),
+                from_status=item['status'], to_status=new_status)
+            conn.commit()
+
+    except Exception as e:
+        try:
+            _log_pipeline_activity(conn, item['brand_id'] if item else 0, item_id, 'auto_chain_error',
+                'Auto-chain error', str(e))
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
 
 
 def _step_to_status(step_name):
@@ -1706,14 +2161,33 @@ def complete_step_and_chain(item_id):
               next_step['id'], next_step['step_type'] or 'manual',
               next_step['duration_minutes'] or 0))
 
+    # Check if the next step can be auto-triggered (pipeline auto-progression)
+    auto_chaining = False
+    if next_step and _can_auto_trigger(next_step) and _should_auto_progress(new_status):
+        auto_chaining = True
+        db_path = os.path.join(os.path.dirname(__file__), 'digitalize_me.db')
+        _log_pipeline_activity(db, item['brand_id'], item_id, 'auto_chain_started',
+            f'Auto-chain started from step: {current_step["name"]}',
+            f'Next auto-trigger: {next_step["name"]} ({next_step["trigger_type"]})',
+            from_status=item['status'], to_status=new_status)
+
     db.commit()
+
+    # Spawn background thread for auto-chaining AFTER commit so data is visible
+    if auto_chaining:
+        t = threading.Thread(target=_auto_chain,
+                             args=(item_id, current_step['id'], db_path),
+                             daemon=True)
+        t.start()
+
     return jsonify({
         'ok': True,
         'completed_step': current_step['name'],
         'next_step': next_step['name'] if next_step else None,
         'new_status': new_status,
         'all_done': next_step is None,
-        'tool_results': tool_results
+        'tool_results': tool_results,
+        'auto_chaining': auto_chaining
     })
 
 
@@ -4879,6 +5353,101 @@ def save_settings():
     return jsonify({'ok': True})
 
 
+@app.route('/api/settings/health-check', methods=['POST'])
+def api_health_check():
+    """Test all configured API keys by making minimal API calls."""
+    import urllib.request, urllib.error, time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    db = get_db()
+
+    checks = {
+        'anthropic_api_key': ('Anthropic (Claude)', '_test_anthropic'),
+        'gemini_api_key': ('Gemini', '_test_gemini'),
+        'apify_api_key': ('Apify', '_test_apify'),
+        'unsplash_api_key': ('Unsplash', '_test_unsplash'),
+        'pexels_api_key': ('Pexels', '_test_pexels'),
+        'elevenlabs_api_key': ('ElevenLabs', '_test_elevenlabs'),
+        'removebg_api_key': ('Remove.bg', '_test_removebg'),
+    }
+
+    test_fns = {
+        '_test_anthropic': lambda key: _hc_anthropic(key),
+        '_test_gemini': lambda key: _hc_gemini(key),
+        '_test_apify': lambda key: _hc_apify(key),
+        '_test_unsplash': lambda key: _hc_unsplash(key),
+        '_test_pexels': lambda key: _hc_pexels(key),
+        '_test_elevenlabs': lambda key: _hc_elevenlabs(key),
+        '_test_removebg': lambda key: _hc_removebg(key),
+    }
+
+    results = {}
+
+    def check_one(key_name, label, fn_name):
+        api_key = get_setting(db, key_name)
+        if not api_key:
+            return key_name, {'status': 'missing', 'name': label}
+        start = time.time()
+        try:
+            test_fns[fn_name](api_key)
+            return key_name, {'status': 'active', 'name': label, 'latency_ms': int((time.time() - start) * 1000)}
+        except Exception as e:
+            return key_name, {'status': 'error', 'name': label, 'error': str(e)[:200], 'latency_ms': int((time.time() - start) * 1000)}
+
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        futures = {executor.submit(check_one, k, v[0], v[1]): k for k, v in checks.items()}
+        for future in as_completed(futures, timeout=15):
+            try:
+                key_name, result = future.result(timeout=12)
+                results[key_name] = result
+            except Exception as e:
+                key_name = futures[future]
+                results[key_name] = {'status': 'error', 'name': checks[key_name][0], 'error': f'Timeout: {str(e)[:100]}'}
+
+    return jsonify({'ok': True, 'results': results})
+
+
+def _hc_anthropic(key):
+    import urllib.request
+    body = json.dumps({'model': 'claude-sonnet-4-20250514', 'max_tokens': 5, 'messages': [{'role': 'user', 'content': 'Say OK'}]})
+    req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body.encode(),
+        headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
+    with urllib.request.urlopen(req, timeout=10):
+        pass
+
+def _hc_gemini(key):
+    import urllib.request
+    body = json.dumps({'contents': [{'parts': [{'text': 'Say OK'}]}], 'generationConfig': {'maxOutputTokens': 5}})
+    req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}',
+        data=body.encode(), headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=10):
+        pass
+
+def _hc_apify(key):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request(f'https://api.apify.com/v2/users/me?token={key}'), timeout=10):
+        pass
+
+def _hc_unsplash(key):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request(f'https://api.unsplash.com/photos/random?client_id={key}&count=1'), timeout=10):
+        pass
+
+def _hc_pexels(key):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request('https://api.pexels.com/v1/search?query=test&per_page=1', headers={'Authorization': key}), timeout=10):
+        pass
+
+def _hc_elevenlabs(key):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request('https://api.elevenlabs.io/v1/user', headers={'xi-api-key': key}), timeout=10):
+        pass
+
+def _hc_removebg(key):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request('https://api.remove.bg/v1.0/account', headers={'X-Api-Key': key}), timeout=10):
+        pass
+
+
 @app.route('/api/settings/dynamic-keys', methods=['POST'])
 def save_dynamic_keys():
     """Save dynamically managed API keys."""
@@ -7647,7 +8216,8 @@ Post context: {post_text[:300]}"""
 
 @app.route('/api/claude/run', methods=['POST'])
 def run_claude_step():
-    """Call Claude API to execute an automated workflow step."""
+    """Call Claude API to execute an automated workflow step.
+    Accepts content_item_id to fill brief_template placeholders with actual item data."""
     db = get_db()
     api_key = get_setting(db, 'anthropic_api_key')
     if not api_key:
@@ -7657,16 +8227,51 @@ def run_claude_step():
     step_name = data.get('step_name', '')
     brand_id = data.get('brand_id')
     prompt = data.get('prompt', '')
+    content_item_id = data.get('content_item_id')
 
     brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
     if not brand:
         return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+
+    # If a content item is specified, enrich the prompt with item data
+    item = None
+    if content_item_id:
+        item = db.execute("SELECT * FROM content_items WHERE id=?", (content_item_id,)).fetchone()
+    if item:
+        pillar = None
+        if item['pillar_id']:
+            pillar = db.execute("SELECT name FROM content_pillars WHERE id=?", (item['pillar_id'],)).fetchone()
+        replacements = {
+            '{title}': item['title'] or '',
+            '{content_type}': item['content_type'] or '',
+            '{market}': item['market'] or '',
+            '{body_text}': (item['body_text'] or '')[:2000],
+            '{notes}': (item['notes'] or '')[:2000],
+            '{visual_prompt}': (item['visual_prompt'] or ''),
+            '{pillar_name}': pillar['name'] if pillar else '',
+            '{voice_summary}': brand['voice_summary'] or 'Professional yet approachable',
+        }
+        for placeholder, value in replacements.items():
+            prompt = prompt.replace(placeholder, value)
 
     result = generate_text(prompt, max_tokens=4096)
     if not result['ok']:
         return jsonify(result), 500
 
     response_text = result['text']
+
+    # Auto-save results back to the content item if applicable
+    if item and content_item_id:
+        step_lower = step_name.lower()
+        if 'research' in step_lower:
+            # Save research to notes
+            existing_notes = item['notes'] or ''
+            db.execute("UPDATE content_items SET notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                       (existing_notes + '\n\n--- AI Research ---\n' + response_text if existing_notes else response_text, content_item_id))
+        elif 'draft' in step_lower or 'content' in step_lower:
+            # Save draft to body_text
+            db.execute("UPDATE content_items SET body_text=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                       (response_text, content_item_id))
 
     # Create notification
     db.execute("""

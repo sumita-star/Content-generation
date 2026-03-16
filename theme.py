@@ -59,8 +59,8 @@ COLORS_LIGHT = {
     'accent-secondary': '#0D9488',     # Teal (aqua darkened for readability)
     'accent-tertiary':  '#C9A07A',
     'text-primary':     '#1A1008',
-    'text-secondary':   '#5C5040',
-    'text-muted':       '#9A9080',
+    'text-secondary':   '#3D3425',     # ~7:1 contrast on #FFF (WCAG AA)
+    'text-muted':       '#6B5E4F',     # ~5:1 contrast on #FFF (WCAG AA)
     'text-disabled':    '#C4BAB0',
     'border-primary':   '#E0D8CE',
     'border-hover':     '#C8BEB0',

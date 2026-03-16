@@ -51,10 +51,10 @@
                     </a>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button onclick="copyFormLink('{{ form.share_token }}')" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:bg-gray-700/50" style="color: {{ theme_colors['text-muted'] }}" title="Copy link">
+                    <button onclick="copyFormLink('{{ form.share_token }}')" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:opacity-80" style="color: {{ theme_colors['text-muted'] }}" title="Copy link">
                         <i class="fas fa-link"></i>
                     </button>
-                    <button onclick="showFormQR('{{ form.share_token }}', '{{ form.title }}')" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:bg-gray-700/50" style="color: {{ theme_colors['text-muted'] }}" title="QR code">
+                    <button onclick="showFormQR('{{ form.share_token }}', '{{ form.title }}')" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:opacity-80" style="color: {{ theme_colors['text-muted'] }}" title="QR code">
                         <i class="fas fa-qrcode"></i>
                     </button>
                     <button onclick="if(confirm('Delete this form?')) deleteForm({{ form.id }})" class="text-[10px] px-2 py-1 rounded-lg transition-colors hover:bg-red-500/20" style="color: {{ theme_colors['text-muted'] }}" title="Delete">

@@ -43,7 +43,9 @@
             </div>
             <div class="divide-y max-h-[65vh] overflow-y-auto scrollbar-thin" style="border-color: {{ theme_colors['border-primary'] }}">
                 {% for item in content_items %}
-                <div class="p-3 cursor-pointer hover:bg-gray-800/50 transition-colors"
+                <div class="p-3 cursor-pointer transition-colors"
+                     onmouseenter="this.style.background='{{ theme_colors['hover-overlay'] }}'"
+                     onmouseleave="this.style.background=''"
                      x-show="filterStatus === '' || '{{ item.status }}' === filterStatus"
                      :class="selectedItem === {{ item.id }} && 'bg-dm-primary/10 border-l-2 border-dm-primary'"
                      @click="selectItem({{ item.id }})">
@@ -220,7 +222,7 @@
                         <div class="flex flex-wrap gap-1">
                             <template x-for="s in ['backlog','research','drafting','visuals','review','ready','published']">
                                 <button @click="changeStatus(s)" class="text-[10px] px-2.5 py-1 rounded-lg transition-colors capitalize"
-                                    :class="currentItem.status === s ? 'bg-dm-primary text-white' : 'hover:bg-gray-700'"
+                                    :class="currentItem.status === s ? 'bg-dm-primary text-white' : ''"
                                     :style="currentItem.status !== s ? 'background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}' : ''" x-text="s"></button>
                             </template>
                         </div>

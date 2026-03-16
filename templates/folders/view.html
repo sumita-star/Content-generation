@@ -48,7 +48,7 @@
         <div class="divide-y" style="border-color: {{ theme_colors['border-primary'] }}">
             {% for folder in folder_tree %}
             <div x-data="{ open: false }">
-                <div class="p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-800/30 group" @click="open = !open">
+                <div class="p-3 flex items-center gap-3 cursor-pointer hover:opacity-80 group" @click="open = !open">
                     <i class="fas fa-chevron-right text-xs transition-transform w-3" :class="open && 'rotate-90'" style="color: {{ theme_colors['text-muted'] }}"></i>
                     <i class="fas fa-folder text-yellow-500"></i>
                     <span class="text-sm font-medium flex-1" style="color: {{ theme_colors['text-primary'] }}">{{ folder.name }}</span>
@@ -59,7 +59,7 @@
                 </div>
                 <div x-show="open" x-cloak style="background: {{ theme_colors['bg-tertiary'] }}33; border-top: 1px solid {{ theme_colors['border-primary'] }}">
                     {% for child in folder.children %}
-                    <div class="py-2 px-10 flex items-center gap-3 text-sm hover:bg-gray-800/30 group/child {% if child.type == 'dir' %}cursor-pointer{% endif %}"
+                    <div class="py-2 px-10 flex items-center gap-3 text-sm hover:opacity-80 group/child {% if child.type == 'dir' %}cursor-pointer{% endif %}"
                          {% if child.type == 'dir' %}onclick="openFolder('{{ folder.name }}/{{ child.name }}')" title="Open {{ folder.name }}/{{ child.name }} in Finder"{% endif %}>
                         {% if child.type == 'dir' %}
                         <i class="fas fa-folder text-yellow-600/60 w-4 text-center group-hover/child:text-yellow-500 transition-colors"></i>

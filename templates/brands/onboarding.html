@@ -34,7 +34,7 @@
             {% for key, step in steps.items() %}
             <span class="text-xs px-2.5 py-1 rounded-full border flex items-center gap-1
                 {% if step.done %}border-green-600/30 bg-green-600/10 text-green-400
-                {% else %}text-gray-500{% endif %}"
+                {% else %}{% endif %}"
                 {% if not step.done %}style="border-color: {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-tertiary'] }}"{% endif %}>
                 <i class="fas {% if step.done %}fa-check-circle{% else %}fa-circle{% endif %} text-[10px]"></i>
                 {{ step.label }}

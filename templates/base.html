@@ -104,14 +104,16 @@
             <!-- Navigation -->
             <nav class="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-thin">
                 {% set nav_active_bg = theme_colors['accent-primary'] + '20' %}
-                <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
-                    {% if request.path == '/' %}text-white{% else %}hover:text-white{% endif %}"
-                    style="{% if request.path == '/' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}">
+                <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
+                    style="{% if request.path == '/' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}"
+                    onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'"
+                    onmouseleave="{% if request.path == '/' %}this.style.color='{{ theme_colors['accent-primary'] }}'{% else %}this.style.color='{{ theme_colors['text-secondary'] }}'{% endif %}">
                     <i class="fas fa-th-large w-5 text-center"></i><span>Dashboard</span>
                 </a>
-                <a href="/notifications" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
-                    {% if request.path == '/notifications' %}text-white{% else %}hover:text-white{% endif %}"
-                    style="{% if request.path == '/notifications' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}">
+                <a href="/notifications" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
+                    style="{% if request.path == '/notifications' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}"
+                    onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'"
+                    onmouseleave="{% if request.path == '/notifications' %}this.style.color='{{ theme_colors['accent-primary'] }}'{% else %}this.style.color='{{ theme_colors['text-secondary'] }}'{% endif %}">
                     <i class="fas fa-tasks w-5 text-center"></i><span>Tasks</span>
                     {% if unread_notifications > 0 %}
                     <span class="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{{ unread_notifications }}</span>
@@ -170,9 +172,10 @@
 
             <!-- Settings + Footer -->
             <div class="border-t p-3" style="border-color: {{ theme_colors['border-primary'] }}">
-                <a href="/settings" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
-                    {% if request.path == '/settings' %}text-white{% else %}hover:text-white{% endif %}"
-                    style="{% if request.path == '/settings' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}">
+                <a href="/settings" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
+                    style="{% if request.path == '/settings' %}background: {{ nav_active_bg }}; color: {{ theme_colors['accent-primary'] }}{% else %}color: {{ theme_colors['text-secondary'] }}{% endif %}"
+                    onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'"
+                    onmouseleave="{% if request.path == '/settings' %}this.style.color='{{ theme_colors['accent-primary'] }}'{% else %}this.style.color='{{ theme_colors['text-secondary'] }}'{% endif %}">
                     <i class="fas fa-cog w-5 text-center"></i><span>Settings</span>
                 </a>
                 <div class="text-xs text-center mt-2" style="color: {{ theme_colors['text-disabled'] }}">
@@ -187,7 +190,7 @@
             <!-- Top Bar -->
             <header class="h-14 border-b flex items-center justify-between px-3 md:px-6 flex-shrink-0 backdrop-blur" style="border-color: {{ theme_colors['border-primary'] }}; background: {{ theme_colors['bg-primary'] }}E0">
                 <div class="flex items-center gap-4">
-                    <button @click="sidebarOpen = !sidebarOpen" class="hover:text-white" style="color: {{ theme_colors['text-secondary'] }}">
+                    <button @click="sidebarOpen = !sidebarOpen" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'" onmouseleave="this.style.color='{{ theme_colors['text-secondary'] }}'">
                         <i class="fas fa-bars"></i>
                     </button>
                     <h2 class="text-sm font-medium font-heading" style="color: {{ theme_colors['text-secondary'] }}">{% block page_title %}Dashboard{% endblock %}</h2>
@@ -203,7 +206,7 @@
                             @mouseleave="$el.style.borderColor='{{ theme_colors['border-hover'] }}'">
                             {% if brand is defined and brand %}
                             <span class="w-2 h-2 rounded-full" style="background: {{ brand.accent_color }}"></span>
-                            <span class="text-white">{{ brand.name }}</span>
+                            <span style="color: {{ theme_colors['text-primary'] }}">{{ brand.name }}</span>
                             {% else %}
                             <i class="fas fa-building" style="color: {{ theme_colors['accent-primary'] }}"></i>
                             <span>Select Brand</span>
@@ -217,8 +220,10 @@
                                 <span class="text-[10px] uppercase tracking-wider px-2" style="color: {{ theme_colors['text-muted'] }}">Switch Brand</span>
                             </div>
                             {% for b in all_brands %}
-                            <a href="/brands/{{ b.id }}" class="flex items-center gap-3 px-3 py-2.5 text-sm transition-all hover:text-white"
+                            <a href="/brands/{{ b.id }}" class="flex items-center gap-3 px-3 py-2.5 text-sm transition-all"
                                style="color: {{ theme_colors['text-secondary'] }}"
+                               onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'"
+                               onmouseleave="this.style.color='{{ theme_colors['text-secondary'] }}'"
                                onmouseenter="this.style.background='{{ theme_colors['bg-tertiary'] }}'"
                                onmouseleave="this.style.background='transparent'">
                                 <span class="w-5 h-5 rounded flex items-center justify-center text-xs font-bold" style="background: {{ b.accent_color }}20; color: {{ b.accent_color }}">{{ b.name[0] }}</span>
@@ -270,7 +275,7 @@
 
                     <!-- Notification Bell -->
                     <div class="relative" x-data="{ open: false }">
-                        <button @click="open = !open" class="relative hover:text-white" style="color: {{ theme_colors['text-secondary'] }}">
+                        <button @click="open = !open" class="relative" style="color: {{ theme_colors['text-secondary'] }}" onmouseenter="this.style.color='{{ theme_colors['text-primary'] }}'" onmouseleave="this.style.color='{{ theme_colors['text-secondary'] }}'">
                             <i class="fas fa-bell"></i>
                             {% if unread_notifications > 0 %}
                             <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center pulse-dot">{{ unread_notifications }}</span>

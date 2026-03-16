@@ -452,12 +452,13 @@ function workflowApp() {
                 } else if (triggerType === 'claude') {
                     const briefRes = await fetch(`/api/workflow-steps/${stepId}/brief`);
                     const briefData = await briefRes.json();
-                    const instructions = briefData.instructions || briefData.brief_template || '';
-                    const prompt = `Working on "${stepName}" for brand "{{ brand.name }}".\n\nBrand voice: {{ brand.voice_summary or "Professional yet approachable" }}\n\nInstructions:\n${instructions}\n\nComplete this step.`;
+                    const brief = briefData.brief_template || '';
+                    const instructions = briefData.instructions || '';
+                    const prompt = `You are working on "${stepName}" for brand "{{ brand.name }}".\n\nBrand voice: {{ brand.voice_summary or "Professional yet approachable" }}\n\nSTEP INSTRUCTIONS:\n${instructions}\n\n${brief ? 'BRIEF (placeholders will be filled with content item data):\n' + brief : ''}\n\nExecute this step according to the instructions above.`;
                     res = await fetch('/api/claude/run', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ brand_id: {{ brand.id }}, step_id: stepId, step_name: stepName, prompt: prompt })
+                        body: JSON.stringify({ brand_id: {{ brand.id }}, step_id: stepId, step_name: stepName, prompt: prompt, content_item_id: this.selectedItemId || null })
                     });
                 } else {
                     res = await fetch('/api/pipeline/trigger', {
