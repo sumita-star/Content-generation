@@ -147,6 +147,7 @@ def init_db():
     db.commit()
     # Migrate: add new notification columns if missing
     _migrate_notifications(db)
+    _migrate_brands(db)
     # Seed DIQIT if no brands exist
     count = db.execute("SELECT COUNT(*) FROM brands").fetchone()[0]
     if count == 0:
@@ -172,6 +173,14 @@ def _migrate_notifications(db):
     db.commit()
 
 
+def _migrate_brands(db):
+    """Add baseline_influence_level column to brands table if missing."""
+    cols = {row[1] for row in db.execute("PRAGMA table_info(brands)").fetchall()}
+    if 'baseline_influence_level' not in cols:
+        db.execute("ALTER TABLE brands ADD COLUMN baseline_influence_level INTEGER DEFAULT 3")
+        db.commit()
+
+
 # ─── Schema ─────────────────────────────────────────────────────────
 
 SCHEMA = """
@@ -186,6 +195,7 @@ CREATE TABLE IF NOT EXISTS brands (
     voice_summary TEXT,
     website TEXT,
     canva_brand_kit_id TEXT,
+    baseline_influence_level INTEGER DEFAULT 3,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -7776,11 +7786,60 @@ Accent Color: {brand['accent_color']}
 Documents found:
 {'---'.join(context_texts[:10]) if context_texts else 'No text documents found in folders.'}"""
 
+    # ── Incorporate LinkedIn baseline data weighted by influence level ──
+    influence_level = data.get('influence_level', brand.get('baseline_influence_level') or 3)
+    baseline_posts = []
+    baseline_rows = db.execute(
+        "SELECT data FROM scrape_results WHERE brand_id=? AND source_type IN ('linkedin_company','linkedin_profile') AND item_count > 0 ORDER BY created_at DESC",
+        (brand_id,)
+    ).fetchall()
+    for row in baseline_rows:
+        try:
+            posts = json.loads(row['data'])
+            if isinstance(posts, list):
+                baseline_posts.extend(posts)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    baseline_context = ""
+    if baseline_posts:
+        sample_count = {1: 3, 2: 5, 3: 8, 4: 12, 5: 15}.get(influence_level, 8)
+        post_samples = []
+        for p in baseline_posts[:sample_count]:
+            if not isinstance(p, dict):
+                continue
+            text = p.get('text', p.get('postText', p.get('content', '')))
+            if text:
+                post_samples.append(str(text)[:500])
+
+        level_instructions = {
+            1: "Historical LinkedIn posts are provided below for REFERENCE ONLY. Do NOT adopt the tone or style from these posts. The brand's LinkedIn was poorly managed and the voice does not represent the desired direction. Base your analysis primarily on the brand documents above.",
+            2: "Historical LinkedIn posts are provided below. Note any useful patterns (topics, terminology) but do NOT adopt the overall tone. The brand wants a significantly different voice from what was used historically.",
+            3: "Historical LinkedIn posts are provided below. Blend the voice patterns found in these posts EQUALLY with insights from the brand documents. Find a balanced middle ground between the historical voice and what the brand docs suggest.",
+            4: "Historical LinkedIn posts are provided below. STRONGLY adopt the voice patterns, tone, and style from these posts. The brand's LinkedIn voice was mostly on-target. Use brand documents mainly for factual accuracy and product details, but let the LinkedIn voice lead.",
+            5: "Historical LinkedIn posts are provided below. The historical LinkedIn voice IS the brand voice — FULLY adopt the tone, style, rhythm, and patterns from these posts. The brand's LinkedIn was well-managed and successful. Brand documents should only supplement factual details."
+        }
+
+        baseline_context = f"""
+
+--- HISTORICAL LINKEDIN DATA (Influence Level: {influence_level}/5) ---
+{level_instructions.get(influence_level, level_instructions[3])}
+
+Sample posts ({len(post_samples)} of {len(baseline_posts)} total):
+{'---'.join(post_samples) if post_samples else 'No post text extracted.'}
+"""
+
+    full_context = brand_context + baseline_context
+
     prompts = {}
     if analysis_type in ('all', 'voice'):
+        voice_weight_note = ""
+        if baseline_posts:
+            voice_weight_note = f"\nIMPORTANT: Weight the historical LinkedIn voice at {influence_level * 20}% influence when generating the voice summary and tone keywords."
         prompts['voice'] = f"""Analyze this brand and generate brand voice guidelines.
 
-{brand_context}
+{full_context}
+{voice_weight_note}
 
 Return a JSON object with exactly these fields:
 {{
@@ -7795,7 +7854,7 @@ Return ONLY valid JSON, no markdown."""
     if analysis_type in ('all', 'pillars'):
         prompts['pillars'] = f"""Analyze this brand and suggest 5-7 content pillars for their social media strategy.
 
-{brand_context}
+{full_context}
 
 Return a JSON array of pillar objects:
 [
@@ -7806,7 +7865,7 @@ Use professional hex colors. Return ONLY valid JSON, no markdown."""
     if analysis_type in ('all', 'cadence'):
         prompts['cadence'] = f"""Analyze this brand and recommend a publishing cadence for their social media.
 
-{brand_context}
+{full_context}
 
 Return a JSON array of cadence rules:
 [
@@ -7982,6 +8041,22 @@ def onboard_sync_from_folders(brand_id):
 
     db.commit()
     return jsonify({'ok': True, 'synced': synced, 'changes': len(synced)})
+
+
+@app.route('/api/brands/<int:brand_id>/onboard/set-influence-level', methods=['POST'])
+def onboard_set_influence_level(brand_id):
+    """Save the LinkedIn baseline influence level (1-5) for this brand."""
+    db = get_db()
+    brand = db.execute("SELECT * FROM brands WHERE id=?", (brand_id,)).fetchone()
+    if not brand:
+        return jsonify({'ok': False, 'error': 'Brand not found'}), 404
+    data = request.json or {}
+    level = data.get('level', 3)
+    if level not in (1, 2, 3, 4, 5):
+        return jsonify({'ok': False, 'error': 'Level must be 1-5'}), 400
+    db.execute("UPDATE brands SET baseline_influence_level=? WHERE id=?", (level, brand_id))
+    db.commit()
+    return jsonify({'ok': True, 'level': level})
 
 
 @app.route('/api/brands/<int:brand_id>/onboard/baseline-scrape', methods=['POST'])

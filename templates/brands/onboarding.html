@@ -81,21 +81,119 @@
         </div>
     </div>
 
-    <!-- Step 2: AI Analysis -->
+    <!-- Step 2: LinkedIn Baseline + Influence Level -->
     <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
         <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 2 ? 0 : 2"
             style="background: {{ theme_colors['bg-tertiary'] }}">
             <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
-                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background: {{ theme_colors['accent-primary'] }}">2</span>
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+                    {% if steps.baseline_scrape.done %}bg-green-600/20 text-green-400{% else %}text-white{% endif %}"
+                    style="{% if not steps.baseline_scrape.done %}background: {{ theme_colors['accent-primary'] }}{% endif %}">2</span>
+                <i class="fab fa-linkedin" style="color: #0077B5"></i>
+                LinkedIn Baseline Data
+                {% if steps.baseline_scrape.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
+            </h3>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 2 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+        </div>
+        <div x-show="openStep === 2" x-collapse class="px-5 py-4 space-y-3">
+            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
+                Scrape up to 100 historical posts from your LinkedIn company page and/or personal profile. This baseline data powers performance analytics and feeds into the AI brand analysis (Step 3).
+            </p>
+            <div class="rounded-lg p-3 text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
+                <p class="font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-info-circle mr-1" style="color: {{ theme_colors['accent-primary'] }}"></i>What happens:</p>
+                <p>Apify scrapes your LinkedIn posts (titles, text, engagement metrics, dates). After the baseline, subsequent scrapes only fetch new posts since the last run (delta scraping).</p>
+            </div>
+            <div class="space-y-2">
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Company LinkedIn URL</label>
+                    <input x-model="baselineCompanyUrl" type="url" placeholder="https://www.linkedin.com/company/diqit/"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+                <div>
+                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Personal LinkedIn URL (optional)</label>
+                    <input x-model="baselineProfileUrl" type="url" placeholder="https://www.linkedin.com/in/neerajkumar/"
+                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
+                        style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
+                </div>
+            </div>
+            <button @click="runBaselineScrape($event.currentTarget)" class="px-4 py-2 text-sm rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
+                <i class="fab fa-linkedin mr-1"></i> Run Baseline Scrape
+            </button>
+            <div x-show="baselineStatus" class="text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
+                <p x-text="baselineStatus"></p>
+            </div>
+
+            <!-- Influence Level Selector (shows after baseline scrape completes) -->
+            {% if steps.baseline_scrape.done %}
+            <div class="mt-4 rounded-lg p-4 border" style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+                <h4 class="font-semibold text-sm mb-2 flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                    <i class="fas fa-sliders-h" style="color: {{ theme_colors['accent-primary'] }}"></i>
+                    LinkedIn Voice Influence Level
+                </h4>
+                <p class="text-xs mb-3" style="color: {{ theme_colors['text-muted'] }}">
+                    How much should your historical LinkedIn voice influence the AI brand analysis in Step 3?
+                </p>
+                <div class="space-y-2">
+                    <template x-for="opt in influenceLevels" :key="opt.level">
+                        <label class="flex items-start gap-3 p-2.5 rounded-lg cursor-pointer border transition-all"
+                            :style="influenceLevel === opt.level
+                                ? 'background: {{ theme_colors["accent-primary"] }}10; border-color: {{ theme_colors["accent-primary"] }}'
+                                : 'background: {{ theme_colors["bg-primary"] }}; border-color: {{ theme_colors["border-primary"] }}'">
+                            <input type="radio" name="influence_level" :value="opt.level"
+                                x-model.number="influenceLevel" @change="saveInfluenceLevel()"
+                                class="mt-1 accent-orange-500">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium" style="color: {{ theme_colors['text-primary'] }}" x-text="opt.label"></span>
+                                    <div class="flex gap-0.5">
+                                        <template x-for="i in 5">
+                                            <div class="w-2 h-2 rounded-full" :style="i <= opt.level ? 'background: {{ theme_colors["accent-primary"] }}' : 'background: {{ theme_colors["border-primary"] }}'"></div>
+                                        </template>
+                                    </div>
+                                </div>
+                                <p class="text-xs mt-0.5" style="color: {{ theme_colors['text-muted'] }}" x-text="opt.description"></p>
+                            </div>
+                        </label>
+                    </template>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Step 3: AI Analysis -->
+    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 3 ? 0 : 3"
+            style="background: {{ theme_colors['bg-tertiary'] }}">
+            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+                    {% if steps.brand_voice.done and steps.pillars.done and steps.cadence.done %}bg-green-600/20 text-green-400{% else %}text-white{% endif %}"
+                    style="{% if not (steps.brand_voice.done and steps.pillars.done and steps.cadence.done) %}background: {{ theme_colors['accent-primary'] }}{% endif %}">3</span>
                 <i class="fas fa-brain" style="color: {{ theme_colors['accent-secondary'] }}"></i>
                 AI Brand Analysis
                 {% if steps.brand_voice.done and steps.pillars.done and steps.cadence.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
             </h3>
-            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 2 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 3 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
         </div>
-        <div x-show="openStep === 2" x-collapse class="px-5 py-4 space-y-4">
+        <div x-show="openStep === 3" x-collapse class="px-5 py-4 space-y-4">
+            <!-- Prerequisite notice -->
+            {% if not steps.baseline_scrape.done %}
+            <template x-if="!skipBaseline">
+                <div class="rounded-lg p-3 text-xs border flex items-start gap-2" style="background: {{ theme_colors['status-warning'] }}10; border-color: {{ theme_colors['status-warning'] }}30; color: {{ theme_colors['status-warning'] }}">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i>
+                    <div>
+                        <strong>Recommended:</strong> Complete the LinkedIn Baseline scrape first (Step 2) so AI analysis can incorporate your historical voice patterns.
+                        <button @click="skipBaseline = true" class="underline ml-1 hover:no-underline">Skip and analyze anyway</button>
+                    </div>
+                </div>
+            </template>
+            {% endif %}
+
             <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
-                Claude will analyze your brand documents and generate recommendations for brand voice, content pillars, and publishing cadence.
+                Claude will analyze your brand documents
+                {% if steps.baseline_scrape.done %}<span class="text-blue-400">+ LinkedIn baseline data (influence level <span x-text="influenceLevel"></span>/5)</span>{% endif %}
+                and generate recommendations for brand voice, content pillars, and publishing cadence.
             </p>
             <button @click="runAnalysis()" :disabled="analyzing" class="px-4 py-2 text-sm rounded-lg transition-colors" style="background: {{ theme_colors['accent-primary'] }}; color: white">
                 <template x-if="analyzing"><span><i class="fas fa-spinner fa-spin mr-1"></i>Analyzing (this takes ~30s)...</span></template>
@@ -213,18 +311,18 @@
         </div>
     </div>
 
-    <!-- Step 3: Cowork Sync -->
+    <!-- Step 4: Cowork Sync -->
     <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 3 ? 0 : 3"
+        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 4 ? 0 : 4"
             style="background: {{ theme_colors['bg-tertiary'] }}">
             <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
-                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background: {{ theme_colors['accent-primary'] }}">3</span>
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background: {{ theme_colors['accent-primary'] }}">4</span>
                 <i class="fas fa-sync" style="color: {{ theme_colors['accent-secondary'] }}"></i>
                 Cowork / External Sync
             </h3>
-            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 3 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
+            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 4 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
         </div>
-        <div x-show="openStep === 3" x-collapse class="px-5 py-4 space-y-3">
+        <div x-show="openStep === 4" x-collapse class="px-5 py-4 space-y-3">
             <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
                 Use Claude Cowork or any external tool to edit files in the brand folder. Then sync changes back into the app.
             </p>
@@ -239,51 +337,6 @@
                 <i class="fas fa-sync mr-1"></i> Sync Changes from Folders
             </button>
             <div id="syncResults" class="hidden mt-2 text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}"></div>
-        </div>
-    </div>
-
-    <!-- Step 4: LinkedIn Baseline Scrape -->
-    <div class="rounded-xl border overflow-hidden" style="background: {{ theme_colors['bg-secondary'] }}; border-color: {{ theme_colors['border-primary'] }}">
-        <div class="flex items-center justify-between px-5 py-3 cursor-pointer" @click="openStep = openStep === 4 ? 0 : 4"
-            style="background: {{ theme_colors['bg-tertiary'] }}">
-            <h3 class="font-semibold text-sm flex items-center gap-2" style="color: {{ theme_colors['text-primary'] }}">
-                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
-                    {% if steps.baseline_scrape.done %}bg-green-600/20 text-green-400{% else %}text-white{% endif %}"
-                    style="{% if not steps.baseline_scrape.done %}background: {{ theme_colors['accent-primary'] }}{% endif %}">4</span>
-                <i class="fab fa-linkedin" style="color: #0077B5"></i>
-                LinkedIn Baseline Data
-                {% if steps.baseline_scrape.done %}<i class="fas fa-check-circle text-green-400 text-xs"></i>{% endif %}
-            </h3>
-            <i class="fas fa-chevron-down text-xs transition-transform" :class="openStep === 4 ? 'rotate-180' : ''" style="color: {{ theme_colors['text-muted'] }}"></i>
-        </div>
-        <div x-show="openStep === 4" x-collapse class="px-5 py-4 space-y-3">
-            <p class="text-sm" style="color: {{ theme_colors['text-secondary'] }}">
-                Scrape up to 100 historical posts from your LinkedIn company page and/or personal profile. This baseline data powers performance analytics and feeds into your content strategy.
-            </p>
-            <div class="rounded-lg p-3 text-xs" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-muted'] }}">
-                <p class="font-medium mb-1" style="color: {{ theme_colors['text-secondary'] }}"><i class="fas fa-info-circle mr-1" style="color: {{ theme_colors['accent-primary'] }}"></i>What happens:</p>
-                <p>Apify scrapes your LinkedIn posts (titles, text, engagement metrics, dates). After the baseline, subsequent scrapes only fetch new posts since the last run (delta scraping).</p>
-            </div>
-            <div class="space-y-2">
-                <div>
-                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Company LinkedIn URL</label>
-                    <input x-model="baselineCompanyUrl" type="url" placeholder="https://www.linkedin.com/company/diqit/"
-                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
-                        style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
-                </div>
-                <div>
-                    <label class="text-xs font-medium block mb-1" style="color: {{ theme_colors['text-secondary'] }}">Personal LinkedIn URL (optional)</label>
-                    <input x-model="baselineProfileUrl" type="url" placeholder="https://www.linkedin.com/in/neerajkumar/"
-                        class="w-full px-3 py-2 rounded-lg text-sm border focus:outline-none"
-                        style="background: {{ theme_colors['bg-tertiary'] }}; border-color: {{ theme_colors['border-primary'] }}; color: {{ theme_colors['text-primary'] }}">
-                </div>
-            </div>
-            <button @click="runBaselineScrape($event.currentTarget)" class="px-4 py-2 text-sm rounded-lg transition-colors bg-blue-600 hover:bg-blue-700 text-white">
-                <i class="fab fa-linkedin mr-1"></i> Run Baseline Scrape
-            </button>
-            <div x-show="baselineStatus" class="text-sm p-3 rounded-lg" style="background: {{ theme_colors['bg-tertiary'] }}; color: {{ theme_colors['text-secondary'] }}">
-                <p x-text="baselineStatus"></p>
-            </div>
         </div>
     </div>
 
@@ -313,12 +366,33 @@
 <script>
 function onboardingApp() {
     return {
-        openStep: {{ 1 if not steps.folder.done else (2 if not (steps.brand_voice.done and steps.pillars.done) else (4 if not steps.baseline_scrape.done else 3)) }},
+        openStep: {{ 1 if not steps.folder.done else (2 if not steps.baseline_scrape.done else (3 if not (steps.brand_voice.done and steps.pillars.done) else 4)) }},
         analyzing: false,
         recommendations: null,
         baselineCompanyUrl: 'https://www.linkedin.com/company/diqit/',
         baselineProfileUrl: '',
         baselineStatus: '',
+        skipBaseline: false,
+        influenceLevel: {{ brand.baseline_influence_level or 3 }},
+        influenceLevels: [
+            { level: 1, label: "1 — Minimal Influence", description: "Keep historical data for reference only. LinkedIn was poorly managed; do not let it drive the voice." },
+            { level: 2, label: "2 — Light Influence", description: "Note patterns and terminology but do not adopt the tone. Brand wants a different direction." },
+            { level: 3, label: "3 — Balanced", description: "Blend historical LinkedIn voice equally with brand document analysis." },
+            { level: 4, label: "4 — Strong Influence", description: "Adopt most of the LinkedIn voice patterns. The voice was mostly on-target." },
+            { level: 5, label: "5 — Full Adoption", description: "The historical LinkedIn voice IS the brand voice. It was well-managed and successful." }
+        ],
+
+        async saveInfluenceLevel() {
+            const res = await fetch('/api/brands/{{ brand.id }}/onboard/set-influence-level', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ level: this.influenceLevel })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                toast(`Influence level set to ${this.influenceLevel}/5`, 'success');
+            }
+        },
 
         async runAnalysis() {
             this.analyzing = true;
@@ -326,7 +400,7 @@ function onboardingApp() {
                 const res = await fetch('/api/brands/{{ brand.id }}/onboard/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'all' })
+                    body: JSON.stringify({ type: 'all', influence_level: this.influenceLevel })
                 });
                 const data = await res.json();
                 if (data.ok) {
@@ -394,7 +468,7 @@ async function runBaselineScrape(btn) {
         const data = await res.json();
         if (data.ok) {
             app.baselineStatus = data.message;
-            toast('Baseline scrape started — results in 3-5 minutes. Check Data Enrichment.', 'success');
+            toast('Baseline scrape started — results in 3-5 minutes. Reload page to see influence level selector.', 'success');
         } else {
             app.baselineStatus = 'Error: ' + (data.error || 'Unknown');
             toast(data.error || 'Baseline scrape failed', 'error');
